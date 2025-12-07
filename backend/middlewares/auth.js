@@ -3,7 +3,7 @@ const prisma = require('../db/prismaClient');
 
 const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
 
-// Authentication middleware
+// Authentication middleware - Enhanced with password change tracking
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -14,6 +14,8 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
+    
+    // Get user with additional security fields
     const user = await prisma.user.findUnique({
       where: { id: decoded.userId },
       select: {
@@ -23,7 +25,9 @@ const authenticateToken = async (req, res, next) => {
         name: true,
         phone: true,
         profileImage: true,
-        status: true, // Added status field
+        status: true,
+        passwordChangedAt: true, // Track password changes
+        forcePasswordReset: true, // Check if password reset is required
         createdAt: true,
         teacherProfile: {
           select: {
@@ -57,11 +61,38 @@ const authenticateToken = async (req, res, next) => {
       });
     }
 
+    // Check if password was changed after token was issued
+    if (user.passwordChangedAt) {
+      const pwdChangedAt = Math.floor(user.passwordChangedAt.getTime() / 1000);
+      
+      // If token doesn't have pwdChangedAt or it doesn't match current timestamp
+      if (!decoded.pwdChangedAt || decoded.pwdChangedAt !== pwdChangedAt) {
+        return res.status(401).json({ 
+          error: 'Session expired. Please login again.' 
+        });
+      }
+    }
+
+    // Check if user needs to reset password (force password reset)
+    // Allow access to change-password endpoint even if reset is required
+    const allowedPaths = [
+      '/api/auth/change-password',
+      '/auth/change-password',
+      '/api/auth/logout',
+      '/auth/logout'
+    ];
+    
+    if (user.forcePasswordReset && !allowedPaths.includes(req.path)) {
+      return res.status(403).json({ 
+        error: 'Password reset required. Please change your password.' 
+      });
+    }
+
     req.user = user;
     next();
   } catch (error) {
     if (error.name === 'TokenExpiredError') {
-      return res.status(403).json({ error: 'Token expired' });
+      return res.status(403).json({ error: 'Token expired. Please login again.' });
     }
     if (error.name === 'JsonWebTokenError') {
       return res.status(403).json({ error: 'Invalid token' });
@@ -116,9 +147,9 @@ module.exports = {
   requireTeacher,
   requireStudent,
   requireParent,
-  requireTeacherOrAdmin,     // Added
-  requireTeacherOnly,        // Added
-  requireStudentTeacherOrAdmin, // Added
-  requireParentOrAdmin,      // Added
+  requireTeacherOrAdmin,
+  requireTeacherOnly,
+  requireStudentTeacherOrAdmin,
+  requireParentOrAdmin,
   JWT_SECRET
 };

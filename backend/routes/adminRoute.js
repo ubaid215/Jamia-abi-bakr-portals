@@ -1,8 +1,8 @@
-// routes/adminRoute.js - UPDATED with password reset route
 const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
-const authController = require('../controllers/authController'); // Import auth controller
+const authController = require('../controllers/authController');
+const { generateRollNumber } = require('../utils/passwordGenerator');
 const { 
   authenticateToken, 
   requireSuperAdmin, 
@@ -30,10 +30,16 @@ router.get('/teachers/:id', authenticateToken, requireAdmin, adminController.get
 router.get('/students', authenticateToken, requireAdmin, adminController.getAllStudents);
 router.get('/students/:id', authenticateToken, requireAdmin, adminController.getStudentDetails);
 
+// ✅ FIXED: Student enrollment history - 
+router.get('/students/:studentId/enrollment-history', authenticateToken, requireAdmin, adminController.getStudentEnrollmentHistory);
+
+// ✅ NEW: Batch student promotion
+router.post('/students/promote', authenticateToken, requireAdmin, adminController.promoteStudents);
+
 // User management
 router.get('/users', authenticateToken, requireAdmin, adminController.getUsers);
 
-// Password reset (Admin function) - ADD THIS ROUTE
+// Password reset (Admin function)
 router.post('/users/:userId/reset-password', authenticateToken, requireAdmin, authController.resetUserPassword);
 
 // Leave management
@@ -41,7 +47,7 @@ router.get('/leave-requests', authenticateToken, requireAdmin, adminController.m
 router.put('/leave-requests/:id', authenticateToken, requireAdmin, adminController.updateLeaveRequest);
 
 // ============================================
-// ATTENDANCE OVERVIEW ROUTES (NEW)
+// ATTENDANCE OVERVIEW ROUTES
 // ============================================
 router.get('/attendance-overview', authenticateToken, requireAdmin, adminController.getAttendanceOverview);
 router.get('/attendance-trends', authenticateToken, requireAdmin, adminController.getAttendanceTrends);

@@ -9,41 +9,51 @@ class SubjectController {
         code,
         classRoomId,
         teacherId,
-        description
       } = req.body;
 
       // Validate required fields
-      if (!name || !classRoomId) {
-        return res.status(400).json({ error: 'Name and class room ID are required' });
+      if (!name) {
+        return res.status(400).json({ error: 'Name is required' });
       }
 
-      // Check if class exists
-      const classRoom = await prisma.classRoom.findUnique({
-        where: { id: classRoomId }
-      });
+      // Prepare data object with correct field names
+      const data = {
+        name,
+        code: code || null,
+      };
 
-      if (!classRoom) {
-        return res.status(404).json({ error: 'Class room not found' });
+      // Add classRoomId if provided
+      if (classRoomId) {
+        // Check if class exists
+        const classRoom = await prisma.classRoom.findUnique({
+          where: { id: classRoomId }
+        });
+
+        if (!classRoom) {
+          return res.status(404).json({ error: 'Class room not found' });
+        }
+
+        data.classRoomId = classRoomId;
       }
 
-      // Check if teacher exists (if provided)
+      // Add teacherId if provided
       if (teacherId) {
+        // Check if teacher exists
         const teacher = await prisma.teacher.findUnique({
           where: { id: teacherId }
         });
+
         if (!teacher) {
           return res.status(404).json({ error: 'Teacher not found' });
         }
+
+        data.teacherId = teacherId;
       }
 
+      console.log('Creating subject with data:', data);
+
       const subject = await prisma.subject.create({
-        data: {
-          name,
-          code,
-          classRoomId,
-          teacherId,
-          description
-        },
+        data,
         include: {
           classRoom: {
             select: {
@@ -74,6 +84,14 @@ class SubjectController {
 
     } catch (error) {
       console.error('Create subject error:', error);
+      
+      // More detailed error logging
+      if (error.code === 'P2003') {
+        return res.status(400).json({ 
+          error: 'Invalid foreign key. Check if class or teacher exists.' 
+        });
+      }
+      
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -257,6 +275,13 @@ class SubjectController {
 
     } catch (error) {
       console.error('Assign teacher to subject error:', error);
+      
+      if (error.code === 'P2003') {
+        return res.status(400).json({ 
+          error: 'Invalid teacher ID. Teacher not found.' 
+        });
+      }
+      
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -268,8 +293,8 @@ class SubjectController {
       const {
         name,
         code,
-        description,
-        teacherId
+        teacherId,
+        classRoomId
       } = req.body;
 
       // Check if subject exists
@@ -281,30 +306,56 @@ class SubjectController {
         return res.status(404).json({ error: 'Subject not found' });
       }
 
-      // Check if teacher exists (if provided)
-      if (teacherId) {
-        const teacher = await prisma.teacher.findUnique({
-          where: { id: teacherId }
-        });
-        if (!teacher) {
-          return res.status(404).json({ error: 'Teacher not found' });
+      // Prepare update data
+      const updateData = {};
+      
+      if (name !== undefined) updateData.name = name;
+      if (code !== undefined) updateData.code = code;
+
+      // Handle teacher update
+      if (teacherId !== undefined) {
+        if (teacherId) {
+          // Check if teacher exists
+          const teacher = await prisma.teacher.findUnique({
+            where: { id: teacherId }
+          });
+          if (!teacher) {
+            return res.status(404).json({ error: 'Teacher not found' });
+          }
+          updateData.teacherId = teacherId;
+        } else {
+          // Set to null to remove teacher assignment
+          updateData.teacherId = null;
+        }
+      }
+
+      // Handle class room update
+      if (classRoomId !== undefined) {
+        if (classRoomId) {
+          // Check if class exists
+          const classRoom = await prisma.classRoom.findUnique({
+            where: { id: classRoomId }
+          });
+          if (!classRoom) {
+            return res.status(404).json({ error: 'Class room not found' });
+          }
+          updateData.classRoomId = classRoomId;
+        } else {
+          // Set to null to remove class assignment
+          updateData.classRoomId = null;
         }
       }
 
       const updatedSubject = await prisma.subject.update({
         where: { id },
-        data: {
-          name: name || undefined,
-          code: code || undefined,
-          description: description || undefined,
-          teacherId: teacherId || undefined
-        },
+        data: updateData,
         include: {
           classRoom: {
             select: {
               id: true,
               name: true,
-              grade: true
+              grade: true,
+              type: true
             }
           },
           teacher: {
@@ -328,6 +379,13 @@ class SubjectController {
 
     } catch (error) {
       console.error('Update subject error:', error);
+      
+      if (error.code === 'P2003') {
+        return res.status(400).json({ 
+          error: 'Invalid foreign key. Check if class or teacher exists.' 
+        });
+      }
+      
       res.status(500).json({ error: 'Internal server error' });
     }
   }

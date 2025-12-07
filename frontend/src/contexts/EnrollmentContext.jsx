@@ -7,7 +7,8 @@ const ENROLLMENT_ACTIONS = {
   SET_ERROR: 'SET_ERROR',
   SET_SUCCESS: 'SET_SUCCESS',
   RESET_STATE: 'RESET_STATE',
-  SET_ENROLLMENT_HISTORY: 'SET_ENROLLMENT_HISTORY'
+  SET_ENROLLMENT_HISTORY: 'SET_ENROLLMENT_HISTORY',
+  SET_UPLOAD_PROGRESS: 'SET_UPLOAD_PROGRESS'
 };
 
 // Initial state
@@ -16,7 +17,9 @@ const initialState = {
   error: null,
   success: null,
   enrollmentHistory: null,
-  currentEnrollment: null
+  currentEnrollment: null,
+  uploadProgress: 0,
+  isUploading: false
 };
 
 // Reducer
@@ -35,7 +38,9 @@ const enrollmentReducer = (state, action) => {
         ...state,
         loading: false,
         error: action.payload,
-        success: null
+        success: null,
+        isUploading: false,
+        uploadProgress: 0
       };
     
     case ENROLLMENT_ACTIONS.SET_SUCCESS:
@@ -43,7 +48,9 @@ const enrollmentReducer = (state, action) => {
         ...state,
         loading: false,
         error: null,
-        success: action.payload
+        success: action.payload,
+        isUploading: false,
+        uploadProgress: 0
       };
     
     case ENROLLMENT_ACTIONS.SET_ENROLLMENT_HISTORY:
@@ -52,6 +59,13 @@ const enrollmentReducer = (state, action) => {
         enrollmentHistory: action.payload,
         loading: false,
         error: null
+      };
+    
+    case ENROLLMENT_ACTIONS.SET_UPLOAD_PROGRESS:
+      return {
+        ...state,
+        uploadProgress: action.payload.progress,
+        isUploading: action.payload.isUploading
       };
     
     case ENROLLMENT_ACTIONS.RESET_STATE:
@@ -79,11 +93,69 @@ export const EnrollmentProvider = ({ children }) => {
     dispatch({ type: ENROLLMENT_ACTIONS.SET_LOADING, payload: loading });
   }, []);
 
-  // Register teacher
+  // Set upload progress
+  const setUploadProgress = useCallback((progress, isUploading = true) => {
+    dispatch({ 
+      type: ENROLLMENT_ACTIONS.SET_UPLOAD_PROGRESS, 
+      payload: { progress, isUploading } 
+    });
+  }, []);
+
+  // Handle form data with file uploads
+  // eslint-disable-next-line no-unused-vars
+  const prepareFormData = (data, fileFields = []) => {
+    const formData = new FormData();
+    
+    // Add all regular fields
+    Object.keys(data).forEach(key => {
+      if (data[key] !== undefined && data[key] !== null) {
+        if (typeof data[key] === 'object' && !(data[key] instanceof File)) {
+          // Handle nested objects
+          if (Array.isArray(data[key])) {
+            data[key].forEach((item, index) => {
+              if (item instanceof File) {
+                formData.append(key, item);
+              } else if (typeof item === 'object') {
+                Object.keys(item).forEach(subKey => {
+                  formData.append(`${key}[${index}][${subKey}]`, item[subKey]);
+                });
+              } else {
+                formData.append(`${key}[${index}]`, item);
+              }
+            });
+          } else {
+            Object.keys(data[key]).forEach(subKey => {
+              formData.append(`${key}[${subKey}]`, data[key][subKey]);
+            });
+          }
+        } else if (data[key] instanceof File) {
+          formData.append(key, data[key]);
+        } else {
+          formData.append(key, data[key]);
+        }
+      }
+    });
+
+    return formData;
+  };
+
+  // Register teacher with file upload support
   const registerTeacher = useCallback(async (teacherData) => {
     try {
       setLoading(true);
-      const result = await enrollmentService.registerTeacher(teacherData);
+      setUploadProgress(0);
+      
+      // Prepare form data for file uploads
+      const formData = prepareFormData(teacherData);
+      
+      // Upload with progress tracking
+      const result = await enrollmentService.registerTeacher(formData, {
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(progress);
+        }
+      });
+      
       dispatch({ 
         type: ENROLLMENT_ACTIONS.SET_SUCCESS, 
         payload: 'Teacher registered successfully' 
@@ -94,13 +166,25 @@ export const EnrollmentProvider = ({ children }) => {
       dispatch({ type: ENROLLMENT_ACTIONS.SET_ERROR, payload: errorMessage });
       throw error;
     }
-  }, [setLoading]);
+  }, [setLoading, setUploadProgress]);
 
-  // Register student
+  // Register student with file upload support
   const registerStudent = useCallback(async (studentData) => {
     try {
       setLoading(true);
-      const result = await enrollmentService.registerStudent(studentData);
+      setUploadProgress(0);
+      
+      // Prepare form data for file uploads
+      const formData = prepareFormData(studentData);
+      
+      // Upload with progress tracking
+      const result = await enrollmentService.registerStudent(formData, {
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(progress);
+        }
+      });
+      
       dispatch({ 
         type: ENROLLMENT_ACTIONS.SET_SUCCESS, 
         payload: 'Student registered successfully' 
@@ -111,9 +195,9 @@ export const EnrollmentProvider = ({ children }) => {
       dispatch({ type: ENROLLMENT_ACTIONS.SET_ERROR, payload: errorMessage });
       throw error;
     }
-  }, [setLoading]);
+  }, [setLoading, setUploadProgress]);
 
-  // Register parent
+  // Register parent (no file uploads needed)
   const registerParent = useCallback(async (parentData) => {
     try {
       setLoading(true);
@@ -196,6 +280,16 @@ export const EnrollmentProvider = ({ children }) => {
     }
   }, [setLoading]);
 
+  // Clear success message
+  const clearSuccess = useCallback(() => {
+    dispatch({ type: ENROLLMENT_ACTIONS.SET_SUCCESS, payload: null });
+  }, []);
+
+  // Clear error message
+  const clearError = useCallback(() => {
+    dispatch({ type: ENROLLMENT_ACTIONS.SET_ERROR, payload: null });
+  }, []);
+
   // Context value
   const value = {
     // State
@@ -210,7 +304,10 @@ export const EnrollmentProvider = ({ children }) => {
     getStudentEnrollmentHistory,
     getClassEnrollments,
     resetState,
-    setLoading
+    setLoading,
+    clearSuccess,
+    clearError,
+    setUploadProgress
   };
 
   return (

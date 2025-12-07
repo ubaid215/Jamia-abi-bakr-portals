@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -51,6 +52,7 @@ const TeacherDetail = () => {
         // Fetch detailed teacher information
         if (getTeacherDetails) {
           const details = await getTeacherDetails(id);
+          console.log('Teacher details from API:', details);
           setTeacherDetails(details);
         }
       } catch (error) {
@@ -64,25 +66,95 @@ const TeacherDetail = () => {
     loadTeacherData();
   }, [id, teachers, fetchTeachers, getTeacherDetails]);
 
+  // Helper function to normalize teacher data from different sources
+  const normalizeTeacherData = (data) => {
+    if (!data) return null;
+    
+    // If data already has the expected structure (from getTeacherDetails)
+    if (data.teacher && data.profile && data.assignments) {
+      console.log('Using getTeacherDetails structure');
+      return data;
+    }
+    
+    // If data has teacherProfile (from getAllTeachers or similar)
+    if (data.teacherProfile) {
+      console.log('Normalizing teacherProfile structure');
+      return {
+        teacher: {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          profileImage: data.profileImage,
+          status: data.status,
+          createdAt: data.createdAt
+        },
+        profile: {
+          ...data.teacherProfile,
+          bio: data.teacherProfile.bio,
+          specialization: data.teacherProfile.specialization,
+          experience: data.teacherProfile.experience,
+          qualification: data.teacherProfile.qualification,
+          joiningDate: data.teacherProfile.joiningDate,
+          salary: data.teacherProfile.salary,
+          employmentType: data.teacherProfile.employmentType,
+          dateOfBirth: data.teacherProfile.dateOfBirth,
+          gender: data.teacherProfile.gender,
+          cnic: data.teacherProfile.cnic,
+          address: data.teacherProfile.address,
+          phoneSecondary: data.teacherProfile.phoneSecondary,
+          emergencyContactName: data.teacherProfile.emergencyContactName,
+          emergencyContactPhone: data.teacherProfile.emergencyContactPhone,
+          emergencyContactRelation: data.teacherProfile.emergencyContactRelation
+        },
+        assignments: {
+          classes: data.teacherProfile.classes || [],
+          subjects: data.teacherProfile.subjects || []
+        },
+        statistics: {
+          totalClasses: data.teacherProfile.classes?.length || 0,
+          totalSubjects: data.teacherProfile.subjects?.length || 0,
+          totalStudents: 0,
+          totalAttendanceMarked: data.teacherProfile._count?.attendances || 0,
+          pendingLeaveRequests: 0
+        },
+        recentActivities: {
+          leaveRequests: [],
+          attendanceMarked: []
+        }
+      };
+    }
+    
+    // Fallback for other structures
+    console.log('Using fallback structure');
+    return {
+      teacher: data.user || {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        status: data.status,
+        phone: data.phone,
+        profileImage: data.profileImage,
+        createdAt: data.createdAt
+      },
+      profile: data,
+      assignments: {
+        classes: data.classes || [],
+        subjects: data.subjects || []
+      },
+      statistics: {},
+      recentActivities: {}
+    };
+  };
+
   // Helper function to safely get teacher data
   const getTeacherData = () => {
     if (teacherDetails) {
-      return teacherDetails;
+      return normalizeTeacherData(teacherDetails);
     }
     
     if (teacher) {
-      // Handle the nested structure from getAllTeachers response
-      return {
-        ...teacher,
-        user: teacher.user || {
-          name: teacher.name,
-          email: teacher.email,
-          status: teacher.status,
-          phone: teacher.phone,
-          profileImage: teacher.profileImage,
-          createdAt: teacher.createdAt
-        }
-      };
+      return normalizeTeacherData(teacher);
     }
     
     return null;
@@ -92,7 +164,7 @@ const TeacherDetail = () => {
 
   const handleStatusChange = async (newStatus) => {
     try {
-      const userId = currentTeacher.user?.id || currentTeacher.id;
+      const userId = currentTeacher.teacher?.id || currentTeacher.id;
       await updateUserStatus(userId, newStatus);
       toast.success(`Teacher status updated to ${newStatus}`);
       // Refresh teacher data
@@ -120,13 +192,26 @@ const TeacherDetail = () => {
     }
   };
 
+  const getAttendanceStatusColor = (status) => {
+    switch (status) {
+      case 'PRESENT': return 'bg-green-100 text-green-800';
+      case 'ABSENT': return 'bg-red-100 text-red-800';
+      case 'LATE': return 'bg-yellow-100 text-yellow-800';
+      default: return 'bg-gray-100 text-gray-800';
+    }
+  };
+
   const formatDate = (dateString) => {
     if (!dateString) return 'Not provided';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return 'Invalid date';
+    }
   };
 
   const formatSalary = (salary) => {
@@ -135,6 +220,50 @@ const TeacherDetail = () => {
       style: 'currency',
       currency: 'USD'
     }).format(salary);
+  };
+
+  // Helper to get classes data from multiple possible sources
+  const getClassesData = () => {
+    if (!currentTeacher) return [];
+    
+    // Check assignments first
+    if (currentTeacher.assignments?.classes?.length > 0) {
+      return currentTeacher.assignments.classes;
+    }
+    
+    // Check profile
+    if (currentTeacher.profile?.classes?.length > 0) {
+      return currentTeacher.profile.classes;
+    }
+    
+    // Check direct
+    if (currentTeacher.classes?.length > 0) {
+      return currentTeacher.classes;
+    }
+    
+    return [];
+  };
+
+  // Helper to get subjects data from multiple possible sources
+  const getSubjectsData = () => {
+    if (!currentTeacher) return [];
+    
+    // Check assignments first
+    if (currentTeacher.assignments?.subjects?.length > 0) {
+      return currentTeacher.assignments.subjects;
+    }
+    
+    // Check profile
+    if (currentTeacher.profile?.subjects?.length > 0) {
+      return currentTeacher.profile.subjects;
+    }
+    
+    // Check direct
+    if (currentTeacher.subjects?.length > 0) {
+      return currentTeacher.subjects;
+    }
+    
+    return [];
   };
 
   if ((loading || detailsLoading) && !currentTeacher) {
@@ -161,11 +290,19 @@ const TeacherDetail = () => {
   }
 
   // Extract data with safe fallbacks
-  const user = currentTeacher.user || {};
-  const profile = currentTeacher.profile || currentTeacher;
+  const user = currentTeacher.teacher || currentTeacher.user || currentTeacher || {};
+  const profile = currentTeacher.profile || {};
   const assignments = currentTeacher.assignments || {};
   const statistics = currentTeacher.statistics || {};
   const recentActivities = currentTeacher.recentActivities || {};
+
+  // Get actual classes and subjects data
+  const classesData = getClassesData();
+  const subjectsData = getSubjectsData();
+
+  console.log('Current teacher data:', currentTeacher);
+  console.log('Classes data:', classesData);
+  console.log('Subjects data:', subjectsData);
 
   return (
     <div className="space-y-6">
@@ -187,7 +324,7 @@ const TeacherDetail = () => {
                   className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#F59E0B]"
                 />
               ) : (
-                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-xl">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-xl">
                   {user.name?.charAt(0).toUpperCase() || 'T'}
                 </div>
               )}
@@ -237,8 +374,8 @@ const TeacherDetail = () => {
               }`}
             >
               {tab === 'overview' && 'Overview'}
-              {tab === 'classes' && `Classes (${assignments.classes?.length || 0})`}
-              {tab === 'subjects' && `Subjects (${assignments.subjects?.length || 0})`}
+              {tab === 'classes' && `Classes (${classesData.length || 0})`}
+              {tab === 'subjects' && `Subjects (${subjectsData.length || 0})`}
               {tab === 'leave' && `Leave (${recentActivities.leaveRequests?.length || 0})`}
               {tab === 'attendance' && 'Attendance'}
               {tab === 'documents' && 'Documents'}
@@ -306,11 +443,11 @@ const TeacherDetail = () => {
                 <div className="space-y-3">
                   <StatItem 
                     label="Classes Assigned" 
-                    value={statistics.totalClasses || assignments.classes?.length || 0} 
+                    value={statistics.totalClasses || classesData.length || 0} 
                   />
                   <StatItem 
                     label="Subjects Teaching" 
-                    value={statistics.totalSubjects || assignments.subjects?.length || 0} 
+                    value={statistics.totalSubjects || subjectsData.length || 0} 
                   />
                   <StatItem 
                     label="Total Students" 
@@ -364,31 +501,39 @@ const TeacherDetail = () => {
         {activeTab === 'classes' && (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Assigned Classes</h3>
-            {(!assignments.classes || assignments.classes.length === 0) ? (
+            {classesData.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <BookOpen className="h-12 w-12 mx-auto text-gray-300 mb-4" />
                 <p>No classes assigned</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {assignments.classes.map((classItem) => (
+                {classesData.map((classItem) => (
                   <div key={classItem.id} className="border border-gray-200 rounded-xl p-4 hover:border-[#F59E0B] transition-colors">
-                    <h4 className="font-semibold text-gray-900 mb-2">{classItem.name}</h4>
-                    <div className="flex items-center justify-between text-sm mb-2">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        classItem.type === 'HIFZ' ? 'bg-purple-100 text-purple-800' :
-                        classItem.type === 'NAZRA' ? 'bg-orange-100 text-orange-800' :
-                        'bg-blue-100 text-blue-800'
-                      }`}>
-                        {classItem.type}
-                      </span>
-                      <span className="text-[#F59E0B] font-medium">
-                        {classItem._count?.enrollments || 0} students
-                      </span>
+                    <h4 className="font-semibold text-gray-900 mb-2">{classItem.name || 'Unnamed Class'}</h4>
+                    <div className="space-y-2">
+                      <div className="flex items-center justify-between text-sm">
+                        <span className={`px-2 py-1 rounded-full text-xs font-medium ${
+                          classItem.type === 'HIFZ' ? 'bg-purple-100 text-purple-800' :
+                          classItem.type === 'NAZRA' ? 'bg-orange-100 text-orange-800' :
+                          classItem.type ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                        }`}>
+                          {classItem.type || 'GENERAL'}
+                        </span>
+                        <span className="text-[#F59E0B] font-medium">
+                          {classItem._count?.enrollments || classItem.studentCount || 0} students
+                        </span>
+                      </div>
+                      {classItem.grade && (
+                        <p className="text-xs text-gray-600">Grade: {classItem.grade}</p>
+                      )}
+                      {classItem.section && (
+                        <p className="text-xs text-gray-600">Section: {classItem.section}</p>
+                      )}
+                      {classItem.description && (
+                        <p className="text-xs text-gray-500 mt-2">{classItem.description}</p>
+                      )}
                     </div>
-                    {classItem.grade && (
-                      <p className="text-xs text-gray-600">Grade: {classItem.grade}</p>
-                    )}
                   </div>
                 ))}
               </div>
@@ -399,22 +544,28 @@ const TeacherDetail = () => {
         {activeTab === 'subjects' && (
           <div className="space-y-4">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Assigned Subjects</h3>
-            {(!assignments.subjects || assignments.subjects.length === 0) ? (
+            {subjectsData.length === 0 ? (
               <div className="text-center py-8 text-gray-500">
                 <Award className="h-12 w-12 mx-auto text-gray-300 mb-4" />
                 <p>No subjects assigned</p>
               </div>
             ) : (
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                {assignments.subjects.map((subject) => (
+                {subjectsData.map((subject) => (
                   <div key={subject.id} className="border border-gray-200 rounded-xl p-4 hover:border-[#F59E0B] transition-colors">
-                    <h4 className="font-semibold text-gray-900 mb-2">{subject.name}</h4>
-                    <div className="space-y-1 text-sm">
+                    <h4 className="font-semibold text-gray-900 mb-2">{subject.name || 'Unnamed Subject'}</h4>
+                    <div className="space-y-2 text-sm">
+                      {subject.description && (
+                        <p className="text-gray-600 text-xs">{subject.description}</p>
+                      )}
                       {subject.classRoom && (
                         <p className="text-gray-600">Class: {subject.classRoom.name}</p>
                       )}
                       {subject.gradeLevel && (
                         <p className="text-gray-600">Grade: {subject.gradeLevel}</p>
+                      )}
+                      {subject.code && (
+                        <p className="text-gray-500 text-xs">Code: {subject.code}</p>
                       )}
                     </div>
                   </div>
@@ -483,14 +634,10 @@ const TeacherDetail = () => {
                   <div key={attendance.id} className="p-4 border border-gray-200 rounded-xl hover:border-[#F59E0B] transition-colors">
                     <div className="flex items-center justify-between mb-2">
                       <span className="font-medium text-sm">
-                        {attendance.student?.user?.name} - {attendance.classRoom?.name}
+                        {attendance.student?.user?.name || attendance.student?.name || 'Unknown Student'} 
+                        {attendance.classRoom?.name && ` - ${attendance.classRoom.name}`}
                       </span>
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        attendance.status === 'PRESENT' ? 'bg-green-100 text-green-800' :
-                        attendance.status === 'ABSENT' ? 'bg-red-100 text-red-800' :
-                        attendance.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' :
-                        'bg-gray-100 text-gray-800'
-                      }`}>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getAttendanceStatusColor(attendance.status)}`}>
                         {attendance.status}
                       </span>
                     </div>

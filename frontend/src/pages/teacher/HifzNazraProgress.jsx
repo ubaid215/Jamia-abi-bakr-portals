@@ -9,18 +9,16 @@ import {
   BarChart3,
   Plus,
   Search,
-  Filter,
   User,
   Calendar,
   Award,
   TrendingUp,
   FileText,
-  Eye,
-  ChevronDown,
-  ChevronUp,
   X,
   Save,
-  Printer
+  AlertTriangle,
+  CheckCircle,
+  Clock
 } from 'lucide-react';
 
 const HifzNazraProgress = () => {
@@ -33,8 +31,13 @@ const HifzNazraProgress = () => {
   } = useTeacher();
 
   const {
-    generateHifzReport,
-    loading: reportLoading
+    analytics,
+    alerts,
+    loading: reportLoading,
+    getStudentAnalytics,
+    getStudentAlerts,
+    updateParaCompletion,
+    generateAndDownloadReport
   } = useHifzReport();
 
   const [selectedClass, setSelectedClass] = useState('');
@@ -47,12 +50,18 @@ const HifzNazraProgress = () => {
     manzilPara: '',
     mistakes: '',
     currentPara: '',
+    paraProgress: '',
     completedParas: [],
     remarks: ''
   });
   const [studentProgress, setStudentProgress] = useState([]);
   const [viewMode, setViewMode] = useState('input'); // 'input', 'analytics', 'reports'
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [completionData, setCompletionData] = useState({
+    completedParas: [],
+    currentPara: '',
+    paraProgress: ''
+  });
 
   // Ensure classes and students are always arrays
   const classList = Array.isArray(classes) ? classes : (classes?.classes || []);
@@ -83,9 +92,26 @@ const HifzNazraProgress = () => {
 
   useEffect(() => {
     if (selectedStudent) {
-      loadStudentProgress();
+      loadStudentData();
     }
   }, [selectedStudent]);
+
+  const loadStudentData = async () => {
+    if (!selectedStudent) return;
+
+    try {
+      // Load analytics
+      await getStudentAnalytics(selectedStudent.student.id, 30);
+      
+      // Load alerts
+      await getStudentAlerts(selectedStudent.student.id);
+      
+      // Load progress history (you'll need to implement this API)
+      loadStudentProgress();
+    } catch (error) {
+      console.error('Error loading student data:', error);
+    }
+  };
 
   const loadStudentProgress = async () => {
     // Mock progress data - replace with actual API call
@@ -121,6 +147,13 @@ const HifzNazraProgress = () => {
     }));
   };
 
+  const handleCompletionChange = (field, value) => {
+    setCompletionData(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
   const handleSubmitProgress = async (e) => {
     e.preventDefault();
     if (!selectedStudent) return;
@@ -148,6 +181,7 @@ const HifzNazraProgress = () => {
         manzilPara: '',
         mistakes: '',
         currentPara: '',
+        paraProgress: '',
         completedParas: [],
         remarks: ''
       });
@@ -160,24 +194,28 @@ const HifzNazraProgress = () => {
     }
   };
 
+  const handleUpdateParaCompletion = async () => {
+    if (!selectedStudent || !completionData.currentPara) return;
+
+    try {
+      await updateParaCompletion(selectedStudent.student.id, completionData);
+      alert('Para completion updated successfully!');
+      // Refresh analytics
+      await getStudentAnalytics(selectedStudent.student.id, 30);
+    } catch (error) {
+      alert('Error updating para completion');
+    }
+  };
+
   const handleGenerateReport = async () => {
     if (!selectedStudent) return;
 
     try {
-      const report = await generateHifzReport({
+      await generateAndDownloadReport({
         studentId: selectedStudent.student.id,
         startDate: '2024-01-01',
         endDate: new Date().toISOString().split('T')[0]
       });
-
-      // Create blob and download
-      const blob = new Blob([report], { type: 'application/pdf' });
-      const url = window.URL.createObjectURL(blob);
-      const link = document.createElement('a');
-      link.href = url;
-      link.download = `hifz-report-${selectedStudent.student.admissionNo}.pdf`;
-      link.click();
-      window.URL.revokeObjectURL(url);
     } catch (error) {
       alert('Error generating report');
     }
@@ -356,17 +394,19 @@ const HifzNazraProgress = () => {
   const StudentProgressAnalytics = () => {
     const stats = calculateProgressStats();
 
-    if (!stats) {
+    if (!analytics && !stats) {
       return (
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
           <TrendingUp className="mx-auto h-12 w-12 text-gray-400" />
-          <h3 className="mt-2 text-sm font-medium text-gray-900">No Progress Data</h3>
+          <h3 className="mt-2 text-sm font-medium text-gray-900">No Analytics Data</h3>
           <p className="mt-1 text-sm text-gray-500">
-            No progress records found for this student.
+            No analytics data available for this student.
           </p>
         </div>
       );
     }
+
+    const displayData = analytics || stats;
 
     return (
       <div className="space-y-6">
@@ -376,7 +416,7 @@ const HifzNazraProgress = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Total Sessions</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.totalSessions}</p>
+                <p className="text-2xl font-bold text-gray-900">{displayData.totalSessions || displayData.totalDays}</p>
               </div>
               <Calendar className="h-8 w-8 text-blue-500" />
             </div>
@@ -386,7 +426,7 @@ const HifzNazraProgress = () => {
             <div className="flex items-center justify-between">
               <div>
                 <p className="text-sm font-medium text-gray-600">Current Para</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.currentPara}</p>
+                <p className="text-2xl font-bold text-gray-900">{displayData.currentPara}</p>
               </div>
               <BookOpen className="h-8 w-8 text-green-500" />
             </div>
@@ -395,8 +435,10 @@ const HifzNazraProgress = () => {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Avg Lines/Session</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.avgLinesPerSession}</p>
+                <p className="text-sm font-medium text-gray-600">Avg Lines/Day</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {displayData.avgLinesPerDay || displayData.avgLinesPerSession}
+                </p>
               </div>
               <TrendingUp className="h-8 w-8 text-gold" />
             </div>
@@ -405,84 +447,165 @@ const HifzNazraProgress = () => {
           <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4">
             <div className="flex items-center justify-between">
               <div>
-                <p className="text-sm font-medium text-gray-600">Avg Mistakes</p>
-                <p className="text-2xl font-bold text-gray-900">{stats.avgMistakesPerSession}</p>
+                <p className="text-sm font-medium text-gray-600">Completed Paras</p>
+                <p className="text-2xl font-bold text-gray-900">
+                  {displayData.completedParas || 0}/30
+                </p>
               </div>
-              <Award className="h-8 w-8 text-red-500" />
+              <Award className="h-8 w-8 text-purple-500" />
             </div>
           </div>
         </div>
+
+        {/* Alerts Section */}
+        {alerts?.alerts && alerts.alerts.length > 0 && (
+          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
+            <h3 className="text-lg font-semibold text-gray-900 mb-4 flex items-center">
+              <AlertTriangle className="h-5 w-5 mr-2 text-yellow-500" />
+              Performance Alerts
+            </h3>
+            <div className="space-y-3">
+              {alerts.alerts.map((alert, index) => (
+                <div
+                  key={index}
+                  className={`p-4 rounded-lg border ${
+                    alert.severity === 'critical' ? 'bg-red-50 border-red-200' :
+                    alert.severity === 'warning' ? 'bg-yellow-50 border-yellow-200' :
+                    alert.severity === 'success' ? 'bg-green-50 border-green-200' :
+                    'bg-blue-50 border-blue-200'
+                  }`}
+                >
+                  <div className="flex items-start">
+                    <div className="flex-1">
+                      <p className="text-sm font-medium text-gray-900">{alert.message}</p>
+                      <p className="text-sm text-gray-600 mt-1">{alert.recommendation}</p>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
 
         {/* Progress Chart */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Progress Trend</h3>
-          <div className="h-64 flex items-end justify-between space-x-2">
-            {studentProgress.slice(0, 10).map((progress, index) => (
-              <div key={progress.id} className="flex flex-col items-center flex-1">
-                <div className="flex flex-col items-center space-y-1">
-                  <div
-                    className="w-full bg-green-500 rounded-t"
-                    style={{ 
-                      height: `${(progress.sabaqLines / 20) * 100}%`,
-                      minHeight: '4px'
-                    }}
-                    title={`Sabaq: ${progress.sabaqLines} lines`}
-                  ></div>
-                  <div
-                    className="w-full bg-blue-500 rounded-b"
-                    style={{ 
-                      height: `${(progress.sabqiLines / 50) * 100}%`,
-                      minHeight: '4px'
-                    }}
-                    title={`Sabqi: ${progress.sabqiLines} lines`}
-                  ></div>
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Progress Overview</h3>
+          {analytics ? (
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Performance Trend</label>
+                  <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm font-medium ml-2 ${
+                    analytics.performanceTrend === 'Improving' ? 'bg-green-100 text-green-800' :
+                    analytics.performanceTrend === 'Declining' ? 'bg-red-100 text-red-800' :
+                    'bg-yellow-100 text-yellow-800'
+                  }`}>
+                    {analytics.performanceTrend}
+                  </div>
                 </div>
-                <div className="text-xs text-gray-500 mt-2">
-                  {new Date(progress.date).getDate()}/{new Date(progress.date).getMonth() + 1}
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Consistency Score</label>
+                  <p className="text-lg font-semibold">{analytics.consistencyScore}%</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Mistake Rate</label>
+                  <p className="text-lg font-semibold">{analytics.mistakeRate}%</p>
                 </div>
               </div>
-            ))}
-          </div>
-          <div className="flex justify-center space-x-6 mt-4">
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span className="text-sm text-gray-600">Sabaq Lines</span>
+              <div className="space-y-4">
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Estimated Completion</label>
+                  <p className="text-lg font-semibold">
+                    {analytics.estimatedDaysToComplete ? `${analytics.estimatedDaysToComplete} days` : 'N/A'}
+                  </p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">Total Lines Memorized</label>
+                  <p className="text-lg font-semibold">{analytics.totalLines}</p>
+                </div>
+                <div>
+                  <label className="text-sm font-medium text-gray-600">High Mistake Days</label>
+                  <p className="text-lg font-semibold">{analytics.highMistakeDays}</p>
+                </div>
+              </div>
             </div>
-            <div className="flex items-center space-x-2">
-              <div className="w-3 h-3 bg-blue-500 rounded"></div>
-              <span className="text-sm text-gray-600">Sabqi Lines</span>
+          ) : (
+            <div className="h-64 flex items-end justify-between space-x-2">
+              {studentProgress.slice(0, 10).map((progress, index) => (
+                <div key={progress.id} className="flex flex-col items-center flex-1">
+                  <div className="flex flex-col items-center space-y-1">
+                    <div
+                      className="w-full bg-green-500 rounded-t"
+                      style={{ 
+                        height: `${(progress.sabaqLines / 20) * 100}%`,
+                        minHeight: '4px'
+                      }}
+                      title={`Sabaq: ${progress.sabaqLines} lines`}
+                    ></div>
+                    <div
+                      className="w-full bg-blue-500 rounded-b"
+                      style={{ 
+                        height: `${(progress.sabqiLines / 50) * 100}%`,
+                        minHeight: '4px'
+                      }}
+                      title={`Sabqi: ${progress.sabqiLines} lines`}
+                    ></div>
+                  </div>
+                  <div className="text-xs text-gray-500 mt-2">
+                    {new Date(progress.date).getDate()}/{new Date(progress.date).getMonth() + 1}
+                  </div>
+                </div>
+              ))}
             </div>
-          </div>
+          )}
         </div>
 
-        {/* Recent Progress */}
+        {/* Para Completion Update */}
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6">
-          <h3 className="text-lg font-semibold text-gray-900 mb-4">Recent Progress</h3>
-          <div className="space-y-3">
-            {studentProgress.slice(0, 5).map((progress) => (
-              <div key={progress.id} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
-                <div className="flex items-center space-x-4">
-                  <div className="text-sm">
-                    <div className="font-medium text-gray-900">
-                      {new Date(progress.date).toLocaleDateString()}
-                    </div>
-                    <div className="text-gray-600">
-                      Para {progress.currentPara} • {progress.remarks || 'No remarks'}
-                    </div>
-                  </div>
-                </div>
-                <div className="text-right">
-                  <div className="text-sm font-medium text-gray-900">
-                    Sabaq: {progress.sabaqLines} • Sabqi: {progress.sabqiLines}
-                  </div>
-                  <div className={`text-sm ${
-                    progress.mistakes > 2 ? 'text-red-600' : 'text-green-600'
-                  }`}>
-                    Mistakes: {progress.mistakes}
-                  </div>
-                </div>
-              </div>
-            ))}
+          <h3 className="text-lg font-semibold text-gray-900 mb-4">Update Para Completion</h3>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Current Para
+              </label>
+              <select
+                value={completionData.currentPara}
+                onChange={(e) => handleCompletionChange('currentPara', parseInt(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+              >
+                <option value="">Select Para</option>
+                {Array.from({ length: 30 }, (_, i) => (
+                  <option key={i + 1} value={i + 1}>Para {i + 1}</option>
+                ))}
+              </select>
+            </div>
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-2">
+                Para Progress (%)
+              </label>
+              <input
+                type="number"
+                min="0"
+                max="100"
+                value={completionData.paraProgress}
+                onChange={(e) => handleCompletionChange('paraProgress', parseFloat(e.target.value))}
+                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+                placeholder="0-100"
+              />
+            </div>
+            <div className="flex items-end">
+              <button
+                onClick={handleUpdateParaCompletion}
+                disabled={!completionData.currentPara}
+                className={`w-full px-4 py-2 rounded-md font-medium ${
+                  !completionData.currentPara
+                    ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
+                    : 'bg-green-600 text-white hover:bg-green-700'
+                }`}
+              >
+                Update Completion
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -545,7 +668,7 @@ const HifzNazraProgress = () => {
                 <button
                   onClick={handleGenerateReport}
                   disabled={reportLoading}
-                  className="flex items-center px-4 py-2 bg-gold text-black rounded-md hover:bg-yellow-600 transition-colors"
+                  className="flex items-center px-4 py-2 bg-gold text-black rounded-md hover:bg-yellow-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
                 >
                   {reportLoading ? (
                     <>
@@ -705,6 +828,25 @@ const HifzNazraProgress = () => {
                         <p className="mt-1 text-sm text-gray-500">
                           Use the "Generate PDF Report" button above to create detailed progress reports.
                         </p>
+                        <div className="mt-4 flex justify-center space-x-4">
+                          <button
+                            onClick={handleGenerateReport}
+                            disabled={reportLoading}
+                            className="flex items-center px-4 py-2 bg-gold text-black rounded-md hover:bg-yellow-600 transition-colors disabled:bg-gray-400 disabled:cursor-not-allowed"
+                          >
+                            {reportLoading ? (
+                              <>
+                                <Clock className="h-4 w-4 mr-2" />
+                                Generating...
+                              </>
+                            ) : (
+                              <>
+                                <Download className="h-4 w-4 mr-2" />
+                                Download PDF Report
+                              </>
+                            )}
+                          </button>
+                        </div>
                       </div>
                     )}
                   </div>

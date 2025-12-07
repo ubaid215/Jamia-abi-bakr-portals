@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
@@ -19,7 +20,12 @@ import {
   BarChart3,
   FileText,
   Home,
-  Award
+  Award,
+  History,
+  Clock,
+  User,
+  School,
+  TrendingUp
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { toast } from 'react-hot-toast';
@@ -52,6 +58,7 @@ const StudentDetail = () => {
         // Fetch detailed student information
         if (getStudentDetails) {
           const details = await getStudentDetails(id);
+          console.log('Student details from API:', details);
           setStudentDetails(details);
         }
       } catch (error) {
@@ -65,25 +72,95 @@ const StudentDetail = () => {
     loadStudentData();
   }, [id, students, fetchStudents, getStudentDetails]);
 
+  // Helper function to normalize student data from different sources
+  const normalizeStudentData = (data) => {
+    if (!data) return null;
+    
+    // If data already has the expected structure (from getStudentDetails)
+    if (data.student && data.profile && data.academic) {
+      console.log('Using getStudentDetails structure');
+      return data;
+    }
+    
+    // If data has studentProfile (from getAllStudents or similar)
+    if (data.studentProfile) {
+      console.log('Normalizing studentProfile structure');
+      return {
+        student: {
+          id: data.id,
+          name: data.name,
+          email: data.email,
+          phone: data.phone,
+          profileImage: data.profileImage,
+          status: data.status,
+          createdAt: data.createdAt
+        },
+        profile: {
+          ...data.studentProfile,
+          dob: data.studentProfile.dob,
+          gender: data.studentProfile.gender,
+          placeOfBirth: data.studentProfile.placeOfBirth,
+          nationality: data.studentProfile.nationality,
+          religion: data.studentProfile.religion,
+          bloodGroup: data.studentProfile.bloodGroup,
+          address: data.studentProfile.address,
+          city: data.studentProfile.city,
+          province: data.studentProfile.province,
+          postalCode: data.studentProfile.postalCode,
+          guardianName: data.studentProfile.guardianName,
+          guardianRelation: data.studentProfile.guardianRelation,
+          guardianPhone: data.studentProfile.guardianPhone,
+          guardianEmail: data.studentProfile.guardianEmail,
+          guardianOccupation: data.studentProfile.guardianOccupation,
+          guardianCNIC: data.studentProfile.guardianCNIC,
+          medicalConditions: data.studentProfile.medicalConditions,
+          allergies: data.studentProfile.allergies,
+          medication: data.studentProfile.medication,
+          admissionNo: data.studentProfile.admissionNo
+        },
+        academic: {
+          currentEnrollment: data.studentProfile.currentEnrollment || {},
+          attendance: data.studentProfile.attendance || {},
+          classHistory: data.studentProfile.classHistory || [],
+          subjects: data.studentProfile.subjects || []
+        },
+        progress: data.studentProfile.progress || {},
+        parents: data.studentProfile.parents || []
+      };
+    }
+    
+    // Fallback for other structures
+    console.log('Using fallback structure');
+    return {
+      student: data.user || {
+        id: data.id,
+        name: data.name,
+        email: data.email,
+        status: data.status,
+        phone: data.phone,
+        profileImage: data.profileImage,
+        createdAt: data.createdAt
+      },
+      profile: data,
+      academic: {
+        currentEnrollment: data.currentEnrollment || {},
+        attendance: data.attendance || {},
+        classHistory: data.classHistory || [],
+        subjects: data.subjects || []
+      },
+      progress: data.progress || {},
+      parents: data.parents || []
+    };
+  };
+
   // Helper function to safely get student data
   const getStudentData = () => {
     if (studentDetails) {
-      return studentDetails;
+      return normalizeStudentData(studentDetails);
     }
     
     if (student) {
-      // Handle the nested structure from getAllStudents response
-      return {
-        ...student,
-        user: student.user || {
-          name: student.name,
-          email: student.email,
-          status: student.status,
-          phone: student.phone,
-          profileImage: student.profileImage,
-          createdAt: student.createdAt
-        }
-      };
+      return normalizeStudentData(student);
     }
     
     return null;
@@ -93,7 +170,7 @@ const StudentDetail = () => {
 
   const handleStatusChange = async (newStatus) => {
     try {
-      const userId = currentStudent.user?.id || currentStudent.id;
+      const userId = currentStudent.student?.id || currentStudent.id;
       await updateUserStatus(userId, newStatus);
       toast.success(`Student status updated to ${newStatus}`);
       // Refresh student data
@@ -130,23 +207,67 @@ const StudentDetail = () => {
 
   const formatDate = (dateString) => {
     if (!dateString) return 'Not provided';
-    return new Date(dateString).toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'long',
-      day: 'numeric'
-    });
+    try {
+      return new Date(dateString).toLocaleDateString('en-US', {
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
+      });
+    } catch (error) {
+      return 'Invalid date';
+    }
   };
 
   const calculateAge = (dob) => {
     if (!dob) return 'Unknown';
-    const birthDate = new Date(dob);
-    const today = new Date();
-    let age = today.getFullYear() - birthDate.getFullYear();
-    const monthDiff = today.getMonth() - birthDate.getMonth();
-    if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
-      age--;
+    try {
+      const birthDate = new Date(dob);
+      const today = new Date();
+      let age = today.getFullYear() - birthDate.getFullYear();
+      const monthDiff = today.getMonth() - birthDate.getMonth();
+      if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < birthDate.getDate())) {
+        age--;
+      }
+      return age;
+    } catch (error) {
+      return 'Unknown';
     }
-    return age;
+  };
+
+  // Helper to get class history data
+  const getClassHistoryData = () => {
+    if (!currentStudent) return [];
+    
+    if (currentStudent.academic?.classHistory?.length > 0) {
+      return currentStudent.academic.classHistory;
+    }
+    
+    if (currentStudent.classHistory?.length > 0) {
+      return currentStudent.classHistory;
+    }
+    
+    return [];
+  };
+
+  // Helper to get attendance data
+  const getAttendanceData = () => {
+    if (!currentStudent) return null;
+    
+    return currentStudent.academic?.attendance || currentStudent.attendance || null;
+  };
+
+  // Helper to get progress data
+  const getProgressData = () => {
+    if (!currentStudent) return {};
+    
+    return currentStudent.progress || {};
+  };
+
+  // Helper to get parents data
+  const getParentsData = () => {
+    if (!currentStudent) return [];
+    
+    return currentStudent.parents || [];
   };
 
   if ((loading || detailsLoading) && !currentStudent) {
@@ -173,11 +294,20 @@ const StudentDetail = () => {
   }
 
   // Extract data with safe fallbacks
-  const user = currentStudent.user || {};
-  const profile = currentStudent.profile || currentStudent;
+  const user = currentStudent.student || currentStudent.user || currentStudent || {};
+  const profile = currentStudent.profile || {};
   const academic = currentStudent.academic || {};
-  const progress = currentStudent.progress || {};
-  const parents = currentStudent.parents || [];
+  const progress = getProgressData();
+  const parents = getParentsData();
+  
+  // Get specific data
+  const attendanceData = getAttendanceData();
+  const classHistoryData = getClassHistoryData();
+
+  console.log('Current student data:', currentStudent);
+  console.log('Attendance data:', attendanceData);
+  console.log('Class history:', classHistoryData);
+  console.log('Progress data:', progress);
 
   return (
     <div className="space-y-6">
@@ -199,7 +329,7 @@ const StudentDetail = () => {
                   className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#F59E0B]"
                 />
               ) : (
-                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-xl">
+                <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-xl">
                   {user.name?.charAt(0).toUpperCase() || 'S'}
                 </div>
               )}
@@ -216,7 +346,7 @@ const StudentDetail = () => {
                     {user.status}
                   </span>
                   <span className="text-sm text-gray-500">
-                    Admission: {profile.admissionNo}
+                    Admission: {profile.admissionNo || 'N/A'}
                   </span>
                   {academic.currentEnrollment?.classRoom?.type && (
                     <span className={`px-2 py-1 rounded-full text-xs font-medium ${getClassTypeColor(academic.currentEnrollment.classRoom.type)}`}>
@@ -229,6 +359,13 @@ const StudentDetail = () => {
           </div>
           
           <div className="mt-4 sm:mt-0 flex flex-col sm:flex-row space-y-2 sm:space-y-0 sm:space-x-2">
+            <button 
+              onClick={() => navigate(`/admin/students/${id}/history`)}
+              className="flex items-center justify-center space-x-2 px-4 py-2 bg-blue-100 text-blue-800 rounded-lg hover:bg-blue-200 transition-colors text-sm font-medium"
+            >
+              <History className="h-4 w-4" />
+              <span>View Full History</span>
+            </button>
             <button className="flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">
               <Edit className="h-4 w-4" />
               <span>Edit</span>
@@ -257,10 +394,15 @@ const StudentDetail = () => {
               {tab === 'overview' && 'Overview'}
               {tab === 'academic' && 'Academic'}
               {tab === 'progress' && 'Progress'}
-              {tab === 'attendance' && `Attendance (${academic.attendance?.percentage || 0}%)`}
+              {tab === 'attendance' && `Attendance (${attendanceData?.percentage || 0}%)`}
               {tab === 'medical' && 'Medical'}
-              {tab === 'history' && `History (${academic.classHistory?.length || 0})`}
-              {tab === 'parents' && `Parents (${parents.length})`}
+              {tab === 'history' && (
+                <span className="flex items-center space-x-1">
+                  <History className="h-4 w-4" />
+                  <span>History ({classHistoryData.length || 0})</span>
+                </span>
+              )}
+              {tab === 'parents' && 'Parents'}
             </button>
           ))}
         </div>
@@ -322,15 +464,15 @@ const StudentDetail = () => {
                 <div className="space-y-3">
                   <StatItem 
                     label="Attendance Rate" 
-                    value={`${academic.attendance?.percentage || 0}%`} 
+                    value={`${attendanceData?.percentage || 0}%`} 
                   />
                   <StatItem 
                     label="Present Days" 
-                    value={academic.attendance?.present || 0} 
+                    value={attendanceData?.present || 0} 
                   />
                   <StatItem 
                     label="Total Days" 
-                    value={academic.attendance?.total || 0} 
+                    value={attendanceData?.total || 0} 
                   />
                   {progress.averagePercentage && (
                     <StatItem 
@@ -398,12 +540,12 @@ const StudentDetail = () => {
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 mb-6">
                   <div className="border border-gray-200 rounded-xl p-4">
                     <h4 className="font-semibold text-gray-900 mb-2">Current Class</h4>
-                    <p className="text-2xl font-bold text-[#92400E]">{academic.currentEnrollment.classRoom?.name}</p>
-                    <p className="text-sm text-gray-600 capitalize">{academic.currentEnrollment.classRoom?.type?.toLowerCase()}</p>
+                    <p className="text-2xl font-bold text-[#92400E]">{academic.currentEnrollment.classRoom?.name || 'N/A'}</p>
+                    <p className="text-sm text-gray-600 capitalize">{academic.currentEnrollment.classRoom?.type?.toLowerCase() || 'N/A'}</p>
                   </div>
                   <div className="border border-gray-200 rounded-xl p-4">
                     <h4 className="font-semibold text-gray-900 mb-2">Roll Number</h4>
-                    <p className="text-2xl font-bold text-[#92400E]">{academic.currentEnrollment.rollNumber}</p>
+                    <p className="text-2xl font-bold text-[#92400E]">{academic.currentEnrollment.rollNumber || 'N/A'}</p>
                     <p className="text-sm text-gray-600">Class Position</p>
                   </div>
                   <div className="border border-gray-200 rounded-xl p-4">
@@ -455,7 +597,7 @@ const StudentDetail = () => {
                   <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
                     <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
                       <div className="text-2xl font-bold text-green-800">
-                        {progress.completionStats.completionPercentage?.toFixed(1)}%
+                        {progress.completionStats.completionPercentage?.toFixed(1) || 0}%
                       </div>
                       <div className="text-sm text-green-600">Completion</div>
                     </div>
@@ -499,29 +641,29 @@ const StudentDetail = () => {
                             <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
                                 <span className="text-gray-600">Sabaq Lines: </span>
-                                <span className="font-medium">{item.sabaqLines}</span>
+                                <span className="font-medium">{item.sabaqLines || 0}</span>
                               </div>
                               <div>
                                 <span className="text-gray-600">Current Para: </span>
-                                <span className="font-medium">{item.currentPara}</span>
+                                <span className="font-medium">{item.currentPara || 'N/A'}</span>
                               </div>
                             </div>
                           )}
                           {progress.type === 'NAZRA' && (
                             <div>
                               <span className="text-gray-600">Recited Lines: </span>
-                              <span className="font-medium">{item.recitedLines}</span>
+                              <span className="font-medium">{item.recitedLines || 0}</span>
                             </div>
                           )}
                           {progress.type === 'REGULAR' && (
                             <div className="grid grid-cols-2 gap-4 text-sm">
                               <div>
                                 <span className="text-gray-600">Subject: </span>
-                                <span className="font-medium">{item.subject?.name}</span>
+                                <span className="font-medium">{item.subject?.name || 'N/A'}</span>
                               </div>
                               <div>
                                 <span className="text-gray-600">Percentage: </span>
-                                <span className="font-medium">{(item.percentage * 100).toFixed(1)}%</span>
+                                <span className="font-medium">{item.percentage ? (item.percentage * 100).toFixed(1) + '%' : 'N/A'}</span>
                               </div>
                             </div>
                           )}
@@ -544,40 +686,40 @@ const StudentDetail = () => {
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Attendance Record</h3>
             
-            {academic.attendance ? (
+            {attendanceData ? (
               <>
                 {/* Attendance Summary */}
                 <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
                   <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
                     <div className="text-2xl font-bold text-green-800">
-                      {academic.attendance.percentage?.toFixed(1)}%
+                      {attendanceData.percentage?.toFixed(1) || 0}%
                     </div>
                     <div className="text-sm text-gray-600">Overall Attendance</div>
                   </div>
                   <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
                     <div className="text-2xl font-bold text-blue-800">
-                      {academic.attendance.present}
+                      {attendanceData.present || 0}
                     </div>
                     <div className="text-sm text-gray-600">Present Days</div>
                   </div>
                   <div className="bg-white border border-gray-200 rounded-xl p-4 text-center">
                     <div className="text-2xl font-bold text-red-800">
-                      {academic.attendance.total - academic.attendance.present}
+                      {(attendanceData.total || 0) - (attendanceData.present || 0)}
                     </div>
                     <div className="text-sm text-gray-600">Absent Days</div>
                   </div>
                 </div>
 
                 {/* Recent Attendance */}
-                {academic.attendance.recent && academic.attendance.recent.length > 0 && (
+                {attendanceData.recent && attendanceData.recent.length > 0 && (
                   <div>
                     <h4 className="text-md font-semibold text-gray-900 mb-4">Recent Attendance</h4>
                     <div className="space-y-3">
-                      {academic.attendance.recent.slice(0, 10).map((record, index) => (
+                      {attendanceData.recent.slice(0, 10).map((record, index) => (
                         <div key={index} className="flex items-center justify-between p-3 border border-gray-200 rounded-xl">
                           <div className="flex-1">
                             <span className="font-medium text-sm">
-                              {formatDate(record.date)} - {record.classRoom?.name}
+                              {formatDate(record.date)} - {record.classRoom?.name || 'Class'}
                             </span>
                             {record.subject && (
                               <span className="text-sm text-gray-600 ml-2">({record.subject.name})</span>
@@ -590,10 +732,10 @@ const StudentDetail = () => {
                               record.status === 'LATE' ? 'bg-yellow-100 text-yellow-800' :
                               'bg-gray-100 text-gray-800'
                             }`}>
-                              {record.status}
+                              {record.status || 'UNKNOWN'}
                             </span>
                             {record.teacher && (
-                              <span className="text-gray-600">by {record.teacher.user?.name}</span>
+                              <span className="text-gray-600">by {record.teacher.user?.name || 'Teacher'}</span>
                             )}
                           </div>
                         </div>
@@ -635,37 +777,148 @@ const StudentDetail = () => {
 
         {activeTab === 'history' && (
           <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Enrollment History</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Enrollment History</h3>
+              <button 
+                onClick={() => navigate(`/admin/students/${id}/history`)}
+                className="flex items-center space-x-2 text-blue-600 hover:text-blue-800 text-sm font-medium"
+              >
+                <FileText className="h-4 w-4" />
+                <span>View Detailed History</span>
+              </button>
+            </div>
             
-            {academic.classHistory && academic.classHistory.length > 0 ? (
-              <div className="space-y-3">
-                {academic.classHistory.map((enrollment, index) => (
-                  <div key={index} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:border-[#F59E0B] transition-colors">
-                    <div className="flex items-center space-x-4">
-                      <div className="w-12 h-12 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold">
-                        {enrollment.classRoom?.name?.charAt(0) || 'C'}
-                      </div>
-                      <div>
-                        <h4 className="font-medium text-gray-900">{enrollment.classRoom?.name}</h4>
-                        <p className="text-sm text-gray-600">
-                          {enrollment.classRoom?.grade && `Grade ${enrollment.classRoom.grade} • `}
-                          {enrollment.classRoom?.type} • Roll No: {enrollment.rollNumber}
-                        </p>
-                        <p className="text-xs text-gray-500">
-                          {formatDate(enrollment.startDate)} 
-                          {enrollment.endDate && ` to ${formatDate(enrollment.endDate)}`}
-                        </p>
-                      </div>
+            {classHistoryData.length > 0 ? (
+              <div className="space-y-4">
+                {/* Summary Stats */}
+                <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-6">
+                  <div className="bg-blue-50 border border-blue-200 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-blue-800">
+                      {classHistoryData.length}
                     </div>
-                    <div className="text-right">
-                      <div className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        enrollment.isCurrent ? 'bg-green-100 text-green-800' : 'bg-blue-100 text-blue-800'
-                      }`}>
-                        {enrollment.isCurrent ? 'Current' : 'Completed'}
-                      </div>
-                    </div>
+                    <div className="text-sm text-blue-600">Total Enrollments</div>
                   </div>
-                ))}
+                  <div className="bg-green-50 border border-green-200 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-green-800">
+                      {classHistoryData.filter(e => e.isCurrent).length}
+                    </div>
+                    <div className="text-sm text-green-600">Current</div>
+                  </div>
+                  <div className="bg-purple-50 border border-purple-200 rounded-xl p-4 text-center">
+                    <div className="text-2xl font-bold text-purple-800">
+                      {classHistoryData.filter(e => !e.isCurrent).length}
+                    </div>
+                    <div className="text-sm text-purple-600">Completed</div>
+                  </div>
+                </div>
+
+                {/* Timeline */}
+                <div className="relative">
+                  {classHistoryData.map((enrollment, index) => {
+                    const startDate = new Date(enrollment.startDate);
+                    const endDate = enrollment.endDate ? new Date(enrollment.endDate) : new Date();
+                    const duration = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+                    const months = Math.floor(duration / 30);
+
+                    return (
+                      <div key={index} className="relative pb-8">
+                        {/* Timeline Line */}
+                        {index !== classHistoryData.length - 1 && (
+                          <div className="absolute left-6 top-16 bottom-0 w-0.5 bg-gray-200"></div>
+                        )}
+                        
+                        {/* Enrollment Card */}
+                        <div className="flex items-start space-x-4">
+                          {/* Timeline Dot */}
+                          <div className={`w-12 h-12 rounded-full flex items-center justify-center shrink-0 ${
+                            enrollment.isCurrent 
+                              ? 'bg-gradient-to-r from-[#F59E0B] to-[#D97706]' 
+                              : 'bg-gray-300'
+                          }`}>
+                            <School className="h-6 w-6 text-white" />
+                          </div>
+
+                          {/* Card Content */}
+                          <div className="flex-1 bg-gray-50 rounded-xl p-4 border border-gray-200 hover:border-[#F59E0B] transition-colors">
+                            <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between mb-3">
+                              <div>
+                                <h4 className="text-lg font-semibold text-gray-900 flex items-center space-x-2">
+                                  <span>{enrollment.classRoom?.name || 'Unknown Class'}</span>
+                                  {enrollment.isCurrent && (
+                                    <span className="px-2 py-1 bg-green-100 text-green-800 text-xs rounded-full font-semibold">
+                                      Current
+                                    </span>
+                                  )}
+                                </h4>
+                                <div className="flex flex-wrap items-center gap-2 mt-2">
+                                  {enrollment.classRoom?.grade && (
+                                    <span className="text-sm text-gray-600">
+                                      Grade {enrollment.classRoom.grade}
+                                    </span>
+                                  )}
+                                  {enrollment.classRoom?.type && (
+                                    <span className={`px-2 py-1 text-xs rounded-full font-medium ${getClassTypeColor(enrollment.classRoom.type)}`}>
+                                      {enrollment.classRoom.type}
+                                    </span>
+                                  )}
+                                  <span className="px-2 py-1 bg-blue-100 text-blue-800 text-xs rounded-full">
+                                    Roll No: {enrollment.rollNumber || 'N/A'}
+                                  </span>
+                                </div>
+                              </div>
+                              
+                              <div className="mt-2 sm:mt-0 sm:text-right">
+                                <div className="flex items-center text-sm text-gray-600">
+                                  <Clock className="h-4 w-4 mr-1" />
+                                  <span>{months > 0 ? `${months} month${months > 1 ? 's' : ''}` : `${duration} days`}</span>
+                                </div>
+                                {enrollment.classRoom?.teacher && (
+                                  <div className="flex items-center text-sm text-gray-600 mt-1">
+                                    <User className="h-4 w-4 mr-1" />
+                                    <span>{enrollment.classRoom.teacher.user?.name || 'Teacher'}</span>
+                                  </div>
+                                )}
+                              </div>
+                            </div>
+
+                            {/* Dates */}
+                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                              <div className="flex items-center space-x-2 text-gray-600">
+                                <Calendar className="h-4 w-4" />
+                                <div>
+                                  <span className="font-medium">Started:</span>
+                                  <span className="ml-1">{formatDate(enrollment.startDate)}</span>
+                                </div>
+                              </div>
+                              {enrollment.endDate && (
+                                <div className="flex items-center space-x-2 text-gray-600">
+                                  <Calendar className="h-4 w-4" />
+                                  <div>
+                                    <span className="font-medium">Ended:</span>
+                                    <span className="ml-1">{formatDate(enrollment.endDate)}</span>
+                                  </div>
+                                </div>
+                              )}
+                            </div>
+
+                            {/* Promotion/Transfer Info */}
+                            {enrollment.promotedTo && (
+                              <div className="mt-3 pt-3 border-t border-gray-200">
+                                <div className="flex items-start space-x-2">
+                                  <TrendingUp className="h-4 w-4 mt-0.5 text-green-600" />
+                                  <div className="text-sm">
+                                    <span className="font-medium text-gray-900">Promoted to: </span>
+                                    <span className="text-green-600">{enrollment.promotedTo}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
               </div>
             ) : (
               <div className="text-center py-8 text-gray-500">
@@ -685,12 +938,12 @@ const StudentDetail = () => {
                 {parents.map((parent, index) => (
                   <div key={index} className="border border-gray-200 rounded-xl p-4 hover:border-[#F59E0B] transition-colors">
                     <div className="flex items-center space-x-3 mb-3">
-                      <div className="w-12 h-12 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold">
+                      <div className="w-12 h-12 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold">
                         {parent.user?.name?.charAt(0).toUpperCase() || 'P'}
                       </div>
                       <div>
-                        <h4 className="font-medium text-gray-900">{parent.user?.name}</h4>
-                        <p className="text-sm text-gray-600">{parent.user?.email}</p>
+                        <h4 className="font-medium text-gray-900">{parent.user?.name || 'Parent'}</h4>
+                        <p className="text-sm text-gray-600">{parent.user?.email || 'N/A'}</p>
                       </div>
                     </div>
                     <div className="space-y-2 text-sm">

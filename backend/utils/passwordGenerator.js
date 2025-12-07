@@ -70,7 +70,7 @@ function generateStudentEmail(admissionNo, domain = 'khanqahsaifia.com') {
 // -------------------------------
 async function generateAdmissionNumber() {
   const currentYear = new Date().getFullYear();
-  
+
   // Use transaction to ensure atomic update
   const counter = await prisma.$transaction(async (tx) => {
     // Get or create counter for current year
@@ -104,30 +104,73 @@ async function generateAdmissionNumber() {
 }
 
 // -------------------------------
-// 🔢 Generate Roll Number for Class
+// 🔢 Generate Smart Roll Number for Class - Checks ALL enrollments
 // -------------------------------
-async function generateRollNumber(classRoomId) {
-  // Use transaction to ensure atomic update
-  const rollNumber = await prisma.$transaction(async (tx) => {
-    // Get current class
-    const classRoom = await tx.classRoom.findUnique({
-      where: { id: classRoomId }
+async function generateRollNumber(classRoomId, tx = null) {
+  const executeInTransaction = async (transaction) => {
+    console.log(`🎯 Finding available roll number for class: ${classRoomId}`);
+    
+    // Get ALL roll numbers ever used in this class (not just current)
+    const allEnrollments = await transaction.enrollment.findMany({
+      where: { 
+        classRoomId: classRoomId,
+        rollNumber: { not: null }
+      },
+      select: { rollNumber: true },
+      orderBy: { rollNumber: 'asc' }
     });
 
-    if (!classRoom) {
-      throw new Error('Class not found');
+    console.log(`📊 Total enrollments in class: ${allEnrollments.length}`);
+    
+    // Parse all roll numbers as integers
+    const allRollNumbers = allEnrollments
+      .map(e => {
+        const num = Number(e.rollNumber);
+        return isNaN(num) ? null : num;
+      })
+      .filter(num => num !== null && num > 0)
+      .sort((a, b) => a - b);
+
+    console.log(`📝 All roll numbers ever used: [${allRollNumbers.join(', ')}]`);
+    
+    // Find the smallest available number (starting from 1)
+    let nextRollNumber = 1;
+    
+    if (allRollNumbers.length > 0) {
+      // Find gaps in ALL used numbers (not just current)
+      for (let i = 0; i <= Math.max(...allRollNumbers); i++) {
+        if (!allRollNumbers.includes(i + 1)) {
+          nextRollNumber = i + 1;
+          break;
+        }
+      }
+      
+      // If no gaps found (unlikely), use next number after highest
+      if (nextRollNumber === 1) {
+        nextRollNumber = Math.max(...allRollNumbers) + 1;
+      }
     }
-
-    // Increment the roll number
-    const updated = await tx.classRoom.update({
+    
+    console.log(`🎯 Next available roll number: ${nextRollNumber}`);
+    
+    // Update class record for reference
+    await transaction.classRoom.update({
       where: { id: classRoomId },
-      data: { lastRollNumber: { increment: 1 } }
+      data: { 
+        lastRollNumber: nextRollNumber
+      }
     });
+    
+    return nextRollNumber; // Return as integer
+  };
 
-    return updated.lastRollNumber;
-  });
-
-  return rollNumber;
+  if (tx) {
+    return await executeInTransaction(tx);
+  } else {
+    return await prisma.$transaction(async (transaction) => {
+      return await executeInTransaction(transaction);
+    });
+  }
 }
 
 module.exports = {

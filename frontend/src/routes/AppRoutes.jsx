@@ -33,6 +33,7 @@ import StudentProfile from "../pages/student/StudentProfile";
 import AttendanceHistory from "../pages/student/AttendanceHistory";
 import ClassHistory from "../pages/student/ClassHistory";
 import StudentProgress from "../pages/student/StudentProgress";
+import StudentEnrollmentHistory from "../components/StudentEnrollmentHistory";
 
 // Placeholder components for other pages
 const UserManagement = () => <div>User Management</div>;
@@ -61,6 +62,7 @@ const AppRoutes = () => {
         <Route path="teachers" element={<TeacherLists />} />
         <Route path="teachers/:id" element={<TeacherDetail />} />
         <Route path="students/:id" element={<StudentDetail />} />
+        <Route path="students/:id/history" element={<StudentEnrollmentHistory />} />
         <Route path="students" element={<StudentLists/>} />
         <Route path="classes" element={<ClassManagement/>} />
         <Route path="subjects" element={<SubjectManagement/>} />

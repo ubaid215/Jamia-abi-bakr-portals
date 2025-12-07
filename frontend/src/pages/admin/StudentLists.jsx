@@ -9,9 +9,15 @@ import {
   BookOpen,
   Calendar,
   GraduationCap,
-  Users
+  Users,
+  TrendingUp,
+  History,
+  CheckSquare,
+  Square
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
+import BatchPromotionModal from '../../components/BatchPromotionModal';
+import { toast } from 'react-hot-toast';
 
 const StudentLists = () => {
   const { students, fetchStudents, loading } = useAdmin();
@@ -19,25 +25,42 @@ const StudentLists = () => {
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
   const [classFilter, setClassFilter] = useState('ALL');
+  const [selectedStudents, setSelectedStudents] = useState([]);
+  const [showPromotionModal, setShowPromotionModal] = useState(false);
 
   useEffect(() => {
     fetchStudents();
   }, [fetchStudents]);
 
-  
+  // Toggle student selection
+  const toggleStudentSelection = (student) => {
+    setSelectedStudents(prev => {
+      const isSelected = prev.some(s => s.id === student.id);
+      if (isSelected) {
+        return prev.filter(s => s.id !== student.id);
+      } else {
+        return [...prev, student];
+      }
+    });
+  };
+
+  // Select all filtered students
+  const selectAllStudents = () => {
+    if (selectedStudents.length === filteredStudents.length) {
+      setSelectedStudents([]);
+    } else {
+      setSelectedStudents([...filteredStudents]);
+    }
+  };
 
   // Safe filtering with proper data access
   const filteredStudents = Array.isArray(students) 
     ? students.filter(student => {
-        // Handle nested user structure from your controller
         const userName = student.user?.name || student.name || '';
         const userEmail = student.user?.email || student.email || '';
         const userStatus = student.user?.status || student.status || '';
         const admissionNo = student.admissionNo || '';
-        const guardianPhone = student.guardianPhone || '';
-        const address = student.address || '';
         
-        // Handle current enrollment data
         const currentClass = student.currentEnrollment?.classRoom || student.classRoom;
         const className = currentClass?.name || '';
 
@@ -71,31 +94,36 @@ const StudentLists = () => {
     }
   };
 
-  const handleStudentClick = (student) => {
-    // Use the correct ID - try user.id first, then student.id
+  const handleStudentClick = (student, e) => {
+    // Prevent navigation when clicking checkbox
+    if (e.target.type === 'checkbox' || e.target.closest('.selection-checkbox')) {
+      return;
+    }
     const studentId = student.user?.id || student.id;
     navigate(`/admin/students/${studentId}`);
   };
 
-  // Helper function to safely get student data
   const getStudentData = (student) => {
     const currentClass = student.currentEnrollment?.classRoom || student.classRoom;
     
     return {
-      id: student.user?.id || student.id,
-      name: student.user?.name || student.name || 'Unknown Student',
-      email: student.user?.email || student.email || 'No email',
-      status: student.user?.status || student.status || 'UNKNOWN',
-      profileImage: student.user?.profileImage || student.profileImage,
+      id: student.id,
+      user: student.user || { 
+        id: student.id, 
+        name: student.name || 'Unknown Student',
+        email: student.email || 'No email',
+        status: student.status || 'UNKNOWN',
+        profileImage: student.profileImage
+      },
       admissionNo: student.admissionNo || 'N/A',
       guardianName: student.guardianName || 'Not specified',
       guardianPhone: student.guardianPhone || '',
       address: student.address || '',
+      currentEnrollment: student.currentEnrollment || null,
       currentClass: currentClass || null
     };
   };
 
-  // Get unique classes for filter
   const uniqueClasses = Array.isArray(students) 
     ? [...new Set(students
         .map(student => {
@@ -106,19 +134,26 @@ const StudentLists = () => {
       )]
     : [];
 
-  // Mock attendance data
-  const mockAttendance = {
-    // This will be populated with actual student IDs
-  };
+  const mockAttendance = {};
 
   const getStudentAttendance = (studentId) => {
     return mockAttendance[studentId] || { present: 0, total: 0, percentage: 0 };
   };
 
+  const handlePromotionSuccess = () => {
+    setSelectedStudents([]);
+    fetchStudents();
+    toast.success('Students promoted successfully');
+  };
+
+  const isStudentSelected = (studentId) => {
+    return selectedStudents.some(s => s.id === studentId);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-linear-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
+      <div className="bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-[#92400E]">Student Management</h1>
@@ -126,56 +161,96 @@ const StudentLists = () => {
               Manage students and track their progress
             </p>
           </div>
-          <div className="mt-4 sm:mt-0 text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A]">
-            Total Students: {filteredStudents.length}
+          <div className="mt-4 sm:mt-0 flex items-center space-x-3">
+            {selectedStudents.length > 0 && (
+              <button
+                onClick={() => setShowPromotionModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm"
+              >
+                <TrendingUp className="h-4 w-4" />
+                <span>Promote ({selectedStudents.length})</span>
+              </button>
+            )}
+            <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A]">
+              Total: {filteredStudents.length}
+            </div>
           </div>
         </div>
       </div>
 
       {/* Filters and Search */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
-        <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search students by name, email, or admission number..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
-            />
+        <div className="flex flex-col space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search students by name, email, or admission number..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center space-x-2">
+              <Filter className="h-4 w-4 text-gray-400" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
+              >
+                <option value="ALL">All Status</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+                <option value="TERMINATED">Terminated</option>
+              </select>
+            </div>
+
+            {/* Class Filter */}
+            <div className="flex items-center space-x-2">
+              <BookOpen className="h-4 w-4 text-gray-400" />
+              <select
+                value={classFilter}
+                onChange={(e) => setClassFilter(e.target.value)}
+                className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
+              >
+                <option value="ALL">All Classes</option>
+                {uniqueClasses.map(className => (
+                  <option key={className} value={className}>{className}</option>
+                ))}
+              </select>
+            </div>
           </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center space-x-2">
-            <Filter className="h-4 w-4 text-gray-400" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
-            >
-              <option value="ALL">All Status</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-              <option value="TERMINATED">Terminated</option>
-            </select>
-          </div>
-
-          {/* Class Filter */}
-          <div className="flex items-center space-x-2">
-            <BookOpen className="h-4 w-4 text-gray-400" />
-            <select
-              value={classFilter}
-              onChange={(e) => setClassFilter(e.target.value)}
-              className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
-            >
-              <option value="ALL">All Classes</option>
-              {uniqueClasses.map(className => (
-                <option key={className} value={className}>{className}</option>
-              ))}
-            </select>
-          </div>
+          {/* Selection Controls */}
+          {filteredStudents.length > 0 && (
+            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+              <button
+                onClick={selectAllStudents}
+                className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900"
+              >
+                {selectedStudents.length === filteredStudents.length ? (
+                  <CheckSquare className="h-4 w-4 text-[#F59E0B]" />
+                ) : (
+                  <Square className="h-4 w-4" />
+                )}
+                <span>
+                  {selectedStudents.length === filteredStudents.length 
+                    ? 'Deselect All' 
+                    : 'Select All'
+                  }
+                </span>
+              </button>
+              {selectedStudents.length > 0 && (
+                <span className="text-sm text-gray-600">
+                  {selectedStudents.length} student{selectedStudents.length > 1 ? 's' : ''} selected
+                </span>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -216,37 +291,51 @@ const StudentLists = () => {
             const studentData = getStudentData(student);
             const attendance = getStudentAttendance(studentData.id);
             const currentClass = studentData.currentClass;
+            const selected = isStudentSelected(studentData.id);
 
             return (
               <div
                 key={studentData.id}
-                onClick={() => handleStudentClick(student)}
-                className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100 hover:border-[#F59E0B] hover:shadow-xl transition-all duration-200 cursor-pointer group"
+                onClick={(e) => handleStudentClick(student, e)}
+                className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-200 cursor-pointer group ${
+                  selected 
+                    ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-50' 
+                    : 'border-gray-100 hover:border-[#F59E0B] hover:shadow-xl'
+                }`}
               >
-                {/* Student Header */}
+                {/* Selection Checkbox */}
                 <div className="flex items-start justify-between mb-4">
-                  <div className="flex items-center space-x-3">
-                    {studentData.profileImage ? (
+                  <div 
+                    className="selection-checkbox flex items-center space-x-3"
+                    onClick={(e) => e.stopPropagation()}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selected}
+                      onChange={() => toggleStudentSelection(studentData)}
+                      className="w-5 h-5 text-[#F59E0B] border-gray-300 rounded focus:ring-[#F59E0B] cursor-pointer"
+                    />
+                    {studentData.user.profileImage ? (
                       <img 
-                        src={studentData.profileImage} 
-                        alt={studentData.name}
+                        src={studentData.user.profileImage} 
+                        alt={studentData.user.name}
                         className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
                       />
                     ) : (
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base">
-                        {studentData.name.charAt(0).toUpperCase()}
+                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base">
+                        {studentData.user.name.charAt(0).toUpperCase()}
                       </div>
                     )}
                     <div>
                       <h3 className="font-semibold text-gray-900 text-sm sm:text-base group-hover:text-[#92400E]">
-                        {studentData.name}
+                        {studentData.user.name}
                       </h3>
                       <p className="text-gray-500 text-xs sm:text-sm">Admission: {studentData.admissionNo}</p>
                     </div>
                   </div>
                   <div className="flex flex-col items-end space-y-1">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(studentData.status)}`}>
-                      {studentData.status}
+                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(studentData.user.status)}`}>
+                      {studentData.user.status}
                     </span>
                     {currentClass && (
                       <span className={`px-2 py-1 rounded-full text-xs font-medium ${getClassTypeColor(currentClass.type)}`}>
@@ -260,7 +349,7 @@ const StudentLists = () => {
                 <div className="space-y-2 mb-4">
                   <div className="flex items-center space-x-2 text-gray-600 text-xs sm:text-sm">
                     <Mail className="h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="truncate">{studentData.email}</span>
+                    <span className="truncate">{studentData.user.email}</span>
                   </div>
                   {studentData.guardianPhone && (
                     <div className="flex items-center space-x-2 text-gray-600 text-xs sm:text-sm">
@@ -316,10 +405,20 @@ const StudentLists = () => {
                   </div>
                 </div>
 
-                {/* View Details CTA */}
-                <div className="mt-4 pt-3 border-t border-gray-100">
-                  <button className="w-full text-center text-[#F59E0B] hover:text-[#D97706] text-xs sm:text-sm font-medium transition-colors duration-200">
-                    View Full Details →
+                {/* Action Buttons */}
+                <div className="mt-4 pt-3 border-t border-gray-100 flex space-x-2">
+                  <button 
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      navigate(`/admin/students/${studentData.id}/history`);
+                    }}
+                    className="flex-1 flex items-center justify-center space-x-1 text-blue-600 hover:text-blue-800 text-xs font-medium transition-colors duration-200 py-2 border border-blue-200 rounded-lg hover:bg-blue-50"
+                  >
+                    <History className="h-3 w-3" />
+                    <span>History</span>
+                  </button>
+                  <button className="flex-1 text-center text-[#F59E0B] hover:text-[#D97706] text-xs font-medium transition-colors duration-200 py-2 border border-[#FDE68A] rounded-lg hover:bg-[#FFFBEB]">
+                    View Details →
                   </button>
                 </div>
               </div>
@@ -327,6 +426,14 @@ const StudentLists = () => {
           })
         )}
       </div>
+
+      {/* Batch Promotion Modal */}
+      <BatchPromotionModal
+        isOpen={showPromotionModal}
+        onClose={() => setShowPromotionModal(false)}
+        selectedStudents={selectedStudents}
+        onSuccess={handlePromotionSuccess}
+      />
     </div>
   );
 };

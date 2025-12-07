@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+/* eslint-disable no-unused-vars */
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Search, 
@@ -9,17 +10,28 @@ import {
   BookOpen,
   UserCheck,
   School,
-  Clock
+  Clock,
+  Save,
+  X
 } from 'lucide-react';
 import { useSubject } from '../../contexts/SubjectContext';
-import { useClass } from '../../contexts/ClassContext'; // Use ClassContext instead
-import { useAdmin } from '../../contexts/AdminContext'; // Keep for teachers if needed
+import { useClass } from '../../contexts/ClassContext';
+import { useAdmin } from '../../contexts/AdminContext';
 import { toast } from 'react-hot-toast';
 
 const SubjectManagement = () => {
-  const { subjects, fetchSubjects, createSubject, deleteSubject, assignTeacherToSubject, loading } = useSubject();
-  const { classes, fetchClasses } = useClass(); // Get classes from ClassContext
-  const { teachers, fetchTeachers } = useAdmin(); // Get teachers from AdminContext
+  const { 
+    subjects, 
+    fetchSubjects, 
+    createSubject, 
+    updateSubject, 
+    deleteSubject, 
+    assignTeacherToSubject, 
+    loading 
+  } = useSubject();
+  
+  const { classes, fetchClasses } = useClass();
+  const { teachers, fetchTeachers } = useAdmin();
   
   const [searchTerm, setSearchTerm] = useState('');
   const [classFilter, setClassFilter] = useState('ALL');
@@ -27,11 +39,22 @@ const SubjectManagement = () => {
   const [showAssignModal, setShowAssignModal] = useState(false);
   const [selectedSubject, setSelectedSubject] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editSubjectId, setEditSubjectId] = useState(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    code: '',
+    description: '',
+    classRoomId: '',
+    teacherId: ''
+  });
 
   const [newSubject, setNewSubject] = useState({
     name: '',
     code: '',
-    classRoomId: ''
+    description: '',
+    classRoomId: '',
+    teacherId: ''
   });
 
   const [assignmentData, setAssignmentData] = useState({
@@ -39,11 +62,28 @@ const SubjectManagement = () => {
     teacherId: ''
   });
 
+  // Refs to handle click outside
+  const actionMenuRef = useRef(null);
+
   useEffect(() => {
     fetchSubjects();
-    fetchClasses(); // This should work from ClassContext
+    fetchClasses();
     fetchTeachers();
   }, [fetchSubjects, fetchClasses, fetchTeachers]);
+
+  // Handle click outside to close action menu
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
+        setActionMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
 
   // Ensure subjects is always an array before filtering
   const filteredSubjects = Array.isArray(subjects) 
@@ -55,23 +95,41 @@ const SubjectManagement = () => {
       })
     : [];
 
-  // Ensure classes and teachers are always arrays
+  // Filter out teachers without teacherProfile and ensure array
+  const availableTeachers = Array.isArray(teachers) 
+    ? teachers.filter(teacher => teacher.teacherProfile?.id) 
+    : [];
+
+  // Ensure classes is always an array
   const availableClasses = Array.isArray(classes) ? classes : [];
-  const availableTeachers = Array.isArray(teachers) ? teachers : [];
 
   const handleCreateSubject = async (e) => {
     e.preventDefault();
     
     try {
-      await createSubject(newSubject);
+      console.log('Creating subject with data:', newSubject);
+      
+      // Prepare data for backend
+      const dataToSend = {
+        name: newSubject.name,
+        code: newSubject.code || null,
+        description: newSubject.description || null,
+        teacherId: newSubject.teacherId || null,
+        classRoomId: newSubject.classRoomId || null
+      };
+      
+      await createSubject(dataToSend);
       toast.success('Subject created successfully');
       setShowCreateModal(false);
       setNewSubject({
         name: '',
         code: '',
-        classRoomId: ''
+        description: '',
+        classRoomId: '',
+        teacherId: ''
       });
     } catch (error) {
+      console.error('Create subject error:', error);
       toast.error(error.message || 'Failed to create subject');
     }
   };
@@ -80,7 +138,8 @@ const SubjectManagement = () => {
     e.preventDefault();
     
     try {
-      await assignTeacherToSubject(assignmentData.subjectId, assignmentData.teacherId);
+      console.log('Assigning teacher with data:', assignmentData);
+      await assignTeacherToSubject(assignmentData.subjectId, assignmentData.teacherId || null);
       toast.success('Teacher assigned to subject successfully');
       setShowAssignModal(false);
       setAssignmentData({
@@ -88,6 +147,7 @@ const SubjectManagement = () => {
         teacherId: ''
       });
     } catch (error) {
+      console.error('Failed to assign teacher:', error);
       toast.error(error.message || 'Failed to assign teacher');
     }
   };
@@ -104,21 +164,105 @@ const SubjectManagement = () => {
     }
   };
 
+  const openEditMode = (subject) => {
+    setEditSubjectId(subject.id);
+    setEditForm({
+      name: subject.name || '',
+      code: subject.code || '',
+      description: subject.description || '',
+      classRoomId: subject.classRoomId || '',
+      teacherId: subject.teacherId || ''
+    });
+    setIsEditing(true);
+    setActionMenu(null);
+  };
+
+  const cancelEdit = () => {
+    setEditSubjectId(null);
+    setIsEditing(false);
+    setEditForm({
+      name: '',
+      code: '',
+      description: '',
+      classRoomId: '',
+      teacherId: ''
+    });
+  };
+
+  const handleEditChange = (field, value) => {
+    setEditForm(prev => ({
+      ...prev,
+      [field]: value
+    }));
+  };
+
+  const saveEdit = async (subjectId) => {
+    try {
+      console.log('Updating subject:', subjectId, 'with data:', editForm);
+      
+      // Prepare data for backend
+      const dataToSend = {
+        name: editForm.name,
+        code: editForm.code || null,
+        description: editForm.description || null,
+        classRoomId: editForm.classRoomId || null,
+        teacherId: editForm.teacherId || null
+      };
+      
+      await updateSubject(subjectId, dataToSend);
+      toast.success('Subject updated successfully');
+      
+      // Reset edit state
+      setEditSubjectId(null);
+      setIsEditing(false);
+      setEditForm({
+        name: '',
+        code: '',
+        description: '',
+        classRoomId: '',
+        teacherId: ''
+      });
+      
+    } catch (error) {
+      console.error('Update subject error:', error);
+      toast.error(error.message || 'Failed to update subject');
+    }
+  };
+
   const getClassById = (classId) => {
     return availableClasses.find(c => c.id === classId);
   };
 
   const getTeacherById = (teacherId) => {
-    return availableTeachers.find(t => t.id === teacherId);
+    // Find teacher by Teacher.id (teacherProfile.id)
+    return availableTeachers.find(t => t.teacherProfile?.id === teacherId);
   };
 
   const openAssignModal = (subject) => {
+    console.log('Opening assign modal for subject:', subject);
     setSelectedSubject(subject);
+    
+    // Find the correct teacher ID for dropdown
+    let teacherIdForAssign = '';
+    if (subject.teacherId) {
+      const teacher = getTeacherById(subject.teacherId);
+      if (teacher) {
+        teacherIdForAssign = teacher.teacherProfile.id;
+      }
+    }
+    
     setAssignmentData({
       subjectId: subject.id,
-      teacherId: subject.teacherId || ''
+      teacherId: teacherIdForAssign
     });
     setShowAssignModal(true);
+    setActionMenu(null);
+  };
+
+  // Handle action menu click with proper event handling
+  const handleActionMenuClick = (e, subjectId) => {
+    e.stopPropagation(); // Prevent event bubbling
+    setActionMenu(actionMenu === subjectId ? null : subjectId);
   };
 
   return (
@@ -168,7 +312,7 @@ const SubjectManagement = () => {
               <option value="ALL">All Classes</option>
               {availableClasses.map(classItem => (
                 <option key={classItem.id} value={classItem.id}>
-                  {classItem.name}
+                  {classItem.name} {classItem.grade && `- Grade ${classItem.grade}`}
                 </option>
               ))}
             </select>
@@ -199,17 +343,23 @@ const SubjectManagement = () => {
           <div className="col-span-full text-center py-12">
             <BookOpen className="h-16 w-16 mx-auto text-gray-300 mb-4" />
             <h3 className="text-lg font-semibold text-gray-900 mb-2">No subjects found</h3>
-            <p className="text-gray-500 text-sm">Create your first subject to get started</p>
+            <p className="text-gray-500 text-sm">
+              {subjects.length === 0 
+                ? 'Create your first subject to get started' 
+                : 'Try adjusting your search criteria'
+              }
+            </p>
           </div>
         ) : (
           filteredSubjects.map((subject) => {
             const assignedClass = getClassById(subject.classRoomId);
             const assignedTeacher = getTeacherById(subject.teacherId);
+            const isCurrentEditing = editSubjectId === subject.id;
 
             return (
               <div
                 key={subject.id}
-                className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100 hover:border-[#F59E0B] hover:shadow-xl transition-all duration-200"
+                className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100 hover:border-[#F59E0B] hover:shadow-xl transition-all duration-200 relative"
               >
                 {/* Subject Header */}
                 <div className="flex items-start justify-between mb-4">
@@ -217,72 +367,167 @@ const SubjectManagement = () => {
                     <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base">
                       {subject.name?.charAt(0).toUpperCase() || 'S'}
                     </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base">
-                        {subject.name}
-                      </h3>
-                      {subject.code && (
-                        <p className="text-gray-500 text-xs sm:text-sm">
-                          Code: {subject.code}
-                        </p>
+                    <div className="flex-1">
+                      {isCurrentEditing ? (
+                        <div className="space-y-2">
+                          <input
+                            type="text"
+                            value={editForm.name}
+                            onChange={(e) => handleEditChange('name', e.target.value)}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm font-semibold"
+                            placeholder="Subject name"
+                          />
+                          {editForm.code && (
+                            <input
+                              type="text"
+                              value={editForm.code}
+                              onChange={(e) => handleEditChange('code', e.target.value)}
+                              className="w-full px-2 py-1 border border-gray-300 rounded focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-xs"
+                              placeholder="Subject code"
+                            />
+                          )}
+                        </div>
+                      ) : (
+                        <>
+                          <h3 className="font-semibold text-gray-900 text-sm sm:text-base">
+                            {subject.name}
+                          </h3>
+                          {subject.code && (
+                            <p className="text-gray-500 text-xs sm:text-sm">
+                              Code: {subject.code}
+                            </p>
+                          )}
+                        </>
                       )}
                     </div>
                   </div>
-                  <div className="relative">
-                    <button
-                      onClick={() => setActionMenu(subject.id)}
-                      className="p-1 hover:bg-gray-100 rounded-lg"
-                    >
-                      <MoreVertical className="h-4 w-4 text-gray-400" />
-                    </button>
-                    {actionMenu === subject.id && (
-                      <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-32">
-                        <button
-                          onClick={() => openAssignModal(subject)}
-                          className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                  
+                  {!isCurrentEditing && (
+                    <div className="relative">
+                      <button
+                        onClick={(e) => handleActionMenuClick(e, subject.id)}
+                        className="p-1 hover:bg-gray-100 rounded-lg z-20 relative"
+                      >
+                        <MoreVertical className="h-4 w-4 text-gray-400" />
+                      </button>
+                      {actionMenu === subject.id && (
+                        <div 
+                          ref={actionMenuRef}
+                          className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-32"
                         >
-                          <UserCheck className="h-3 w-3 text-blue-600" />
-                          <span>Assign Teacher</span>
-                        </button>
-                        <button
-                          onClick={() => {/* Edit functionality */}}
-                          className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                        >
-                          <Edit className="h-3 w-3 text-gray-600" />
-                          <span>Edit</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteSubject(subject.id)}
-                          className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span>Delete</span>
-                        </button>
-                      </div>
-                    )}
-                  </div>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openAssignModal(subject);
+                            }}
+                            className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                          >
+                            <UserCheck className="h-3 w-3 text-blue-600" />
+                            <span>Assign Teacher</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              openEditMode(subject);
+                            }}
+                            className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
+                          >
+                            <Edit className="h-3 w-3 text-gray-600" />
+                            <span>Edit</span>
+                          </button>
+                          <button
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteSubject(subject.id);
+                            }}
+                            className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                          >
+                            <Trash2 className="h-3 w-3" />
+                            <span>Delete</span>
+                          </button>
+                        </div>
+                      )}
+                    </div>
+                  )}
                 </div>
 
                 {/* Class Assignment */}
-                {assignedClass && (
-                  <div className="mb-3">
+                <div className="mb-3">
+                  {isCurrentEditing ? (
+                    <div className="space-y-2">
+                      <select
+                        value={editForm.classRoomId}
+                        onChange={(e) => handleEditChange('classRoomId', e.target.value)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent"
+                      >
+                        <option value="">No class assigned</option>
+                        {availableClasses.map(classItem => (
+                          <option key={classItem.id} value={classItem.id}>
+                            {classItem.name} {classItem.grade && `- Grade ${classItem.grade}`}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : assignedClass ? (
                     <div className="flex items-center space-x-2 text-xs text-gray-600">
                       <School className="h-3 w-3" />
                       <span className="font-medium">{assignedClass.name}</span>
+                      {assignedClass.grade && (
+                        <span className="text-gray-500">(Grade {assignedClass.grade})</span>
+                      )}
                     </div>
+                  ) : (
+                    <div className="text-xs text-gray-500 italic">Not assigned to any class</div>
+                  )}
+                </div>
+
+                {/* Description */}
+                {subject.description && !isCurrentEditing && (
+                  <div className="mb-3">
+                    <p className="text-xs text-gray-600 line-clamp-2">{subject.description}</p>
+                  </div>
+                )}
+
+                {isCurrentEditing && (
+                  <div className="mb-3">
+                    <textarea
+                      value={editForm.description}
+                      onChange={(e) => handleEditChange('description', e.target.value)}
+                      rows="2"
+                      className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent"
+                      placeholder="Subject description (optional)"
+                    />
                   </div>
                 )}
 
                 {/* Assigned Teacher */}
                 <div className="border-t border-gray-100 pt-3">
-                  {assignedTeacher ? (
+                  {isCurrentEditing ? (
+                    <div className="space-y-2">
+                      <select
+                        value={editForm.teacherId}
+                        onChange={(e) => handleEditChange('teacherId', e.target.value)}
+                        className="w-full px-2 py-1 border border-gray-300 rounded text-xs focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent"
+                      >
+                        <option value="">No teacher assigned</option>
+                        {availableTeachers.map(teacher => (
+                          <option 
+                            key={teacher.teacherProfile.id} 
+                            value={teacher.teacherProfile.id}
+                          >
+                            {teacher.name} - {teacher.teacherProfile?.specialization || 'Teacher'}
+                          </option>
+                        ))}
+                      </select>
+                    </div>
+                  ) : assignedTeacher ? (
                     <div className="flex items-center justify-between">
                       <div className="flex items-center space-x-2">
                         <div className="w-6 h-6 bg-blue-100 rounded-full flex items-center justify-center text-blue-600 text-xs font-semibold">
-                          {assignedTeacher.user?.name?.charAt(0).toUpperCase()}
+                          {assignedTeacher.name?.charAt(0).toUpperCase()}
                         </div>
                         <span className="text-xs font-medium text-gray-700">
-                          {assignedTeacher.user?.name}
+                          {assignedTeacher.name}
                         </span>
                       </div>
                       <UserCheck className="h-3 w-3 text-green-500" />
@@ -298,13 +543,35 @@ const SubjectManagement = () => {
                   )}
                 </div>
 
-                {/* Created Date */}
-                <div className="mt-3 pt-3 border-t border-gray-100">
-                  <div className="flex items-center space-x-1 text-gray-500 text-xs">
-                    <Clock className="h-3 w-3" />
-                    <span>Created {new Date(subject.createdAt).toLocaleDateString()}</span>
+                {/* Edit Actions */}
+                {isCurrentEditing && (
+                  <div className="mt-3 pt-3 border-t border-gray-100 flex justify-end space-x-2">
+                    <button
+                      onClick={cancelEdit}
+                      className="px-2 py-1 border border-gray-300 text-gray-700 rounded text-xs hover:bg-gray-50 transition-colors flex items-center space-x-1"
+                    >
+                      <X className="h-3 w-3" />
+                      <span>Cancel</span>
+                    </button>
+                    <button
+                      onClick={() => saveEdit(subject.id)}
+                      className="px-2 py-1 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded text-xs hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 flex items-center space-x-1"
+                    >
+                      <Save className="h-3 w-3" />
+                      <span>Save</span>
+                    </button>
                   </div>
-                </div>
+                )}
+
+                {/* Created Date */}
+                {!isCurrentEditing && (
+                  <div className="mt-3 pt-3 border-t border-gray-100">
+                    <div className="flex items-center space-x-1 text-gray-500 text-xs">
+                      <Clock className="h-3 w-3" />
+                      <span>Created {new Date(subject.createdAt).toLocaleDateString()}</span>
+                    </div>
+                  </div>
+                )}
               </div>
             );
           })
@@ -337,7 +604,7 @@ const SubjectManagement = () => {
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Subject Code
+                  Subject Code (Optional)
                 </label>
                 <input
                   type="text"
@@ -347,20 +614,54 @@ const SubjectManagement = () => {
                   placeholder="e.g., QUR-101, ARB-102"
                 />
               </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Description (Optional)
+                </label>
+                <textarea
+                  value={newSubject.description}
+                  onChange={(e) => setNewSubject({...newSubject, description: e.target.value})}
+                  rows="3"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
+                  placeholder="Subject description..."
+                />
+              </div>
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
-                  Assign to Class
+                  Assign to Class (Optional)
                 </label>
                 <select
                   value={newSubject.classRoomId}
                   onChange={(e) => setNewSubject({...newSubject, classRoomId: e.target.value})}
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
                 >
-                  <option value="">Select a class (optional)</option>
+                  <option value="">No class assigned</option>
                   {availableClasses.map(classItem => (
                     <option key={classItem.id} value={classItem.id}>
-                      {classItem.name} - {classItem.grade} {classItem.section}
+                      {classItem.name} {classItem.grade && `- Grade ${classItem.grade}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">
+                  Assign Teacher (Optional)
+                </label>
+                <select
+                  value={newSubject.teacherId}
+                  onChange={(e) => setNewSubject({...newSubject, teacherId: e.target.value})}
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
+                >
+                  <option value="">No teacher assigned</option>
+                  {availableTeachers.map(teacher => (
+                    <option 
+                      key={teacher.teacherProfile.id} 
+                      value={teacher.teacherProfile.id}
+                    >
+                      {teacher.name} - {teacher.teacherProfile?.specialization || 'Teacher'}
                     </option>
                   ))}
                 </select>
@@ -411,8 +712,11 @@ const SubjectManagement = () => {
                 >
                   <option value="">Choose a teacher</option>
                   {availableTeachers.map(teacher => (
-                    <option key={teacher.id} value={teacher.id}>
-                      {teacher.user?.name} - {teacher.specialization}
+                    <option 
+                      key={teacher.teacherProfile.id} 
+                      value={teacher.teacherProfile.id}
+                    >
+                      {teacher.name} - {teacher.teacherProfile?.specialization || 'Teacher'}
                     </option>
                   ))}
                 </select>
@@ -439,13 +743,7 @@ const SubjectManagement = () => {
         </div>
       )}
 
-      {/* Close action menu when clicking outside */}
-      {actionMenu && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setActionMenu(null)}
-        />
-      )}
+      {/* Note: Removed the separate click outside div since we're using refs now */}
     </div>
   );
 };

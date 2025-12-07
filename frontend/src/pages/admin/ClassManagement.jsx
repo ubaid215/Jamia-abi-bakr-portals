@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Plus, 
   Search, 
@@ -31,6 +31,11 @@ const ClassManagement = () => {
   const [selectedClass, setSelectedClass] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
   const [assignLoading, setAssignLoading] = useState(false);
+  const [createLoading, setCreateLoading] = useState(false);
+  const [editLoading, setEditLoading] = useState(false);
+
+  // Ref to handle click outside
+  const actionMenuRef = useRef(null);
 
   const [newClass, setNewClass] = useState({
     name: '',
@@ -60,22 +65,48 @@ const ClassManagement = () => {
     fetchTeachers();
   }, [fetchClasses, fetchTeachers]);
 
+  // Handle click outside to close action menu
+  useEffect(() => {
+    const handleClickOutside = (event) => {
+      if (actionMenuRef.current && !actionMenuRef.current.contains(event.target)) {
+        setActionMenu(null);
+      }
+    };
+
+    document.addEventListener('mousedown', handleClickOutside);
+    return () => {
+      document.removeEventListener('mousedown', handleClickOutside);
+    };
+  }, []);
+
   // Debug: Check data structure
   useEffect(() => {
     if (classes && classes.length > 0) {
+      console.log('=== CLASSES DATA STRUCTURE ===');
       console.log('Classes data:', classes);
+      // Show first class structure
+      if (classes[0]) {
+        console.log('First class structure:', {
+          id: classes[0].id,
+          name: classes[0].name,
+          teacherId: classes[0].teacherId,
+          teacher: classes[0].teacher,
+          _count: classes[0]._count
+        });
+      }
     }
     if (teachers && teachers.length > 0) {
+      console.log('=== TEACHERS DATA STRUCTURE ===');
       console.log('Teachers data:', teachers);
-      // Debug teacher structure
-      teachers.forEach((teacher, index) => {
-        console.log(`Teacher ${index + 1}:`, {
-          id: teacher.id, // User ID
-          name: teacher.name,
-          teacherProfile: teacher.teacherProfile, // Teacher table data
-          teacherProfileId: teacher.teacherProfile?.id // Teacher ID we need
+      // Show first teacher structure
+      if (teachers[0]) {
+        console.log('First teacher structure:', {
+          id: teachers[0].id, // User ID
+          name: teachers[0].name,
+          teacherProfile: teachers[0].teacherProfile,
+          teacherProfileId: teachers[0].teacherProfile?.id // Teacher table ID
         });
-      });
+      }
     }
   }, [classes, teachers]);
 
@@ -104,9 +135,20 @@ const ClassManagement = () => {
 
   const handleCreateClass = async (e) => {
     e.preventDefault();
+    setCreateLoading(true);
     
     try {
-      await createClass(newClass);
+      console.log('=== CREATE CLASS DEBUG ===');
+      console.log('Creating class with data:', newClass);
+      
+      // Make sure we're sending the correct teacherId format
+      const dataToSend = {
+        ...newClass,
+        // If teacherId is empty string, set it to null
+        teacherId: newClass.teacherId || null
+      };
+      
+      await createClass(dataToSend);
       toast.success('Class created successfully');
       setShowCreateModal(false);
       setNewClass({
@@ -118,20 +160,61 @@ const ClassManagement = () => {
         teacherId: ''
       });
     } catch (error) {
+      console.error('Create class error:', error);
       toast.error(error.message || 'Failed to create class');
+    } finally {
+      setCreateLoading(false);
     }
   };
 
   const handleEditClass = async (e) => {
     e.preventDefault();
+    setEditLoading(true);
     
     try {
-      await updateClass(selectedClass.id, editClass);
+      console.log('=== EDIT CLASS DEBUG START ===');
+      console.log('1. Selected class ID:', selectedClass?.id);
+      console.log('2. Selected class raw data:', selectedClass);
+      console.log('3. Edit form data:', editClass);
+      
+      // Prepare data exactly as backend expects
+      const dataToSend = {
+        name: editClass.name,
+        grade: editClass.grade || null,
+        section: editClass.section || null,
+        type: editClass.type,
+        description: editClass.description || null,
+        teacherId: editClass.teacherId || null // Send null if empty
+      };
+      
+      console.log('4. Data being sent to backend:', dataToSend);
+      
+      // Call your context method
+      const result = await updateClass(selectedClass.id, dataToSend);
+      console.log('5. Update result:', result);
+      
+      console.log('=== EDIT CLASS DEBUG END ===');
+      
       toast.success('Class updated successfully');
       setShowEditModal(false);
       setSelectedClass(null);
+      
+      // Refresh the classes list
+      await fetchClasses();
+      
     } catch (error) {
-      toast.error(error.message || 'Failed to update class');
+      console.error('=== EDIT CLASS ERROR ===');
+      console.error('Error details:', error);
+      console.error('Error message:', error.message);
+      console.error('Error response:', error.response?.data);
+      
+      if (error.response?.data?.error) {
+        toast.error(`Failed: ${error.response.data.error}`);
+      } else {
+        toast.error(error.message || 'Failed to update class');
+      }
+    } finally {
+      setEditLoading(false);
     }
   };
 
@@ -142,16 +225,8 @@ const ClassManagement = () => {
     try {
       console.log('=== ASSIGN TEACHER DEBUG ===');
       console.log('Assignment data:', assignmentData);
-      console.log('Selected teacher ID:', assignmentData.teacherId);
       
-      // Log the actual teacher object being assigned
-      const selectedTeacher = availableTeachers.find(t => 
-        t.teacherProfile?.id === assignmentData.teacherId
-      );
-      console.log('Selected teacher object:', selectedTeacher);
-      console.log('=== END DEBUG ===');
-      
-      await assignTeacherToClass(assignmentData.classId, assignmentData.teacherId);
+      await assignTeacherToClass(assignmentData.classId, assignmentData.teacherId || null);
       
       toast.success('Teacher assigned to class successfully');
       setShowAssignModal(false);
@@ -181,13 +256,24 @@ const ClassManagement = () => {
 
   const openEditModal = (classItem) => {
     setSelectedClass(classItem);
+    
+    // Get the correct teacher ID for the select dropdown
+    let teacherIdForEdit = '';
+    if (classItem.teacherId) {
+      // Find the teacher in availableTeachers that matches this teacherId
+      const teacher = availableTeachers.find(t => t.teacherProfile?.id === classItem.teacherId);
+      if (teacher) {
+        teacherIdForEdit = teacher.teacherProfile.id;
+      }
+    }
+    
     setEditClass({
       name: classItem.name || '',
       grade: classItem.grade || '',
       section: classItem.section || '',
       type: classItem.type || 'REGULAR',
       description: classItem.description || '',
-      teacherId: classItem.teacherId || ''
+      teacherId: teacherIdForEdit
     });
     setShowEditModal(true);
     setActionMenu(null);
@@ -195,9 +281,19 @@ const ClassManagement = () => {
 
   const openAssignModal = (classItem) => {
     setSelectedClass(classItem);
+    
+    // Get the correct teacher ID for the select dropdown
+    let teacherIdForAssign = '';
+    if (classItem.teacherId) {
+      const teacher = availableTeachers.find(t => t.teacherProfile?.id === classItem.teacherId);
+      if (teacher) {
+        teacherIdForAssign = teacher.teacherProfile.id;
+      }
+    }
+    
     setAssignmentData({
       classId: classItem.id,
-      teacherId: classItem.teacherId || ''
+      teacherId: teacherIdForAssign
     });
     setShowAssignModal(true);
     setActionMenu(null);
@@ -242,7 +338,6 @@ const ClassManagement = () => {
   const getStudentCount = (classItem) => {
     return classItem._count?.enrollments || 
            classItem.enrollments?.length || 
-           classItem.lastRollNumber || 
            0;
   };
 
@@ -253,10 +348,38 @@ const ClassManagement = () => {
            0;
   };
 
+  // Get teacher name from class data structure
+  const getTeacherFromClass = (classItem) => {
+    // If class has teacher object populated
+    if (classItem.teacher) {
+      return classItem.teacher.user?.name || 'Unknown Teacher';
+    }
+    
+    // Fallback to teacherId lookup
+    return getTeacherName(classItem.teacherId);
+  };
+
+  // Get teacher profile from class data structure
+  const getTeacherProfileFromClass = (classItem) => {
+    // If class has teacher object populated
+    if (classItem.teacher) {
+      return classItem.teacher.user;
+    }
+    
+    // Fallback to teacherId lookup
+    return getTeacherData(classItem.teacherId)?.user;
+  };
+
+  // Handle action menu click with proper event handling
+  const handleActionMenuClick = (e, classId) => {
+    e.stopPropagation();
+    setActionMenu(actionMenu === classId ? null : classId);
+  };
+
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-linear-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
+      <div className="bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-[#92400E]">Class Management</h1>
@@ -266,7 +389,7 @@ const ClassManagement = () => {
           </div>
           <button
             onClick={() => setShowCreateModal(true)}
-            className="mt-4 sm:mt-0 flex items-center justify-center space-x-2 bg-linear-to-r from-[#F59E0B] to-[#D97706] text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm sm:text-base"
+            className="mt-4 sm:mt-0 flex items-center justify-center space-x-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white px-4 sm:px-6 py-2 sm:py-3 rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm sm:text-base"
           >
             <Plus className="h-4 w-4 sm:h-5 sm:w-5" />
             <span>Add Class</span>
@@ -340,8 +463,8 @@ const ClassManagement = () => {
           </div>
         ) : (
           filteredClasses.map((classItem) => {
-            const teacher = getTeacherData(classItem.teacherId);
-            const teacherName = getTeacherName(classItem.teacherId);
+            const teacherName = getTeacherFromClass(classItem);
+            const teacherProfile = getTeacherProfileFromClass(classItem);
             const studentCount = getStudentCount(classItem);
             const subjectCount = getSubjectCount(classItem);
 
@@ -353,7 +476,7 @@ const ClassManagement = () => {
                 {/* Class Header */}
                 <div className="flex items-start justify-between mb-4">
                   <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base">
+                    <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base">
                       {classItem.name?.charAt(0).toUpperCase() || 'C'}
                     </div>
                     <div>
@@ -367,29 +490,41 @@ const ClassManagement = () => {
                   </div>
                   <div className="relative">
                     <button
-                      onClick={() => setActionMenu(actionMenu === classItem.id ? null : classItem.id)}
+                      onClick={(e) => handleActionMenuClick(e, classItem.id)}
                       className="p-1 hover:bg-gray-100 rounded-lg"
                     >
                       <MoreVertical className="h-4 w-4 text-gray-400" />
                     </button>
                     {actionMenu === classItem.id && (
-                      <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-32">
+                      <div 
+                        ref={actionMenuRef}
+                        className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-50 w-32"
+                      >
                         <button
-                          onClick={() => openAssignModal(classItem)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openAssignModal(classItem);
+                          }}
                           className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
                         >
                           <UserCheck className="h-3 w-3 text-blue-600" />
                           <span>Assign Teacher</span>
                         </button>
                         <button
-                          onClick={() => openEditModal(classItem)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            openEditModal(classItem);
+                          }}
                           className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
                         >
                           <Edit className="h-3 w-3 text-gray-600" />
                           <span>Edit</span>
                         </button>
                         <button
-                          onClick={() => handleDeleteClass(classItem.id)}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeleteClass(classItem.id);
+                          }}
                           className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
                         >
                           <Trash2 className="h-3 w-3" />
@@ -427,13 +562,13 @@ const ClassManagement = () => {
 
                 {/* Assigned Teacher */}
                 <div className="border-t border-gray-100 pt-3">
-                  {teacher ? (
+                  {teacherName ? (
                     <div className="space-y-2">
                       <div className="flex items-center justify-between">
                         <div className="flex items-center space-x-2">
-                          {teacher.user?.profileImage ? (
+                          {teacherProfile?.profileImage ? (
                             <img 
-                              src={teacher.user.profileImage} 
+                              src={teacherProfile.profileImage} 
                               alt={teacherName}
                               className="w-6 h-6 rounded-full object-cover"
                             />
@@ -448,8 +583,9 @@ const ClassManagement = () => {
                         </div>
                         <UserCheck className="h-3 w-3 text-green-500" />
                       </div>
-                      {teacher.teacherProfile?.specialization && (
-                        <p className="text-xs text-gray-500">{teacher.teacherProfile.specialization}</p>
+                      {/* Show specialization if available */}
+                      {classItem.teacher?.specialization && (
+                        <p className="text-xs text-gray-500">{classItem.teacher.specialization}</p>
                       )}
                     </div>
                   ) : (
@@ -476,7 +612,7 @@ const ClassManagement = () => {
         )}
       </div>
 
-      {/* Create Class Modal - FIXED teacher options */}
+      {/* Create Class Modal */}
       {showCreateModal && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -588,10 +724,10 @@ const ClassManagement = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 bg-linear-to-r from-[#F59E0B] to-[#D97706] text-white rounded-lg hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 disabled:opacity-50 text-sm font-medium"
+                  disabled={createLoading}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-lg hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 disabled:opacity-50 text-sm font-medium"
                 >
-                  {loading ? 'Creating...' : 'Create Class'}
+                  {createLoading ? 'Creating...' : 'Create Class'}
                 </button>
               </div>
             </form>
@@ -599,7 +735,7 @@ const ClassManagement = () => {
         </div>
       )}
 
-      {/* Edit Class Modal - FIXED teacher options */}
+      {/* Edit Class Modal */}
       {showEditModal && selectedClass && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md max-h-[90vh] overflow-y-auto">
@@ -643,7 +779,7 @@ const ClassManagement = () => {
                     type="text"
                     value={editClass.section}
                     onChange={(e) => setEditClass({...editClass, section: e.target.value})}
-                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
+                  className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
                   />
                 </div>
               </div>
@@ -707,10 +843,10 @@ const ClassManagement = () => {
                 </button>
                 <button
                   type="submit"
-                  disabled={loading}
-                  className="flex-1 px-4 py-2 bg-linear-to-r from-[#F59E0B] to-[#D97706] text-white rounded-lg hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 disabled:opacity-50 text-sm font-medium"
+                  disabled={editLoading}
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-lg hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 disabled:opacity-50 text-sm font-medium"
                 >
-                  {loading ? 'Updating...' : 'Update Class'}
+                  {editLoading ? 'Updating...' : 'Update Class'}
                 </button>
               </div>
             </form>
@@ -718,7 +854,7 @@ const ClassManagement = () => {
         </div>
       )}
 
-      {/* Assign Teacher Modal - FIXED teacher options */}
+      {/* Assign Teacher Modal */}
       {showAssignModal && selectedClass && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center p-4 z-50">
           <div className="bg-white rounded-2xl w-full max-w-md">
@@ -762,9 +898,9 @@ const ClassManagement = () => {
                     );
                     return selectedTeacher ? (
                       <div className="flex items-center space-x-3">
-                        {selectedTeacher.user?.profileImage ? (
+                        {selectedTeacher.profileImage ? (
                           <img 
-                            src={selectedTeacher.user.profileImage} 
+                            src={selectedTeacher.profileImage} 
                             alt={selectedTeacher.name}
                             className="w-10 h-10 rounded-full object-cover"
                           />
@@ -807,7 +943,7 @@ const ClassManagement = () => {
                 <button
                   type="submit"
                   disabled={assignLoading}
-                  className="flex-1 px-4 py-2 bg-linear-to-r from-[#F59E0B] to-[#D97706] text-white rounded-lg hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 disabled:opacity-50 text-sm font-medium"
+                  className="flex-1 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-lg hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 disabled:opacity-50 text-sm font-medium"
                 >
                   {assignLoading ? 'Assigning...' : 'Assign Teacher'}
                 </button>
@@ -815,14 +951,6 @@ const ClassManagement = () => {
             </form>
           </div>
         </div>
-      )}
-
-      {/* Close action menu when clicking outside */}
-      {actionMenu && (
-        <div 
-          className="fixed inset-0 z-40" 
-          onClick={() => setActionMenu(null)}
-        />
       )}
     </div>
   );

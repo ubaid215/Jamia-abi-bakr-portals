@@ -60,6 +60,18 @@ const adminService = {
     return response.data;
   },
 
+  // Get student enrollment history (Admin-specific with enhanced data)
+getStudentEnrollmentHistory: async (studentId, filters = {}) => {
+  const response = await api.get(`/admin/students/${studentId}/enrollment-history`, { params: filters });
+  return response.data;
+},
+
+// Batch promote students
+promoteStudents: async (promotionData) => {
+  const response = await api.post('/admin/students/promote', promotionData);
+  return response.data;
+},
+
   registerStudent: async (studentData) => {
     const response = await api.post('/enrollment/students', studentData);
     return response.data;
@@ -115,11 +127,6 @@ const adminService = {
 
   transferStudent: async (transferData) => {
     const response = await api.post('/enrollment/transfer-student', transferData);
-    return response.data;
-  },
-
-  getStudentEnrollmentHistory: async (studentId) => {
-    const response = await api.get(`/enrollment/student-history/${studentId}`);
     return response.data;
   },
 

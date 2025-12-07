@@ -1,6 +1,6 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../db/prismaClient');
-const { generateStrongPassword, generateEmail } = require('../utils/passwordGenerator');
+const { generateStrongPassword, generateEmail, generateRollNumber } = require('../utils/passwordGenerator');
 
 const saltRounds = 12;
 
@@ -8,9 +8,9 @@ class AdminController {
   // Create new admin (Super Admin only)
   async createAdmin(req, res) {
     try {
-      const { 
-        name, 
-        phone 
+      const {
+        name,
+        phone
       } = req.body;
 
       if (!name) {
@@ -474,13 +474,13 @@ class AdminController {
       // Filter by class room if specified
       let filteredStudents = students;
       if (classRoomId) {
-        filteredStudents = students.filter(student => 
+        filteredStudents = students.filter(student =>
           student.studentProfile?.currentEnrollment?.classRoomId === classRoomId
         );
       }
 
       if (classType) {
-        filteredStudents = filteredStudents.filter(student => 
+        filteredStudents = filteredStudents.filter(student =>
           student.studentProfile?.currentEnrollment?.classRoom?.type === classType
         );
       }
@@ -611,7 +611,7 @@ class AdminController {
       let progressData = {};
       if (student.currentEnrollment) {
         const classType = student.currentEnrollment.classRoom.type;
-        
+
         if (classType === 'HIFZ') {
           const hifzProgress = await prisma.hifzProgress.findMany({
             where: { studentId: student.id },
@@ -700,10 +700,10 @@ class AdminController {
 
       // Calculate attendance statistics
       const totalAttendance = student.attendances.length;
-      const presentAttendance = student.attendances.filter(a => 
+      const presentAttendance = student.attendances.filter(a =>
         a.status === 'PRESENT' || a.status === 'LATE'
       ).length;
-      const attendancePercentage = totalAttendance > 0 ? 
+      const attendancePercentage = totalAttendance > 0 ?
         (presentAttendance / totalAttendance) * 100 : 0;
 
       res.json({
@@ -845,7 +845,7 @@ class AdminController {
   async getAttendanceOverview(req, res) {
     try {
       const { startDate, endDate, classRoomId } = req.query;
-      
+
       // Default to last 30 days if no date range provided
       const defaultEndDate = new Date();
       const defaultStartDate = new Date();
@@ -902,7 +902,7 @@ class AdminController {
 
       // Calculate attendance percentage
       const totalPossibleAttendance = enrolledStudents * Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-      const overallAttendancePercentage = totalPossibleAttendance > 0 
+      const overallAttendancePercentage = totalPossibleAttendance > 0
         ? ((presentCount + lateCount) / totalPossibleAttendance * 100).toFixed(2)
         : 0;
 
@@ -1005,7 +1005,7 @@ class AdminController {
   async getAttendanceTrends(req, res) {
     try {
       const { days = 30, classRoomId } = req.query;
-      
+
       const endDate = new Date();
       const startDate = new Date();
       startDate.setDate(startDate.getDate() - parseInt(days));
@@ -1057,7 +1057,7 @@ class AdminController {
       const trends = dateRange.map(date => {
         const dayAttendance = dailyAttendance.find(d => d.date.toISOString().split('T')[0] === date);
         const dayPresent = dailyPresent.find(d => d.date.toISOString().split('T')[0] === date);
-        
+
         const total = dayAttendance?._count.id || 0;
         const present = dayPresent?._count.id || 0;
         const percentage = total > 0 ? (present / total * 100).toFixed(2) : 0;
@@ -1089,7 +1089,7 @@ class AdminController {
   async getClassAttendanceComparison(req, res) {
     try {
       const { startDate, endDate } = req.query;
-      
+
       const start = startDate ? new Date(startDate) : new Date();
       start.setDate(start.getDate() - 30);
       const end = endDate ? new Date(endDate) : new Date();
@@ -1159,80 +1159,447 @@ class AdminController {
     }
   }
 
-  // Get all users (for user management)
-async getUsers(req, res) {
-  try {
-    const { role, search, page = 1, limit = 50 } = req.query;
-    const skip = (page - 1) * limit;
+  // Get student enrollment history (Admin access)
+  async getStudentEnrollmentHistory(req, res) {
+    try {
+      const { studentId } = req.params; // This is actually a userId
+      const { page = 1, limit = 10 } = req.query;
+      const skip = (page - 1) * limit;
 
-    // Build where clause
-    const where = {};
-    if (role && role !== 'ALL') {
-      where.role = role;
-    }
-    if (search) {
-      where.OR = [
-        { name: { contains: search, mode: 'insensitive' } },
-        { email: { contains: search, mode: 'insensitive' } },
-        { 
-          studentProfile: {
-            admissionNo: { contains: search, mode: 'insensitive' }
+      console.log('Getting enrollment history for ID:', studentId);
+
+      // First, try to find the student by userId (since the frontend is passing user ID)
+      const student = await prisma.student.findFirst({
+        where: {
+          userId: studentId
+        },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              profileImage: true,
+              status: true
+            }
           }
         }
-      ];
-    }
+      });
 
-    const [users, total] = await Promise.all([
-      prisma.user.findMany({
-        where,
-        skip: parseInt(skip),
-        take: parseInt(limit),
-        include: {
-          teacherProfile: {
-            select: {
-              id: true,
-              specialization: true,
-              experience: true
+      // If not found by userId, try by student.id
+      if (!student) {
+        const studentById = await prisma.student.findUnique({
+          where: { id: studentId },
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                profileImage: true,
+                status: true
+              }
             }
-          },
-          studentProfile: {
-            select: {
-              id: true,
-              admissionNo: true,
-              currentEnrollment: {
-                include: {
-                  classRoom: {
-                    select: {
-                      id: true,
-                      name: true,
-                      grade: true
+          }
+        });
+
+        if (studentById) {
+          student = studentById;
+        }
+      }
+
+      if (!student) {
+        console.error('Student not found with ID:', studentId);
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      console.log('Found student:', student.id, 'User ID:', student.userId);
+
+      const [enrollments, total] = await Promise.all([
+        prisma.enrollment.findMany({
+          where: { studentId: student.id }, // Use the student.id, not the user.id
+          skip: parseInt(skip),
+          take: parseInt(limit),
+          include: {
+            classRoom: {
+              select: {
+                id: true,
+                name: true,
+                grade: true,
+                section: true,
+                type: true,
+                teacher: {
+                  include: {
+                    user: {
+                      select: {
+                        name: true
+                      }
                     }
                   }
                 }
               }
             }
+          },
+          orderBy: { startDate: 'desc' }
+        }),
+        prisma.enrollment.count({
+          where: { studentId: student.id } // Use the student.id
+        })
+      ]);
+
+      // Calculate duration for each enrollment
+      const enrichedEnrollments = enrollments.map(enrollment => {
+        const startDate = new Date(enrollment.startDate);
+        const endDate = enrollment.endDate ? new Date(enrollment.endDate) : new Date();
+        const durationDays = Math.ceil((endDate - startDate) / (1000 * 60 * 60 * 24));
+        const durationMonths = Math.floor(durationDays / 30);
+
+        return {
+          ...enrollment,
+          duration: {
+            days: durationDays,
+            months: durationMonths,
+            formatted: durationMonths > 0
+              ? `${durationMonths} month${durationMonths > 1 ? 's' : ''}`
+              : `${durationDays} day${durationDays > 1 ? 's' : ''}`
           }
+        };
+      });
+
+      res.json({
+        student: {
+          id: student.id,
+          userId: student.userId, // Include userId for reference
+          name: student.user.name,
+          email: student.user.email,
+          admissionNo: student.admissionNo,
+          profileImage: student.user.profileImage,
+          status: student.user.status
         },
-        orderBy: { createdAt: 'desc' }
-      }),
-      prisma.user.count({ where })
-    ]);
+        enrollments: enrichedEnrollments,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        },
+        summary: {
+          totalEnrollments: total,
+          currentEnrollment: enrichedEnrollments.find(e => e.isCurrent),
+          totalClassesAttended: total
+        }
+      });
 
-    res.json({
-      users,
-      pagination: {
-        page: parseInt(page),
-        limit: parseInt(limit),
-        total,
-        pages: Math.ceil(total / limit)
-      }
-    });
-
-  } catch (error) {
-    console.error('Get users error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+    } catch (error) {
+      console.error('Get student enrollment history error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
-}
+
+  // -------------------------------
+  // 🎓 Promote multiple students to new class (with roll number recycling)
+  // -------------------------------
+  async promoteStudents(req, res) {
+    try {
+      const { studentIds, newClassRoomId, reason } = req.body;
+
+      console.log("🔵 [PROMOTE START] Incoming request payload:", {
+        studentIds,
+        newClassRoomId,
+        reason
+      });
+
+      if (!Array.isArray(studentIds) || studentIds.length === 0) {
+        console.log("❌ Invalid studentIds array");
+        return res.status(400).json({ error: 'Student IDs array is required' });
+      }
+
+      if (!newClassRoomId) {
+        console.log("❌ No classRoomId provided");
+        return res.status(400).json({ error: 'New class room ID is required' });
+      }
+
+      console.log("📩 Promote request validated. Starting transaction...");
+
+      const results = await prisma.$transaction(async (tx) => {
+
+        console.log("🔄 TX: Fetching target class room...");
+        const newClassRoom = await tx.classRoom.findUnique({
+          where: { id: newClassRoomId }
+        });
+
+        if (!newClassRoom) {
+          console.log("❌ TX: Target class not found:", newClassRoomId);
+          throw new Error("New class room not found");
+        }
+
+        console.log("🟢 TX: Target class found:", newClassRoom.name);
+
+        const promotedStudents = [];
+        const errors = [];
+
+        console.log("🔁 TX: Looping students for promotion...");
+
+        for (const studentRequestedId of studentIds) {
+          console.log("\n------------------------------------------");
+          console.log(`➡️ TX: Processing student ID: ${studentRequestedId}`);
+          console.log("------------------------------------------");
+
+          try {
+            console.log("🔍 TX: Finding student by userId...");
+            let student = await tx.student.findFirst({
+              where: { userId: studentRequestedId },
+              include: {
+                user: { select: { name: true, email: true } },
+                currentEnrollment: {
+                  include: {
+                    classRoom: {
+                      select: {
+                        id: true,
+                        name: true
+                      }
+                    }
+                  }
+                }
+              }
+            });
+
+            if (!student) {
+              console.log("🔍 TX: Not found by userId. Trying student.id...");
+              student = await tx.student.findUnique({
+                where: { id: studentRequestedId },
+                include: {
+                  user: { select: { name: true, email: true } },
+                  currentEnrollment: {
+                    include: {
+                      classRoom: {
+                        select: {
+                          id: true,
+                          name: true
+                        }
+                      }
+                    }
+                  }
+                }
+              });
+            }
+
+            if (!student) {
+              console.log("❌ TX: Student not found:", studentRequestedId);
+              errors.push({ studentId: studentRequestedId, error: "Student not found" });
+              continue;
+            }
+
+            console.log("🟢 TX: Student found:", {
+              studentId: student.id,
+              userId: student.userId,
+              name: student.user.name,
+              currentClass: student?.currentEnrollment?.classRoom?.name,
+              currentRollNumber: student?.currentEnrollment?.rollNumber
+            });
+
+            if (!student.currentEnrollment) {
+              console.log("❌ TX: Student has no current enrollment");
+              errors.push({
+                studentId: student.id,
+                studentName: student.user.name,
+                error: "Student has no active enrollment"
+              });
+              continue;
+            }
+
+            if (student.currentEnrollment.classRoomId === newClassRoomId) {
+              console.log("⚠️ TX: Student already in target class");
+              errors.push({
+                studentId: student.id,
+                studentName: student.user.name,
+                error: "Already enrolled in target class"
+              });
+              continue;
+            }
+
+            // Save the old roll number before ending enrollment
+            const oldRollNumber = student.currentEnrollment.rollNumber;
+            const oldClassRoomId = student.currentEnrollment.classRoomId;
+
+            console.log("🔚 TX: Ending current enrollment:", {
+              enrollmentId: student.currentEnrollment.id,
+              currentClass: student.currentEnrollment.classRoom.name,
+              oldRollNumber: oldRollNumber
+            });
+
+            await tx.enrollment.update({
+              where: { id: student.currentEnrollment.id },
+              data: {
+                isCurrent: false,
+                endDate: new Date(),
+                promotedTo: reason || `Promoted to ${newClassRoom.name}`
+              }
+            });
+
+            // Make old roll number available for reuse
+            console.log(`♻️ TX: Roll number ${oldRollNumber} is now available in class ${oldClassRoomId}`);
+
+            console.log("🔢 TX: Generating new roll number for target class...");
+            const newRollNumber = await generateRollNumber(newClassRoomId, tx);
+
+            console.log(`🎯 TX: New roll number generated → ${newRollNumber}`);
+            console.log(`🔢 TX: Roll number type: ${typeof newRollNumber}, value: ${newRollNumber}`);
+
+            // Ensure roll number is an integer
+            const rollNumberInt = Number(newRollNumber);
+            if (isNaN(rollNumberInt) || rollNumberInt <= 0) {
+              throw new Error(`Invalid roll number generated: ${newRollNumber}`);
+            }
+
+            console.log(`🆕 TX: Creating new enrollment with roll number: ${rollNumberInt} (as integer)...`);
+
+            const newEnrollment = await tx.enrollment.create({
+              data: {
+                studentId: student.id,
+                classRoomId: newClassRoomId,
+                rollNumber: rollNumberInt, // Pass as integer
+                isCurrent: true,
+                startDate: new Date()
+              }
+            });
+
+            console.log("🟦 TX: New enrollment created:", {
+              enrollmentId: newEnrollment.id,
+              studentId: student.id,
+              newRollNumber: rollNumberInt
+            });
+
+            console.log("🔗 TX: Updating student's currentEnrollmentId...");
+            await tx.student.update({
+              where: { id: student.id },
+              data: { currentEnrollmentId: newEnrollment.id }
+            });
+
+            console.log("🟢 TX: Student promotion completed!");
+
+            promotedStudents.push({
+              studentId: student.id,
+              studentName: student.user.name,
+              fromClass: student.currentEnrollment.classRoom.name,
+              toClass: newClassRoom.name,
+              oldRollNumber: oldRollNumber,
+              newRollNumber: rollNumberInt
+            });
+
+          } catch (err) {
+            console.log("❌ TX ERROR for student:", studentRequestedId, err.message, err.stack);
+            errors.push({
+              studentId: studentRequestedId,
+              error: err.message,
+              details: err.stack
+            });
+          }
+        }
+
+        console.log("🔵 TX Completed all students.");
+        console.log("📊 TX Summary:", {
+          promoted: promotedStudents.length,
+          errors: errors.length
+        });
+
+        return { promotedStudents, errors };
+      });
+
+      console.log("🟢 Transaction finished successfully, sending response...");
+
+      return res.json({
+        message: `Successfully promoted ${results.promotedStudents.length} student(s)`,
+        promoted: results.promotedStudents,
+        errors: results.errors,
+        summary: {
+          total: studentIds.length,
+          successful: results.promotedStudents.length,
+          failed: results.errors.length,
+        }
+      });
+
+    } catch (error) {
+      console.error("❗ GLOBAL Promote Students Error:", error);
+      return res.status(500).json({ error: error.message });
+    }
+  }
+
+
+  // Get all users (for user management)
+  async getUsers(req, res) {
+    try {
+      const { role, search, page = 1, limit = 50 } = req.query;
+      const skip = (page - 1) * limit;
+
+      // Build where clause
+      const where = {};
+      if (role && role !== 'ALL') {
+        where.role = role;
+      }
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { email: { contains: search, mode: 'insensitive' } },
+          {
+            studentProfile: {
+              admissionNo: { contains: search, mode: 'insensitive' }
+            }
+          }
+        ];
+      }
+
+      const [users, total] = await Promise.all([
+        prisma.user.findMany({
+          where,
+          skip: parseInt(skip),
+          take: parseInt(limit),
+          include: {
+            teacherProfile: {
+              select: {
+                id: true,
+                specialization: true,
+                experience: true
+              }
+            },
+            studentProfile: {
+              select: {
+                id: true,
+                admissionNo: true,
+                currentEnrollment: {
+                  include: {
+                    classRoom: {
+                      select: {
+                        id: true,
+                        name: true,
+                        grade: true
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          orderBy: { createdAt: 'desc' }
+        }),
+        prisma.user.count({ where })
+      ]);
+
+      res.json({
+        users,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / limit)
+        }
+      });
+
+    } catch (error) {
+      console.error('Get users error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
 
   // Delete user (Super Admin only)
   async deleteUser(req, res) {
@@ -1281,7 +1648,7 @@ async getUsers(req, res) {
   // Helper methods for progress calculations
   async calculateHifzCompletion(studentId) {
     const totalLinesInQuran = 540;
-    
+
     const progressRecords = await prisma.hifzProgress.findMany({
       where: { studentId },
       orderBy: { date: 'asc' }

@@ -109,8 +109,7 @@ class EnrollmentController {
     }
   }
 
-  // Register student with auto-generated email/password and sequential admission number
-  async registerStudent(req, res) {
+   async registerStudent(req, res) {
     try {
       const { 
         name, 
@@ -190,20 +189,53 @@ class EnrollmentController {
         
         // If classRoomId provided, create enrollment with roll number
         if (classRoomId) {
-          // Generate roll number for this class
-          const rollNumber = await generateRollNumber(classRoomId);
+          // Check if class exists
+          const classRoom = await tx.classRoom.findUnique({
+            where: { id: classRoomId }
+          });
+
+          if (!classRoom) {
+            throw new Error('Class room not found');
+          }
+
+          // Generate roll number using the same transaction to avoid race conditions
+          const rollNumber = await generateRollNumber(classRoomId, tx);
           
-          enrollment = await tx.enrollment.create({
-            data: {
-              studentId: studentProfile.id,
+          // Check if this roll number already exists in the class (safety check)
+          const existingEnrollment = await tx.enrollment.findFirst({
+            where: {
               classRoomId,
-              rollNumber,
-              isCurrent: true
-            },
-            include: {
-              classRoom: true
+              rollNumber
             }
           });
+
+          if (existingEnrollment) {
+            // If duplicate exists (shouldn't happen with proper transaction), regenerate
+            const newRollNumber = await generateRollNumber(classRoomId, tx);
+            enrollment = await tx.enrollment.create({
+              data: {
+                studentId: studentProfile.id,
+                classRoomId,
+                rollNumber: newRollNumber,
+                isCurrent: true
+              },
+              include: {
+                classRoom: true
+              }
+            });
+          } else {
+            enrollment = await tx.enrollment.create({
+              data: {
+                studentId: studentProfile.id,
+                classRoomId,
+                rollNumber,
+                isCurrent: true
+              },
+              include: {
+                classRoom: true
+              }
+            });
+          }
 
           // Set as current enrollment
           await tx.student.update({
@@ -245,6 +277,11 @@ class EnrollmentController {
 
     } catch (error) {
       console.error('Register student error:', error);
+      if (error.code === 'P2002') {
+        return res.status(400).json({ 
+          error: 'Duplicate roll number detected. Please try again.' 
+        });
+      }
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -372,8 +409,8 @@ class EnrollmentController {
           });
         }
 
-        // Generate roll number for this class
-        const rollNumber = await generateRollNumber(classRoomId);
+        // Generate roll number for this class using the same transaction
+        const rollNumber = await generateRollNumber(classRoomId, tx);
         
         // Create enrollment
         const enrollment = await tx.enrollment.create({
@@ -424,110 +461,135 @@ class EnrollmentController {
 
     } catch (error) {
       console.error('Enroll student error:', error);
+      if (error.code === 'P2002') {
+        return res.status(400).json({ 
+          error: 'Duplicate roll number detected. Please try again.' 
+        });
+      }
       res.status(500).json({ error: error.message || 'Internal server error' });
     }
   }
 
   // Transfer student to different class
   async transferStudent(req, res) {
-    try {
-      const { studentId, newClassRoomId } = req.body;
+  try {
+    const { studentId, newClassRoomId, reason } = req.body;  // ✅ Add reason parameter
 
-      if (!studentId || !newClassRoomId) {
-        return res.status(400).json({ error: 'Student ID and New Class Room ID are required' });
+    if (!studentId || !newClassRoomId) {
+      return res.status(400).json({ 
+        error: 'Student ID and New Class Room ID are required' 
+      });
+    }
+
+    const result = await prisma.$transaction(async (tx) => {
+      // Check if student exists and has current enrollment
+      const student = await tx.student.findUnique({
+        where: { id: studentId },
+        include: {
+          currentEnrollment: {
+            include: {
+              classRoom: true  // ✅ Include classRoom to check current class
+            }
+          }
+        }
+      });
+
+      if (!student) {
+        throw new Error('Student not found');
       }
 
-      const result = await prisma.$transaction(async (tx) => {
-        // Check if student exists and has current enrollment
-        const student = await tx.student.findUnique({
-          where: { id: studentId },
-          include: {
-            currentEnrollment: true
-          }
-        });
+      if (!student.currentEnrollment) {
+        throw new Error('Student is not currently enrolled in any class');
+      }
 
-        if (!student) {
-          throw new Error('Student not found');
+      // ✅ Check if transferring to same class
+      if (student.currentEnrollment.classRoomId === newClassRoomId) {
+        throw new Error('Student is already enrolled in this class');
+      }
+
+      // Check if new class exists
+      const newClassRoom = await tx.classRoom.findUnique({
+        where: { id: newClassRoomId }
+      });
+
+      if (!newClassRoom) {
+        throw new Error('New class room not found');
+      }
+
+      // End current enrollment (PRESERVES HISTORY)
+      await tx.enrollment.update({
+        where: { id: student.currentEnrollment.id },
+        data: { 
+          isCurrent: false, 
+          endDate: new Date(),
+          promotedTo: reason || `Transferred to ${newClassRoom.name}`  // ✅ Use custom reason
         }
+      });
 
-        if (!student.currentEnrollment) {
-          throw new Error('Student is not currently enrolled in any class');
-        }
-
-        // Check if new class exists
-        const newClassRoom = await tx.classRoom.findUnique({
-          where: { id: newClassRoomId }
-        });
-
-        if (!newClassRoom) {
-          throw new Error('New class room not found');
-        }
-
-        // End current enrollment
-        await tx.enrollment.update({
-          where: { id: student.currentEnrollment.id },
-          data: { 
-            isCurrent: false, 
-            endDate: new Date(),
-            promotedTo: `Transferred to ${newClassRoom.name}`
-          }
-        });
-
-        // Generate roll number for new class
-        const rollNumber = await generateRollNumber(newClassRoomId);
-        
-        // Create new enrollment
-        const newEnrollment = await tx.enrollment.create({
-          data: {
-            studentId,
-            classRoomId: newClassRoomId,
-            rollNumber,
-            isCurrent: true,
-            startDate: new Date()
+      // ✅ Generate roll number with transaction
+      const rollNumber = await generateRollNumber(newClassRoomId, tx);
+      
+      // Create new enrollment (CREATES NEW RECORD)
+      const newEnrollment = await tx.enrollment.create({
+        data: {
+          studentId,
+          classRoomId: newClassRoomId,
+          rollNumber,
+          isCurrent: true,
+          startDate: new Date()
+        },
+        include: {
+          classRoom: {
+            select: {
+              id: true,
+              name: true,
+              grade: true,
+              section: true,
+              type: true
+            }
           },
-          include: {
-            classRoom: {
-              select: {
-                id: true,
-                name: true,
-                grade: true,
-                section: true,
-                type: true
-              }
-            },
-            student: {
-              include: {
-                user: {
-                  select: {
-                    id: true,
-                    name: true,
-                    email: true
-                  }
+          student: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
                 }
               }
             }
           }
-        });
-
-        // Update student's current enrollment
-        await tx.student.update({
-          where: { id: studentId },
-          data: { currentEnrollmentId: newEnrollment.id }
-        });
-
-        return newEnrollment;
+        }
       });
 
-      res.json({
-        message: 'Student transferred successfully',
-        enrollment: result
+      // Update student's current enrollment pointer
+      await tx.student.update({
+        where: { id: studentId },
+        data: { currentEnrollmentId: newEnrollment.id }
       });
 
-    } catch (error) {
-      console.error('Transfer student error:', error);
-      res.status(500).json({ error: error.message || 'Internal server error' });
-    }
+      return {
+        newEnrollment,
+        previousClass: student.currentEnrollment.classRoom.name,
+        newClass: newClassRoom.name
+      };
+    });
+
+    res.json({
+      message: 'Student transferred successfully',
+      transfer: {
+        from: result.previousClass,
+        to: result.newClass,
+        transferDate: new Date()
+      },
+      enrollment: result.newEnrollment
+    });
+
+  } catch (error) {
+    console.error('Transfer student error:', error);
+    res.status(500).json({ error: error.message || 'Internal server error' });
   }
+}
 
   // Get student enrollment history
   async getStudentEnrollmentHistory(req, res) {
