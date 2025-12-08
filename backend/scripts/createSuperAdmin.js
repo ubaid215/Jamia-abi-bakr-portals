@@ -7,10 +7,10 @@ const saltRounds = 12;
 async function createSuperAdmin() {
   try {
     const superAdminData = {
-      email: 'superadmin@madrasa.com',
-      password: 'SuperAdmin123!', // Change this in production
-      name: 'System Super Admin',
-      phone: '+923001234567',
+      email: 'Jamia.official@khanqahsaifia.com',
+      password: 'Khanqah$555', 
+      name: 'Jamia Head Officer',
+      phone: '+923217677062',
       role: 'SUPER_ADMIN'
     };
 

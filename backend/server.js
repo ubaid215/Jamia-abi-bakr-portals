@@ -22,27 +22,35 @@ const app = express();
 const PORT = process.env.PORT || 5000;
 
 // ============================================
-// CORS Configuration
+// CORS Configuration for Production
 // ============================================
 const allowedOrigins = [
-  'http://localhost:5173',          
+  'http://localhost:5173',
   'http://localhost:3000',
-  'https://your-production-domain.com'
+  'https://jamia.khanqahsaifia.com',
+  'https://www.jamia.khanqahsaifia.com',
+  'https://api.jamia.khanqahsaifia.com',
+  'https://www.api.jamia.khanqahsaifia.com'
 ];
 
 const corsOptions = {
   origin: (origin, callback) => {
-    // Allow requests with no origin (mobile apps, Postman, etc.)
-    if (!origin || allowedOrigins.includes(origin)) {
+    // Allow requests with no origin (server-to-server, mobile apps, etc.)
+    if (!origin) {
+      return callback(null, true);
+    }
+    
+    if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
+      console.warn(`Blocked by CORS: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'PATCH', 'OPTIONS'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
-  exposedHeaders: ['Content-Disposition'], // For file downloads
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'Accept', 'X-CSRF-Token', 'DNT', 'If-Modified-Since', 'Cache-Control', 'Range'],
+  exposedHeaders: ['Content-Disposition', 'Content-Length', 'Content-Range', 'Authorization'],
   maxAge: 86400 // 24 hours
 };
 
@@ -50,25 +58,59 @@ const corsOptions = {
 // Middleware
 // ============================================
 
-// Security with relaxed CSP for images
+// Security headers with production CSP
 app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+      connectSrc: ["'self'", "https://api.jamia.khanqahsaifia.com"],
+      fontSrc: ["'self'"],
+      objectSrc: ["'none'"],
+      mediaSrc: ["'self'"],
+      frameSrc: ["'none'"]
+    }
+  },
   crossOriginResourcePolicy: { policy: "cross-origin" },
-  contentSecurityPolicy: false // Disable CSP for development
+  hsts: {
+    maxAge: 31536000,
+    includeSubDomains: true,
+    preload: true
+  }
 }));
+
+// Trust proxy (important for Nginx reverse proxy)
+app.set('trust proxy', true);
 
 // Apply CORS middleware to all routes
 app.use(cors(corsOptions));
 
-app.use(morgan('combined'));
-app.use(express.json({ limit: '10mb' }));
-app.use(express.urlencoded({ extended: true, limit: '10mb' }));
+// Request logging
+if (process.env.NODE_ENV === 'production') {
+  app.use(morgan('combined'));
+} else {
+  app.use(morgan('dev'));
+}
+
+app.use(express.json({ limit: '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
 // ============================================
 // Static File Serving
 // ============================================
 
 // Serve uploaded files
-app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
+const uploadsPath = path.join(__dirname, 'uploads');
+app.use('/uploads', express.static(uploadsPath, {
+  maxAge: '1y',
+  setHeaders: (res, path) => {
+    if (path.endsWith('.pdf')) {
+      res.setHeader('Content-Type', 'application/pdf');
+    }
+  }
+}));
 
 // ============================================
 // API Routes
@@ -96,6 +138,8 @@ app.get('/health', (req, res) => {
     timestamp: new Date().toISOString(),
     environment: process.env.NODE_ENV || 'development',
     version: '1.0.0',
+    uptime: process.uptime(),
+    memory: process.memoryUsage(),
     services: {
       auth: 'active',
       enrollment: 'active',
@@ -113,6 +157,7 @@ app.get('/api', (req, res) => {
   res.json({
     message: 'Khanqah Saifia Management System API',
     version: '1.0.0',
+    environment: process.env.NODE_ENV || 'development',
     endpoints: {
       auth: '/api/auth',
       enrollment: '/api/enrollment',
@@ -127,10 +172,11 @@ app.get('/api', (req, res) => {
       hifzReports: '/api/hifz-reports'
     },
     publicEndpoints: {
-      profileImages: '/api/admin/public/profile-image/:userId'
+      profileImages: '/uploads/profile-images/',
+      documents: '/uploads/documents/'
     },
     staticFiles: '/uploads',
-    documentation: 'https://docs.khanqahsaifia.com'
+    documentation: 'https://jamia.khanqahsaifia.com/docs'
   });
 });
 
@@ -164,7 +210,7 @@ app.use((error, req, res, next) => {
   if (error.code === 'LIMIT_FILE_SIZE') {
     return res.status(400).json({
       error: 'File too large',
-      message: 'Maximum file size is 5MB'
+      message: 'Maximum file size is 50MB'
     });
   }
 
@@ -195,24 +241,31 @@ app.use((error, req, res, next) => {
   }
   
   // Generic error
-  res.status(error.status || 500).json({ 
-    error: error.message || 'Internal server error',
-    ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
-  });
+  const status = error.status || 500;
+  const response = {
+    error: error.message || 'Internal server error'
+  };
+  
+  // Add stack trace in development only
+  if (process.env.NODE_ENV !== 'production') {
+    response.stack = error.stack;
+  }
+  
+  res.status(status).json(response);
 });
 
 // ============================================
 // Start Server
 // ============================================
-app.listen(PORT, () => {
+const server = app.listen(PORT, '127.0.0.1', () => {
   console.log('\n🚀 ============================================');
   console.log(`   Khanqah Saifia Management System API`);
   console.log('============================================ 🚀\n');
-  console.log(`🌐 Server: http://localhost:${PORT}`);
+  console.log(`🌐 Server: http://127.0.0.1:${PORT}`);
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health: http://localhost:${PORT}/health`);
-  console.log(`📚 API Info: http://localhost:${PORT}/api`);
-  console.log(`📁 Static Files: http://localhost:${PORT}/uploads`);
+  console.log(`🔗 Health: http://127.0.0.1:${PORT}/health`);
+  console.log(`📚 API Info: http://127.0.0.1:${PORT}/api`);
+  console.log(`📁 Static Files: http://127.0.0.1:${PORT}/uploads`);
   console.log('\n📋 Available API Endpoints:');
   console.log(`   🔐 Auth:       /api/auth`);
   console.log(`   🎓 Enrollment: /api/enrollment`);
@@ -225,8 +278,18 @@ app.listen(PORT, () => {
   console.log(`   👨‍🎓 Students:   /api/students`);
   console.log(`   📈 Reports:    /api/hifz-reports`);
   console.log('\n🔓 Public Endpoints:');
-  console.log(`   🖼️  Profile Images: /api/admin/public/profile-image/:userId`);
+  console.log(`   🖼️  Profile Images: /uploads/profile-images/`);
+  console.log(`   📄 Documents: /uploads/documents/`);
   console.log('\n✅ Server ready to accept connections\n');
+});
+
+// Handle graceful shutdown
+process.on('SIGTERM', () => {
+  console.log('SIGTERM signal received: closing HTTP server');
+  server.close(() => {
+    console.log('HTTP server closed');
+    process.exit(0);
+  });
 });
 
 module.exports = app;
