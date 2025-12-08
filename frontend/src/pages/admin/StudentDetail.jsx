@@ -1,50 +1,39 @@
-/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
-  ArrowLeft, 
-  Mail, 
-  Phone, 
-  MapPin, 
-  Calendar, 
-  BookOpen, 
-  GraduationCap,
-  Users,
-  UserCheck,
-  UserX,
-  Edit,
-  Download,
-  Shield,
-  Heart,
-  AlertTriangle,
-  BarChart3,
-  FileText,
-  Home,
-  Award,
-  History,
-  Clock,
-  User,
-  School,
-  TrendingUp
+  ArrowLeft, Mail, Phone, MapPin, Calendar, BookOpen, GraduationCap,
+  Users, UserCheck, UserX, Edit, Download, Shield, Heart, AlertTriangle,
+  BarChart3, FileText, Home, Award, History, Clock, User, School,
+  TrendingUp, Upload, File, Eye, Trash2, CheckCircle, XCircle, Plus
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { toast } from 'react-hot-toast';
+import axios from 'axios';
 
 const StudentDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { students, fetchStudents, updateUserStatus, loading, getStudentDetails } = useAdmin();
+  const { students, fetchStudents, updateUserStatus, loading } = useAdmin();
   const [student, setStudent] = useState(null);
   const [studentDetails, setStudentDetails] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [detailsLoading, setDetailsLoading] = useState(false);
+  const [showImageModal, setShowImageModal] = useState(false);
+  const [selectedImage, setSelectedImage] = useState(null);
+  const [uploadingImage, setUploadingImage] = useState(false);
+  const [showUploadModal, setShowUploadModal] = useState(false);
+  const [uploadingDoc, setUploadingDoc] = useState(false);
+  const [selectedDocType, setSelectedDocType] = useState('');
+  const [uploadFile, setUploadFile] = useState(null);
 
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+
+  // Fetch student data
   useEffect(() => {
     const loadStudentData = async () => {
       try {
         setDetailsLoading(true);
         
-        // First, try to find student in existing list
         const foundStudent = students.find(s => 
           s.id === id || s.user?.id === id || s.userId === id
         );
@@ -55,12 +44,14 @@ const StudentDetail = () => {
           await fetchStudents();
         }
 
-        // Fetch detailed student information
-        if (getStudentDetails) {
-          const details = await getStudentDetails(id);
-          console.log('Student details from API:', details);
-          setStudentDetails(details);
-        }
+        // Fetch detailed student information with documents
+        const token = localStorage.getItem('authToken');
+        const response = await axios.get(`${API_BASE_URL}/admin/students/${id}/documents`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        
+        console.log('Student details with documents:', response.data);
+        setStudentDetails(response.data);
       } catch (error) {
         console.error('Error loading student data:', error);
         toast.error('Failed to load student details');
@@ -70,21 +61,17 @@ const StudentDetail = () => {
     };
 
     loadStudentData();
-  }, [id, students, fetchStudents, getStudentDetails]);
+  }, [id, students, fetchStudents]);
 
-  // Helper function to normalize student data from different sources
+  // Helper functions
   const normalizeStudentData = (data) => {
     if (!data) return null;
     
-    // If data already has the expected structure (from getStudentDetails)
     if (data.student && data.profile && data.academic) {
-      console.log('Using getStudentDetails structure');
       return data;
     }
     
-    // If data has studentProfile (from getAllStudents or similar)
     if (data.studentProfile) {
-      console.log('Normalizing studentProfile structure');
       return {
         student: {
           id: data.id,
@@ -95,91 +82,225 @@ const StudentDetail = () => {
           status: data.status,
           createdAt: data.createdAt
         },
-        profile: {
-          ...data.studentProfile,
-          dob: data.studentProfile.dob,
-          gender: data.studentProfile.gender,
-          placeOfBirth: data.studentProfile.placeOfBirth,
-          nationality: data.studentProfile.nationality,
-          religion: data.studentProfile.religion,
-          bloodGroup: data.studentProfile.bloodGroup,
-          address: data.studentProfile.address,
-          city: data.studentProfile.city,
-          province: data.studentProfile.province,
-          postalCode: data.studentProfile.postalCode,
-          guardianName: data.studentProfile.guardianName,
-          guardianRelation: data.studentProfile.guardianRelation,
-          guardianPhone: data.studentProfile.guardianPhone,
-          guardianEmail: data.studentProfile.guardianEmail,
-          guardianOccupation: data.studentProfile.guardianOccupation,
-          guardianCNIC: data.studentProfile.guardianCNIC,
-          medicalConditions: data.studentProfile.medicalConditions,
-          allergies: data.studentProfile.allergies,
-          medication: data.studentProfile.medication,
-          admissionNo: data.studentProfile.admissionNo
-        },
+        profile: { ...data.studentProfile },
         academic: {
           currentEnrollment: data.studentProfile.currentEnrollment || {},
           attendance: data.studentProfile.attendance || {},
-          classHistory: data.studentProfile.classHistory || [],
-          subjects: data.studentProfile.subjects || []
+          classHistory: data.studentProfile.classHistory || []
         },
         progress: data.studentProfile.progress || {},
         parents: data.studentProfile.parents || []
       };
     }
     
-    // Fallback for other structures
-    console.log('Using fallback structure');
     return {
-      student: data.user || {
-        id: data.id,
-        name: data.name,
-        email: data.email,
-        status: data.status,
-        phone: data.phone,
-        profileImage: data.profileImage,
-        createdAt: data.createdAt
-      },
+      student: data.user || data,
       profile: data,
       academic: {
         currentEnrollment: data.currentEnrollment || {},
         attendance: data.attendance || {},
-        classHistory: data.classHistory || [],
-        subjects: data.subjects || []
+        classHistory: data.classHistory || []
       },
       progress: data.progress || {},
       parents: data.parents || []
     };
   };
 
-  // Helper function to safely get student data
   const getStudentData = () => {
-    if (studentDetails) {
-      return normalizeStudentData(studentDetails);
-    }
-    
-    if (student) {
-      return normalizeStudentData(student);
-    }
-    
+    if (studentDetails) return normalizeStudentData(studentDetails);
+    if (student) return normalizeStudentData(student);
     return null;
   };
 
   const currentStudent = getStudentData();
+
+  // Get profile image URL
+  const getProfileImageUrl = () => {
+    if (!currentStudent?.student) return null;
+    
+    const userId = currentStudent.student.id;
+    const profileImage = currentStudent.student.profileImage || studentDetails?.student?.profileImage;
+    
+    if (!profileImage) return null;
+    
+    if (profileImage.startsWith('http') || profileImage.startsWith('data:')) {
+      return profileImage;
+    }
+    
+    return `${API_BASE_URL}/admin/public/profile-image/${userId}`;
+  };
+
+  // Handle profile image upload
+  const handleProfileImageUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    // Validate file type
+    if (!file.type.startsWith('image/')) {
+      toast.error('Please select an image file');
+      return;
+    }
+
+    // Validate file size (5MB)
+    if (file.size > 5 * 1024 * 1024) {
+      toast.error('Image size should be less than 5MB');
+      return;
+    }
+
+    try {
+      setUploadingImage(true);
+      
+      const formData = new FormData();
+      formData.append('profileImage', file);
+
+      const token = localStorage.getItem('authToken');
+      const response = await axios.put(
+        `${API_BASE_URL}/admin/students/${id}/profile-image`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      toast.success('Profile image updated successfully');
+      
+      // Refresh student data
+      await fetchStudents();
+      window.location.reload(); // Reload to show new image
+    } catch (error) {
+      console.error('Error uploading image:', error);
+      toast.error(error.response?.data?.error || 'Failed to upload image');
+    } finally {
+      setUploadingImage(false);
+    }
+  };
+
+  // Handle document upload
+  const handleDocumentUpload = async () => {
+    if (!selectedDocType || !uploadFile) {
+      toast.error('Please select document type and file');
+      return;
+    }
+
+    try {
+      setUploadingDoc(true);
+      
+      const formData = new FormData();
+      formData.append('document', uploadFile);
+      formData.append('type', selectedDocType);
+
+      const token = localStorage.getItem('authToken');
+      const response = await axios.post(
+        `${API_BASE_URL}/admin/students/${id}/documents`,
+        formData,
+        {
+          headers: {
+            'Content-Type': 'multipart/form-data',
+            Authorization: `Bearer ${token}`
+          }
+        }
+      );
+
+      toast.success('Document uploaded successfully');
+      setShowUploadModal(false);
+      setUploadFile(null);
+      setSelectedDocType('');
+      
+      // Refresh student data
+      const docsResponse = await axios.get(`${API_BASE_URL}/admin/students/${id}/documents`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setStudentDetails(docsResponse.data);
+    } catch (error) {
+      console.error('Error uploading document:', error);
+      toast.error(error.response?.data?.error || 'Failed to upload document');
+    } finally {
+      setUploadingDoc(false);
+    }
+  };
+
+  // Handle document download
+  const handleDocumentDownload = async (type, index = null) => {
+    try {
+      const token = localStorage.getItem('authToken');
+      let url = `${API_BASE_URL}/admin/students/${id}/documents/${type}`;
+      if (index !== null) {
+        url += `?index=${index}`;
+      }
+
+      const response = await axios.get(url, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      });
+
+      // Create download link
+      const blob = new Blob([response.data]);
+      const downloadUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = downloadUrl;
+      
+      // Get filename from Content-Disposition header
+      const contentDisposition = response.headers['content-disposition'];
+      const filename = contentDisposition
+        ? contentDisposition.split('filename=')[1]?.replace(/"/g, '')
+        : `${type}-${Date.now()}.pdf`;
+      
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      window.URL.revokeObjectURL(downloadUrl);
+
+      toast.success('Document downloaded successfully');
+    } catch (error) {
+      console.error('Error downloading document:', error);
+      toast.error('Failed to download document');
+    }
+  };
+
+  // Handle document delete
+  const handleDocumentDelete = async (type, index = null) => {
+    if (!confirm('Are you sure you want to delete this document?')) return;
+
+    try {
+      const token = localStorage.getItem('authToken');
+      let url = `${API_BASE_URL}/admin/students/${id}/documents/${type}`;
+      if (index !== null) {
+        url += `?index=${index}`;
+      }
+
+      await axios.delete(url, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+
+      toast.success('Document deleted successfully');
+      
+      // Refresh student data
+      const response = await axios.get(`${API_BASE_URL}/admin/students/${id}/documents`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setStudentDetails(response.data);
+    } catch (error) {
+      console.error('Error deleting document:', error);
+      toast.error('Failed to delete document');
+    }
+  };
 
   const handleStatusChange = async (newStatus) => {
     try {
       const userId = currentStudent.student?.id || currentStudent.id;
       await updateUserStatus(userId, newStatus);
       toast.success(`Student status updated to ${newStatus}`);
-      // Refresh student data
       fetchStudents();
     } catch (error) {
       toast.error(error.message || 'Failed to update status');
     }
   };
 
+  // Helper functions for styling
   const getStatusColor = (status) => {
     switch (status) {
       case 'ACTIVE': return 'bg-green-100 text-green-800';
@@ -187,13 +308,6 @@ const StudentDetail = () => {
       case 'TERMINATED': return 'bg-red-100 text-red-800';
       default: return 'bg-gray-100 text-gray-800';
     }
-  };
-
-  const getGradeColor = (grade) => {
-    if (grade?.includes('A')) return 'bg-green-100 text-green-800';
-    if (grade?.includes('B')) return 'bg-blue-100 text-blue-800';
-    if (grade?.includes('C')) return 'bg-yellow-100 text-yellow-800';
-    return 'bg-red-100 text-red-800';
   };
 
   const getClassTypeColor = (type) => {
@@ -299,19 +413,16 @@ const StudentDetail = () => {
   const academic = currentStudent.academic || {};
   const progress = getProgressData();
   const parents = getParentsData();
+  const documents = studentDetails?.documents || {};
+  const urls = studentDetails?.urls || {};
   
   // Get specific data
   const attendanceData = getAttendanceData();
   const classHistoryData = getClassHistoryData();
 
-  console.log('Current student data:', currentStudent);
-  console.log('Attendance data:', attendanceData);
-  console.log('Class history:', classHistoryData);
-  console.log('Progress data:', progress);
-
   return (
     <div className="space-y-6">
-      {/* Header */}
+      {/* Header with Profile Image */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
         <div className="flex flex-col sm:flex-row sm:items-start sm:justify-between">
           <div className="flex items-start space-x-4">
@@ -321,39 +432,65 @@ const StudentDetail = () => {
             >
               <ArrowLeft className="h-5 w-5 text-gray-600" />
             </button>
-            <div className="flex items-center space-x-4">
-              {user.profileImage ? (
+            
+            {/* Profile Image with Edit */}
+            <div className="relative group">
+              {getProfileImageUrl() ? (
                 <img 
-                  src={user.profileImage} 
+                  src={getProfileImageUrl()} 
                   alt={user.name}
-                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#F59E0B]"
+                  className="w-16 h-16 sm:w-20 sm:h-20 rounded-full object-cover border-2 border-[#F59E0B] cursor-pointer"
+                  onClick={() => setShowImageModal(true)}
                 />
               ) : (
                 <div className="w-16 h-16 sm:w-20 sm:h-20 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-xl">
                   {user.name?.charAt(0).toUpperCase() || 'S'}
                 </div>
               )}
-              <div>
-                <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
-                  {user.name}
-                </h1>
-                <p className="text-gray-600 text-sm sm:text-base mt-1">
-                  {academic.currentEnrollment?.classRoom?.name || 'Not enrolled'} • 
-                  Roll No: {academic.currentEnrollment?.rollNumber || 'N/A'}
-                </p>
-                <div className="flex items-center space-x-2 mt-2">
-                  <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(user.status)}`}>
-                    {user.status}
-                  </span>
-                  <span className="text-sm text-gray-500">
-                    Admission: {profile.admissionNo || 'N/A'}
-                  </span>
-                  {academic.currentEnrollment?.classRoom?.type && (
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getClassTypeColor(academic.currentEnrollment.classRoom.type)}`}>
-                      {academic.currentEnrollment.classRoom.type}
-                    </span>
-                  )}
+              
+              {/* Edit Overlay */}
+              <label 
+                htmlFor="profile-image-upload"
+                className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity cursor-pointer"
+              >
+                <Upload className="h-6 w-6 text-white" />
+                <input
+                  id="profile-image-upload"
+                  type="file"
+                  accept="image/*"
+                  className="hidden"
+                  onChange={handleProfileImageUpload}
+                  disabled={uploadingImage}
+                />
+              </label>
+              
+              {uploadingImage && (
+                <div className="absolute inset-0 bg-black bg-opacity-50 rounded-full flex items-center justify-center">
+                  <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-white"></div>
                 </div>
+              )}
+            </div>
+            
+            <div>
+              <h1 className="text-2xl sm:text-3xl font-bold text-gray-900">
+                {user.name}
+              </h1>
+              <p className="text-gray-600 text-sm sm:text-base mt-1">
+                {academic.currentEnrollment?.classRoom?.name || 'Not enrolled'} • 
+                Roll No: {academic.currentEnrollment?.rollNumber || 'N/A'}
+              </p>
+              <div className="flex items-center space-x-2 mt-2">
+                <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(user.status)}`}>
+                  {user.status}
+                </span>
+                <span className="text-sm text-gray-500">
+                  Admission: {profile.admissionNo || 'N/A'}
+                </span>
+                {academic.currentEnrollment?.classRoom?.type && (
+                  <span className={`px-2 py-1 rounded-full text-xs font-medium ${getClassTypeColor(academic.currentEnrollment.classRoom.type)}`}>
+                    {academic.currentEnrollment.classRoom.type}
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -381,7 +518,7 @@ const StudentDetail = () => {
       {/* Tabs */}
       <div className="bg-white rounded-2xl p-1 shadow-lg border border-gray-100">
         <div className="flex space-x-1 overflow-x-auto">
-          {['overview', 'academic', 'progress', 'attendance', 'medical', 'history', 'parents'].map((tab) => (
+          {['overview', 'academic', 'progress', 'attendance', 'documents', 'medical', 'history', 'parents'].map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
@@ -395,6 +532,12 @@ const StudentDetail = () => {
               {tab === 'academic' && 'Academic'}
               {tab === 'progress' && 'Progress'}
               {tab === 'attendance' && `Attendance (${attendanceData?.percentage || 0}%)`}
+              {tab === 'documents' && (
+                <span className="flex items-center space-x-1">
+                  <File className="h-4 w-4" />
+                  <span>Documents</span>
+                </span>
+              )}
               {tab === 'medical' && 'Medical'}
               {tab === 'history' && (
                 <span className="flex items-center space-x-1">
@@ -410,6 +553,7 @@ const StudentDetail = () => {
 
       {/* Tab Content */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
+        {/* Overview Tab */}
         {activeTab === 'overview' && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Personal Information */}
@@ -530,6 +674,7 @@ const StudentDetail = () => {
           </div>
         )}
 
+        {/* Academic Tab */}
         {activeTab === 'academic' && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Academic Information</h3>
@@ -582,6 +727,7 @@ const StudentDetail = () => {
           </div>
         )}
 
+        {/* Progress Tab */}
         {activeTab === 'progress' && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
@@ -682,6 +828,7 @@ const StudentDetail = () => {
           </div>
         )}
 
+        {/* Attendance Tab */}
         {activeTab === 'attendance' && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Attendance Record</h3>
@@ -753,6 +900,93 @@ const StudentDetail = () => {
           </div>
         )}
 
+        {/* Documents Tab */}
+        {activeTab === 'documents' && (
+          <div className="space-y-6">
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Student Documents</h3>
+              <button 
+                onClick={() => setShowUploadModal(true)}
+                className="flex items-center space-x-2 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] transition-colors text-sm font-medium"
+              >
+                <Upload className="h-4 w-4" />
+                <span>Upload New</span>
+              </button>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Birth Certificate */}
+              <DocumentCard
+                title="Birth Certificate"
+                icon={FileText}
+                available={!!documents.birthCertificate}
+                url={urls.birthCertificateUrl}
+                onDownload={() => handleDocumentDownload('birth-certificate')}
+                onDelete={() => handleDocumentDelete('birth-certificate')}
+              />
+
+              {/* CNIC / B-Form */}
+              <DocumentCard
+                title="CNIC / B-Form"
+                icon={Shield}
+                available={!!documents.cnicOrBForm}
+                url={urls.cnicBformUrl}
+                onDownload={() => handleDocumentDownload('cnic-bform')}
+                onDelete={() => handleDocumentDelete('cnic-bform')}
+              />
+
+              {/* Previous School Certificate */}
+              <DocumentCard
+                title="Previous School Certificate"
+                icon={School}
+                available={!!documents.previousSchoolCertificate}
+                url={urls.previousSchoolCertificateUrl}
+                onDownload={() => handleDocumentDownload('previous-school')}
+                onDelete={() => handleDocumentDelete('previous-school')}
+              />
+
+              {/* Other Documents */}
+              {documents.otherDocuments && documents.otherDocuments.length > 0 && (
+                <div className="md:col-span-2">
+                  <h4 className="font-semibold text-gray-900 mb-3">Other Documents</h4>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    {documents.otherDocuments.map((doc, index) => (
+                      <DocumentCard
+                        key={index}
+                        title={`Document ${index + 1}`}
+                        icon={File}
+                        available={true}
+                        url={urls.otherDocumentsUrls?.[index]}
+                        onDownload={() => handleDocumentDownload('other', index)}
+                        onDelete={() => handleDocumentDelete('other', index)}
+                      />
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+
+            {/* Document Summary */}
+            <div className="mt-6 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+              <div className="flex items-start space-x-3">
+                <FileText className="h-5 w-5 text-blue-600 mt-0.5" />
+                <div>
+                  <h4 className="font-semibold text-blue-900 mb-1">Document Status</h4>
+                  <p className="text-sm text-blue-700">
+                    Total documents available: {
+                      (documents.birthCertificate ? 1 : 0) +
+                      (documents.cnicOrBForm ? 1 : 0) +
+                      (documents.previousSchoolCertificate ? 1 : 0) +
+                      (documents.otherDocuments?.length || 0)
+                    }
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+        )}
+
+        {/* Medical Tab */}
         {activeTab === 'medical' && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Medical Information</h3>
@@ -775,6 +1009,7 @@ const StudentDetail = () => {
           </div>
         )}
 
+        {/* History Tab */}
         {activeTab === 'history' && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
@@ -929,6 +1164,7 @@ const StudentDetail = () => {
           </div>
         )}
 
+        {/* Parents Tab */}
         {activeTab === 'parents' && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Parent/Guardian Information</h3>
@@ -962,11 +1198,177 @@ const StudentDetail = () => {
           </div>
         )}
       </div>
+
+      {/* Image Preview Modal */}
+      {showImageModal && getProfileImageUrl() && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowImageModal(false)}
+        >
+          <div className="relative max-w-4xl w-full">
+            <button
+              onClick={() => setShowImageModal(false)}
+              className="absolute top-4 right-4 p-2 bg-white rounded-full hover:bg-gray-100 transition-colors"
+            >
+              <XCircle className="h-6 w-6 text-gray-600" />
+            </button>
+            <img
+              src={getProfileImageUrl()}
+              alt={user.name}
+              className="w-full h-auto rounded-lg"
+              onClick={(e) => e.stopPropagation()}
+            />
+          </div>
+        </div>
+      )}
+
+      {/* Upload Document Modal */}
+      {showUploadModal && (
+        <div 
+          className="fixed inset-0 bg-black bg-opacity-75 flex items-center justify-center z-50 p-4"
+          onClick={() => setShowUploadModal(false)}
+        >
+          <div 
+            className="bg-white rounded-2xl p-6 w-full max-w-md"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <h3 className="text-xl font-bold text-gray-900 mb-4">Upload Document</h3>
+            
+            <div className="space-y-4">
+              {/* Document Type */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Document Type
+                </label>
+                <select
+                  value={selectedDocType}
+                  onChange={(e) => setSelectedDocType(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                >
+                  <option value="">Select document type</option>
+                  <option value="birth-certificate">Birth Certificate</option>
+                  <option value="cnic-bform">CNIC / B-Form</option>
+                  <option value="previous-school">Previous School Certificate</option>
+                  <option value="other">Other Document</option>
+                </select>
+              </div>
+
+              {/* File Upload */}
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Choose File
+                </label>
+                <div className="border-2 border-dashed border-gray-300 rounded-lg p-4 text-center hover:border-[#F59E0B] transition-colors">
+                  <input
+                    type="file"
+                    accept=".pdf,.jpg,.jpeg,.png,.doc,.docx"
+                    onChange={(e) => setUploadFile(e.target.files?.[0] || null)}
+                    className="hidden"
+                    id="file-upload"
+                  />
+                  <label htmlFor="file-upload" className="cursor-pointer">
+                    <Upload className="h-8 w-8 mx-auto text-gray-400 mb-2" />
+                    <p className="text-sm text-gray-600">
+                      {uploadFile ? uploadFile.name : 'Click to select file'}
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      PDF, JPG, PNG, DOC (Max 5MB)
+                    </p>
+                  </label>
+                </div>
+              </div>
+
+              {/* Buttons */}
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={() => setShowUploadModal(false)}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={uploadingDoc}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleDocumentUpload}
+                  disabled={!selectedDocType || !uploadFile || uploadingDoc}
+                  className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                >
+                  {uploadingDoc ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Uploading...
+                    </>
+                  ) : (
+                    'Upload Document'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
 
-// Helper component for info items
+// Document Card Component
+const DocumentCard = ({ title, icon: Icon, available, url, onDownload, onDelete }) => (
+  <div className={`border-2 rounded-xl p-4 transition-all duration-200 ${
+    available 
+      ? 'border-green-200 bg-green-50 hover:border-green-400' 
+      : 'border-gray-200 bg-gray-50'
+  }`}>
+    <div className="flex items-start justify-between mb-3">
+      <div className="flex items-center space-x-3">
+        <div className={`p-2 rounded-lg ${available ? 'bg-green-100' : 'bg-gray-200'}`}>
+          <Icon className={`h-5 w-5 ${available ? 'text-green-600' : 'text-gray-400'}`} />
+        </div>
+        <div>
+          <h4 className="font-semibold text-gray-900">{title}</h4>
+          <p className="text-xs text-gray-600">
+            {available ? 'Document available' : 'Not uploaded'}
+          </p>
+        </div>
+      </div>
+      {available ? (
+        <div className="flex items-center space-x-2">
+          <CheckCircle className="h-5 w-5 text-green-600" />
+          {onDelete && (
+            <button
+              onClick={onDelete}
+              className="p-1 hover:bg-red-100 rounded-full transition-colors"
+              title="Delete document"
+            >
+              <Trash2 className="h-4 w-4 text-red-500 hover:text-red-700" />
+            </button>
+          )}
+        </div>
+      ) : (
+        <XCircle className="h-5 w-5 text-gray-400" />
+      )}
+    </div>
+    
+    {available && (
+      <div className="flex space-x-2">
+        <button
+          onClick={onDownload}
+          className="flex-1 flex items-center justify-center space-x-2 px-3 py-2 bg-white border border-green-300 text-green-700 rounded-lg hover:bg-green-50 transition-colors text-sm font-medium"
+        >
+          <Download className="h-4 w-4" />
+          <span>Download</span>
+        </button>
+        <button
+          onClick={() => window.open(url, '_blank')}
+          className="flex items-center justify-center px-3 py-2 bg-white border border-green-300 text-green-700 rounded-lg hover:bg-green-50 transition-colors"
+          title="Preview document"
+        >
+          <Eye className="h-4 w-4" />
+        </button>
+      </div>
+    )}
+  </div>
+);
+
+// Info Item Component
 const InfoItem = ({ icon: Icon, label, value }) => (
   <div className="flex items-center space-x-3">
     <Icon className="h-4 w-4 text-gray-400 shrink-0" />
@@ -977,7 +1379,7 @@ const InfoItem = ({ icon: Icon, label, value }) => (
   </div>
 );
 
-// Helper component for statistics
+// Stat Item Component
 const StatItem = ({ label, value }) => (
   <div className="flex justify-between items-center">
     <span className="text-sm text-gray-600">{label}</span>

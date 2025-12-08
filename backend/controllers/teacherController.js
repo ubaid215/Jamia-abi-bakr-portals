@@ -2,159 +2,164 @@ const prisma = require('../db/prismaClient');
 
 class TeacherController {
   // Get teacher's dashboard data
-  async getTeacherDashboard(req, res) {
-    try {
-      const teacher = await prisma.teacher.findUnique({
-        where: { userId: req.user.id },
-        include: {
-          user: {
-            select: {
-              name: true,
-              email: true,
-              profileImage: true
-            }
-          },
-          classes: {
-            include: {
-              _count: {
-                select: {
-                  enrollments: {
-                    where: { isCurrent: true }
-                  },
-                  subjects: true
-                }
-              },
-              enrollments: {
-                where: { isCurrent: true },
-                include: {
-                  student: {
-                    include: {
-                      user: {
-                        select: {
-                          name: true
-                        }
+async getTeacherDashboard(req, res) {
+  try {
+    const teacher = await prisma.teacher.findUnique({
+      where: { userId: req.user.id },
+      include: {
+        user: {
+          select: {
+            name: true,
+            email: true,
+            profileImage: true
+          }
+        },
+        classes: {
+          include: {
+            _count: {
+              select: {
+                enrollments: {
+                  where: { isCurrent: true }
+                },
+                subjects: true
+              }
+            },
+            enrollments: {
+              where: { isCurrent: true },
+              include: {
+                student: {
+                  include: {
+                    user: {
+                      select: {
+                        name: true
                       }
                     }
                   }
-                },
-                take: 5 // Recent 5 students
-              }
-            }
-          },
-          subjects: {
-            include: {
-              classRoom: {
-                select: {
-                  name: true,
-                  grade: true
                 }
+              },
+              take: 5 // Recent 5 students
+            }
+          }
+        },
+        subjects: {
+          include: {
+            classRoom: {
+              select: {
+                name: true,
+                grade: true
               }
+            }
+          }
+        },
+        leaveRequests: {
+          where: {
+            createdAt: {
+              gte: new Date(new Date().getFullYear(), 0, 1) // Current year
             }
           },
-          leaveRequests: {
-            where: {
-              createdAt: {
-                gte: new Date(new Date().getFullYear(), 0, 1) // Current year
-              }
-            },
-            orderBy: { createdAt: 'desc' },
-            take: 5
-          }
+          orderBy: { createdAt: 'desc' },
+          take: 5
         }
-      });
-
-      if (!teacher) {
-        return res.status(404).json({ error: 'Teacher profile not found' });
       }
+    });
 
-      // Get today's attendance summary
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
+    if (!teacher) {
+      return res.status(404).json({ error: 'Teacher profile not found' });
+    }
 
-      const todayAttendance = await prisma.attendance.count({
-        where: {
-          teacherId: teacher.id,
-          date: {
-            gte: today,
-            lt: tomorrow
-          }
+    // Get today's attendance summary
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const tomorrow = new Date(today);
+    tomorrow.setDate(tomorrow.getDate() + 1);
+
+    const todayAttendance = await prisma.attendance.count({
+      where: {
+        teacherId: teacher.id,
+        date: {
+          gte: today,
+          lt: tomorrow
         }
-      });
+      }
+    });
 
-      // Get pending tasks (unmarked attendance for assigned classes)
-      const assignedClassIds = teacher.classes.map(cls => cls.id);
-      const pendingAttendanceClasses = await prisma.classRoom.findMany({
-        where: {
-          id: { in: assignedClassIds }
-        },
-        include: {
-          _count: {
-            select: {
-              enrollments: {
-                where: { isCurrent: true }
-              }
+    // Get pending tasks (unmarked attendance for assigned classes)
+    const assignedClassIds = teacher.classes.map(cls => cls.id);
+    const pendingAttendanceClasses = await prisma.classRoom.findMany({
+      where: {
+        id: { in: assignedClassIds }
+      },
+      include: {
+        _count: {
+          select: {
+            enrollments: {
+              where: { isCurrent: true }
             }
           }
         }
-      });
+      }
+    });
 
-      const dashboardData = {
-        teacher: {
-          id: teacher.id,
-          name: teacher.user.name,
-          email: teacher.user.email,
-          profileImage: teacher.user.profileImage,
-          specialization: teacher.specialization,
-          experience: teacher.experience
-        },
-        summary: {
-          totalClasses: teacher.classes.length,
-          totalSubjects: teacher.subjects.length,
-          totalStudents: teacher.classes.reduce((sum, cls) => sum + cls._count.enrollments, 0),
-          todayAttendance,
-          pendingLeaveRequests: teacher.leaveRequests.filter(lr => lr.status === 'PENDING').length
-        },
-        classes: teacher.classes.map(cls => ({
+    // FIXED: Handle null classRoom in subjects
+    const dashboardData = {
+      teacher: {
+        id: teacher.id,
+        name: teacher.user.name,
+        email: teacher.user.email,
+        profileImage: teacher.user.profileImage,
+        specialization: teacher.specialization,
+        experience: teacher.experience
+      },
+      summary: {
+        totalClasses: teacher.classes.length,
+        totalSubjects: teacher.subjects.length,
+        totalStudents: teacher.classes.reduce((sum, cls) => sum + cls._count.enrollments, 0),
+        todayAttendance,
+        pendingLeaveRequests: teacher.leaveRequests.filter(lr => lr.status === 'PENDING').length
+      },
+      classes: teacher.classes.map(cls => ({
+        id: cls.id,
+        name: cls.name,
+        grade: cls.grade || '',
+        section: cls.section || '',
+        type: cls.type,
+        studentCount: cls._count.enrollments,
+        subjectCount: cls._count.subjects,
+        recentStudents: cls.enrollments.map(enrollment => ({
+          id: enrollment.student.id,
+          name: enrollment.student.user?.name || 'Unknown',
+          rollNumber: enrollment.rollNumber
+        }))
+      })),
+      subjects: teacher.subjects.map(subject => ({
+        id: subject.id,
+        name: subject.name,
+        code: subject.code || '',
+        // FIX: Handle null classRoom
+        class: subject.classRoom?.name || 'Not Assigned',
+        grade: subject.classRoom?.grade || ''
+      })),
+      recentLeaveRequests: teacher.leaveRequests,
+      pendingTasks: {
+        attendanceToMark: pendingAttendanceClasses.length,
+        classesNeedingAttention: pendingAttendanceClasses.map(cls => ({
           id: cls.id,
           name: cls.name,
-          grade: cls.grade,
-          section: cls.section,
-          type: cls.type,
-          studentCount: cls._count.enrollments,
-          subjectCount: cls._count.subjects,
-          recentStudents: cls.enrollments.map(enrollment => ({
-            id: enrollment.student.id,
-            name: enrollment.student.user.name,
-            rollNumber: enrollment.rollNumber
-          }))
-        })),
-        subjects: teacher.subjects.map(subject => ({
-          id: subject.id,
-          name: subject.name,
-          code: subject.code,
-          class: subject.classRoom.name,
-          grade: subject.classRoom.grade
-        })),
-        recentLeaveRequests: teacher.leaveRequests,
-        pendingTasks: {
-          attendanceToMark: pendingAttendanceClasses.length,
-          classesNeedingAttention: pendingAttendanceClasses.map(cls => ({
-            id: cls.id,
-            name: cls.name,
-            studentCount: cls._count.enrollments
-          }))
-        }
-      };
+          studentCount: cls._count.enrollments
+        }))
+      }
+    };
 
-      res.json(dashboardData);
+    res.json(dashboardData);
 
-    } catch (error) {
-      console.error('Get teacher dashboard error:', error);
-      res.status(500).json({ error: 'Internal server error' });
-    }
+  } catch (error) {
+    console.error('Get teacher dashboard error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
+}
 
   // Get teacher's assigned classes
   async getMyClasses(req, res) {
@@ -214,65 +219,76 @@ class TeacherController {
   }
 
   // Get teacher's assigned subjects
-  async getMySubjects(req, res) {
-    try {
-      const teacher = await prisma.teacher.findUnique({
-        where: { userId: req.user.id },
-        include: {
-          subjects: {
-            include: {
-              classRoom: {
-                select: {
-                  id: true,
-                  name: true,
-                  grade: true,
-                  type: true
-                }
-              },
-              _count: {
-                select: {
-                  attendances: true,
-                  dailyReports: true
-                }
+async getMySubjects(req, res) {
+  try {
+    const teacher = await prisma.teacher.findUnique({
+      where: { userId: req.user.id },
+      include: {
+        subjects: {
+          include: {
+            classRoom: {
+              select: {
+                id: true,
+                name: true,
+                grade: true,
+                type: true
+              }
+            },
+            _count: {
+              select: {
+                attendances: true,
+                dailyReports: true
               }
             }
-          },
-          teacherSubjects: {
-            include: {
-              subject: {
-                include: {
-                  classRoom: {
-                    select: {
-                      name: true,
-                      grade: true
-                    }
+          }
+        },
+        teacherSubjects: {
+          include: {
+            subject: {
+              include: {
+                classRoom: {
+                  select: {
+                    name: true,
+                    grade: true
                   }
                 }
               }
             }
           }
         }
-      });
-
-      if (!teacher) {
-        return res.status(404).json({ error: 'Teacher profile not found' });
       }
+    });
 
-      // Combine directly assigned subjects and teacherSubject relationships
-      const allSubjects = [
-        ...teacher.subjects,
-        ...teacher.teacherSubjects.map(ts => ts.subject)
-      ];
-
-      res.json({
-        subjects: allSubjects
-      });
-
-    } catch (error) {
-      console.error('Get my subjects error:', error);
-      res.status(500).json({ error: 'Internal server error' });
+    if (!teacher) {
+      return res.status(404).json({ error: 'Teacher profile not found' });
     }
+
+    // Combine directly assigned subjects and teacherSubject relationships
+    const allSubjects = [
+      ...teacher.subjects.map(subject => ({
+        ...subject,
+        classRoomName: subject.classRoom?.name || 'Not Assigned',
+        classRoomGrade: subject.classRoom?.grade || ''
+      })),
+      ...teacher.teacherSubjects.map(ts => ({
+        ...ts.subject,
+        classRoomName: ts.subject.classRoom?.name || 'Not Assigned',
+        classRoomGrade: ts.subject.classRoom?.grade || ''
+      }))
+    ];
+
+    res.json({
+      subjects: allSubjects
+    });
+
+  } catch (error) {
+    console.error('Get my subjects error:', error);
+    res.status(500).json({ 
+      error: 'Internal server error',
+      details: error.message 
+    });
   }
+}
 
   // Get students in teacher's classes
   async getMyStudents(req, res) {

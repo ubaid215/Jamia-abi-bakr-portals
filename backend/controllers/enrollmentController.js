@@ -1,11 +1,12 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../db/prismaClient');
 const { generateStrongPassword, generateEmail, generateStudentEmail, generateAdmissionNumber, generateRollNumber } = require('../utils/passwordGenerator');
+const { deleteFile, deleteFiles } = require('../middlewares/upload');
 
 const saltRounds = 12;
 
 class EnrollmentController {
-  // Register teacher with auto-generated email/password
+  // Register teacher with auto-generated email/password and file uploads
   async registerTeacher(req, res) {
     try {
       const { 
@@ -18,6 +19,21 @@ class EnrollmentController {
         return res.status(400).json({ error: 'Name is required' });
       }
 
+      // Profile image is now required and comes from req.profileImagePath
+      if (!req.profileImagePath) {
+        return res.status(400).json({ error: 'Profile image is required' });
+      }
+
+      // Parse profileData if it's a JSON string
+      let parsedProfileData = profileData;
+      if (typeof profileData === 'string') {
+        try {
+          parsedProfileData = JSON.parse(profileData);
+        } catch (e) {
+          parsedProfileData = {};
+        }
+      }
+
       // Generate email and strong password
       const email = generateEmail(name, 'teacher');
       const password = generateStrongPassword();
@@ -28,7 +44,20 @@ class EnrollmentController {
       });
 
       if (existingUser) {
-        // Regenerate if duplicate
+        // Delete uploaded files if email exists
+        await deleteFile(req.profileImagePath);
+        if (req.cnicFrontPath) await deleteFile(req.cnicFrontPath);
+        if (req.cnicBackPath) await deleteFile(req.cnicBackPath);
+        if (req.degreeDocumentsPath) {
+          const degreePaths = JSON.parse(req.degreeDocumentsPath);
+          await deleteFiles(degreePaths);
+        }
+        if (req.otherDocumentsPath) {
+          const otherPaths = JSON.parse(req.otherDocumentsPath);
+          await deleteFiles(otherPaths);
+        }
+        
+        // Regenerate with different email
         return this.registerTeacher(req, res);
       }
 
@@ -45,7 +74,7 @@ class EnrollmentController {
             name,
             phone: phone || null,
             role: 'TEACHER',
-            profileImage: profileData?.profileImage || null
+            profileImage: req.profileImagePath
           }
         });
 
@@ -53,27 +82,27 @@ class EnrollmentController {
         const teacherProfile = await prisma.teacher.create({
           data: {
             userId: user.id,
-            bio: profileData?.bio || null,
-            dateOfBirth: profileData?.dateOfBirth ? new Date(profileData.dateOfBirth) : null,
-            gender: profileData?.gender || null,
-            cnic: profileData?.cnic || null,
-            qualification: profileData?.qualification || null,
-            specialization: profileData?.specialization || null,
-            experience: profileData?.experience || null,
-            address: profileData?.address || null,
-            emergencyContactName: profileData?.emergencyContactName || null,
-            emergencyContactPhone: profileData?.emergencyContactPhone || null,
-            emergencyContactRelation: profileData?.emergencyContactRelation || null,
-            phoneSecondary: profileData?.phoneSecondary || null,
-            phoneEmergency: profileData?.phoneEmergency || null,
-            profileImage: profileData?.profileImage || null,
-            cnicFront: profileData?.cnicFront || null,
-            cnicBack: profileData?.cnicBack || null,
-            degreeDocuments: profileData?.degreeDocuments || null,
-            otherDocuments: profileData?.otherDocuments || null,
-            joiningDate: profileData?.joiningDate ? new Date(profileData.joiningDate) : null,
-            salary: profileData?.salary || null,
-            employmentType: profileData?.employmentType || null
+            bio: parsedProfileData?.bio || null,
+            dateOfBirth: parsedProfileData?.dateOfBirth ? new Date(parsedProfileData.dateOfBirth) : null,
+            gender: parsedProfileData?.gender || null,
+            cnic: parsedProfileData?.cnic || null,
+            qualification: parsedProfileData?.qualification || null,
+            specialization: parsedProfileData?.specialization || null,
+            experience: parsedProfileData?.experience || null,
+            address: parsedProfileData?.address || null,
+            emergencyContactName: parsedProfileData?.emergencyContactName || null,
+            emergencyContactPhone: parsedProfileData?.emergencyContactPhone || null,
+            emergencyContactRelation: parsedProfileData?.emergencyContactRelation || null,
+            phoneSecondary: parsedProfileData?.phoneSecondary || null,
+            phoneEmergency: parsedProfileData?.phoneEmergency || null,
+            profileImage: req.profileImagePath,
+            cnicFront: req.cnicFrontPath || null,
+            cnicBack: req.cnicBackPath || null,
+            degreeDocuments: req.degreeDocumentsPath || null,
+            otherDocuments: req.otherDocumentsPath || null,
+            joiningDate: parsedProfileData?.joiningDate ? new Date(parsedProfileData.joiningDate) : null,
+            salary: parsedProfileData?.salary || null,
+            employmentType: parsedProfileData?.employmentType || null
           }
         });
 
@@ -98,28 +127,61 @@ class EnrollmentController {
         message: 'Teacher created successfully',
         credentials: {
           email: result.user.email,
-          password: result.password // Show only once during creation
+          password: result.password
         },
         user: userData
       });
 
     } catch (error) {
       console.error('Register teacher error:', error);
+      
+      // Clean up uploaded files on error
+      if (req.profileImagePath) await deleteFile(req.profileImagePath);
+      if (req.cnicFrontPath) await deleteFile(req.cnicFrontPath);
+      if (req.cnicBackPath) await deleteFile(req.cnicBackPath);
+      if (req.degreeDocumentsPath) {
+        try {
+          const degreePaths = JSON.parse(req.degreeDocumentsPath);
+          await deleteFiles(degreePaths);
+        } catch (e) {}
+      }
+      if (req.otherDocumentsPath) {
+        try {
+          const otherPaths = JSON.parse(req.otherDocumentsPath);
+          await deleteFiles(otherPaths);
+        } catch (e) {}
+      }
+      
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
-   async registerStudent(req, res) {
+  async registerStudent(req, res) {
     try {
       const { 
         name, 
         phone, 
         profileData,
-        classRoomId  // Optional: enroll student in a class immediately
+        classRoomId
       } = req.body;
 
       if (!name) {
         return res.status(400).json({ error: 'Name is required' });
+      }
+
+      // Profile image is required
+      if (!req.profileImagePath) {
+        return res.status(400).json({ error: 'Profile image is required' });
+      }
+
+      // Parse profileData if it's a JSON string
+      let parsedProfileData = profileData;
+      if (typeof profileData === 'string') {
+        try {
+          parsedProfileData = JSON.parse(profileData);
+        } catch (e) {
+          parsedProfileData = {};
+        }
       }
 
       // Generate sequential admission number
@@ -142,7 +204,7 @@ class EnrollmentController {
             name,
             phone: phone || null,
             role: 'STUDENT',
-            profileImage: profileData?.profileImage || null
+            profileImage: req.profileImagePath
           }
         });
 
@@ -151,37 +213,37 @@ class EnrollmentController {
           data: {
             userId: user.id,
             admissionNo,
-            dob: profileData?.dob ? new Date(profileData.dob) : null,
-            gender: profileData?.gender || null,
-            placeOfBirth: profileData?.placeOfBirth || null,
-            nationality: profileData?.nationality || 'Pakistani',
-            religion: profileData?.religion || 'Islam',
-            bloodGroup: profileData?.bloodGroup || null,
-            profileImage: profileData?.profileImage || null,
-            birthCertificate: profileData?.birthCertificate || null,
-            cnicOrBForm: profileData?.cnicOrBForm || null,
-            previousSchoolCertificate: profileData?.previousSchoolCertificate || null,
-            otherDocuments: profileData?.otherDocuments || null,
-            medicalConditions: profileData?.medicalConditions || null,
-            allergies: profileData?.allergies || null,
-            medication: profileData?.medication || null,
-            guardianName: profileData?.guardianName || null,
-            guardianRelation: profileData?.guardianRelation || null,
-            guardianPhone: profileData?.guardianPhone || null,
-            guardianEmail: profileData?.guardianEmail || null,
-            guardianOccupation: profileData?.guardianOccupation || null,
-            guardianCNIC: profileData?.guardianCNIC || null,
-            guardian2Name: profileData?.guardian2Name || null,
-            guardian2Relation: profileData?.guardian2Relation || null,
-            guardian2Phone: profileData?.guardian2Phone || null,
-            guardian2Email: profileData?.guardian2Email || null,
-            address: profileData?.address || null,
-            city: profileData?.city || null,
-            province: profileData?.province || null,
-            postalCode: profileData?.postalCode || null,
-            emergencyContactName: profileData?.emergencyContactName || null,
-            emergencyContactPhone: profileData?.emergencyContactPhone || null,
-            emergencyContactRelation: profileData?.emergencyContactRelation || null
+            dob: parsedProfileData?.dob ? new Date(parsedProfileData.dob) : null,
+            gender: parsedProfileData?.gender || null,
+            placeOfBirth: parsedProfileData?.placeOfBirth || null,
+            nationality: parsedProfileData?.nationality || 'Pakistani',
+            religion: parsedProfileData?.religion || 'Islam',
+            bloodGroup: parsedProfileData?.bloodGroup || null,
+            profileImage: req.profileImagePath,
+            birthCertificate: req.birthCertificatePath || null,
+            cnicOrBForm: req.cnicOrBFormPath || null,
+            previousSchoolCertificate: req.previousSchoolCertificatePath || null,
+            otherDocuments: req.otherDocumentsPath || null,
+            medicalConditions: parsedProfileData?.medicalConditions || null,
+            allergies: parsedProfileData?.allergies || null,
+            medication: parsedProfileData?.medication || null,
+            guardianName: parsedProfileData?.guardianName || null,
+            guardianRelation: parsedProfileData?.guardianRelation || null,
+            guardianPhone: parsedProfileData?.guardianPhone || null,
+            guardianEmail: parsedProfileData?.guardianEmail || null,
+            guardianOccupation: parsedProfileData?.guardianOccupation || null,
+            guardianCNIC: parsedProfileData?.guardianCNIC || null,
+            guardian2Name: parsedProfileData?.guardian2Name || null,
+            guardian2Relation: parsedProfileData?.guardian2Relation || null,
+            guardian2Phone: parsedProfileData?.guardian2Phone || null,
+            guardian2Email: parsedProfileData?.guardian2Email || null,
+            address: parsedProfileData?.address || null,
+            city: parsedProfileData?.city || null,
+            province: parsedProfileData?.province || null,
+            postalCode: parsedProfileData?.postalCode || null,
+            emergencyContactName: parsedProfileData?.emergencyContactName || null,
+            emergencyContactPhone: parsedProfileData?.emergencyContactPhone || null,
+            emergencyContactRelation: parsedProfileData?.emergencyContactRelation || null
           }
         });
 
@@ -189,7 +251,6 @@ class EnrollmentController {
         
         // If classRoomId provided, create enrollment with roll number
         if (classRoomId) {
-          // Check if class exists
           const classRoom = await tx.classRoom.findUnique({
             where: { id: classRoomId }
           });
@@ -198,46 +259,20 @@ class EnrollmentController {
             throw new Error('Class room not found');
           }
 
-          // Generate roll number using the same transaction to avoid race conditions
           const rollNumber = await generateRollNumber(classRoomId, tx);
           
-          // Check if this roll number already exists in the class (safety check)
-          const existingEnrollment = await tx.enrollment.findFirst({
-            where: {
+          enrollment = await tx.enrollment.create({
+            data: {
+              studentId: studentProfile.id,
               classRoomId,
-              rollNumber
+              rollNumber,
+              isCurrent: true
+            },
+            include: {
+              classRoom: true
             }
           });
 
-          if (existingEnrollment) {
-            // If duplicate exists (shouldn't happen with proper transaction), regenerate
-            const newRollNumber = await generateRollNumber(classRoomId, tx);
-            enrollment = await tx.enrollment.create({
-              data: {
-                studentId: studentProfile.id,
-                classRoomId,
-                rollNumber: newRollNumber,
-                isCurrent: true
-              },
-              include: {
-                classRoom: true
-              }
-            });
-          } else {
-            enrollment = await tx.enrollment.create({
-              data: {
-                studentId: studentProfile.id,
-                classRoomId,
-                rollNumber,
-                isCurrent: true
-              },
-              include: {
-                classRoom: true
-              }
-            });
-          }
-
-          // Set as current enrollment
           await tx.student.update({
             where: { id: studentProfile.id },
             data: { currentEnrollmentId: enrollment.id }
@@ -268,7 +303,7 @@ class EnrollmentController {
         message: 'Student created successfully',
         credentials: {
           email: result.user.email,
-          password: result.password, // Show only once during creation
+          password: result.password,
           admissionNo: result.admissionNo,
           rollNumber: result.enrollment?.rollNumber || null
         },
@@ -277,11 +312,132 @@ class EnrollmentController {
 
     } catch (error) {
       console.error('Register student error:', error);
+      
+      // Clean up uploaded files on error
+      if (req.profileImagePath) await deleteFile(req.profileImagePath);
+      if (req.birthCertificatePath) await deleteFile(req.birthCertificatePath);
+      if (req.cnicOrBFormPath) await deleteFile(req.cnicOrBFormPath);
+      if (req.previousSchoolCertificatePath) await deleteFile(req.previousSchoolCertificatePath);
+      if (req.otherDocumentsPath) {
+        try {
+          const otherPaths = JSON.parse(req.otherDocumentsPath);
+          await deleteFiles(otherPaths);
+        } catch (e) {}
+      }
+      
       if (error.code === 'P2002') {
         return res.status(400).json({ 
           error: 'Duplicate roll number detected. Please try again.' 
         });
       }
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Update teacher profile image
+  async updateTeacherProfileImage(req, res) {
+    try {
+      const { teacherId } = req.params;
+
+      if (!req.profileImagePath) {
+        return res.status(400).json({ error: 'Profile image is required' });
+      }
+
+      // Get current teacher data
+      const teacher = await prisma.teacher.findUnique({
+        where: { id: teacherId },
+        include: { user: true }
+      });
+
+      if (!teacher) {
+        await deleteFile(req.profileImagePath);
+        return res.status(404).json({ error: 'Teacher not found' });
+      }
+
+      // Delete old profile image
+      if (teacher.profileImage) {
+        await deleteFile(teacher.profileImage);
+      }
+      if (teacher.user.profileImage) {
+        await deleteFile(teacher.user.profileImage);
+      }
+
+      // Update with new image
+      const updatedTeacher = await prisma.teacher.update({
+        where: { id: teacherId },
+        data: {
+          profileImage: req.profileImagePath,
+          user: {
+            update: {
+              profileImage: req.profileImagePath
+            }
+          }
+        },
+        include: { user: true }
+      });
+
+      res.json({
+        message: 'Profile image updated successfully',
+        teacher: updatedTeacher
+      });
+
+    } catch (error) {
+      console.error('Update teacher profile image error:', error);
+      if (req.profileImagePath) await deleteFile(req.profileImagePath);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Update student profile image
+  async updateStudentProfileImage(req, res) {
+    try {
+      const { studentId } = req.params;
+
+      if (!req.profileImagePath) {
+        return res.status(400).json({ error: 'Profile image is required' });
+      }
+
+      // Get current student data
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: { user: true }
+      });
+
+      if (!student) {
+        await deleteFile(req.profileImagePath);
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      // Delete old profile image
+      if (student.profileImage) {
+        await deleteFile(student.profileImage);
+      }
+      if (student.user.profileImage) {
+        await deleteFile(student.user.profileImage);
+      }
+
+      // Update with new image
+      const updatedStudent = await prisma.student.update({
+        where: { id: studentId },
+        data: {
+          profileImage: req.profileImagePath,
+          user: {
+            update: {
+              profileImage: req.profileImagePath
+            }
+          }
+        },
+        include: { user: true }
+      });
+
+      res.json({
+        message: 'Profile image updated successfully',
+        student: updatedStudent
+      });
+
+    } catch (error) {
+      console.error('Update student profile image error:', error);
+      if (req.profileImagePath) await deleteFile(req.profileImagePath);
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -298,11 +454,9 @@ class EnrollmentController {
         return res.status(400).json({ error: 'Name is required' });
       }
 
-      // Generate email and strong password
       const email = generateEmail(name, 'parent');
       const password = generateStrongPassword();
 
-      // Check if email already exists
       const existingUser = await prisma.user.findUnique({
         where: { email }
       });
@@ -311,12 +465,9 @@ class EnrollmentController {
         return this.registerParent(req, res);
       }
 
-      // Hash password
       const passwordHash = await bcrypt.hash(password, saltRounds);
 
-      // Create user and parent profile in transaction
       const result = await prisma.$transaction(async (prisma) => {
-        // Create user
         const user = await prisma.user.create({
           data: {
             email,
@@ -327,7 +478,6 @@ class EnrollmentController {
           }
         });
 
-        // Create parent profile
         const parentProfile = await prisma.parent.create({
           data: {
             userId: user.id
@@ -337,7 +487,6 @@ class EnrollmentController {
         return { user, parentProfile, password };
       });
 
-      // Prepare response
       const userData = {
         id: result.user.id,
         email: result.user.email,
@@ -354,7 +503,7 @@ class EnrollmentController {
         message: 'Parent created successfully',
         credentials: {
           email: result.user.email,
-          password: result.password // Show only once during creation
+          password: result.password
         },
         user: userData
       });
@@ -375,7 +524,6 @@ class EnrollmentController {
       }
 
       const result = await prisma.$transaction(async (tx) => {
-        // Check if student exists
         const student = await tx.student.findUnique({
           where: { id: studentId },
           include: {
@@ -392,7 +540,6 @@ class EnrollmentController {
           throw new Error('Student not found');
         }
 
-        // Check if class exists
         const classRoom = await tx.classRoom.findUnique({
           where: { id: classRoomId }
         });
@@ -401,7 +548,6 @@ class EnrollmentController {
           throw new Error('Class room not found');
         }
 
-        // If student already has current enrollment, mark it as not current
         if (student.currentEnrollment) {
           await tx.enrollment.update({
             where: { id: student.currentEnrollment.id },
@@ -409,10 +555,8 @@ class EnrollmentController {
           });
         }
 
-        // Generate roll number for this class using the same transaction
         const rollNumber = await generateRollNumber(classRoomId, tx);
         
-        // Create enrollment
         const enrollment = await tx.enrollment.create({
           data: {
             studentId,
@@ -445,7 +589,6 @@ class EnrollmentController {
           }
         });
 
-        // Update student's current enrollment
         await tx.student.update({
           where: { id: studentId },
           data: { currentEnrollmentId: enrollment.id }
@@ -472,124 +615,117 @@ class EnrollmentController {
 
   // Transfer student to different class
   async transferStudent(req, res) {
-  try {
-    const { studentId, newClassRoomId, reason } = req.body;  // ✅ Add reason parameter
+    try {
+      const { studentId, newClassRoomId, reason } = req.body;
 
-    if (!studentId || !newClassRoomId) {
-      return res.status(400).json({ 
-        error: 'Student ID and New Class Room ID are required' 
-      });
-    }
+      if (!studentId || !newClassRoomId) {
+        return res.status(400).json({ 
+          error: 'Student ID and New Class Room ID are required' 
+        });
+      }
 
-    const result = await prisma.$transaction(async (tx) => {
-      // Check if student exists and has current enrollment
-      const student = await tx.student.findUnique({
-        where: { id: studentId },
-        include: {
-          currentEnrollment: {
-            include: {
-              classRoom: true  // ✅ Include classRoom to check current class
+      const result = await prisma.$transaction(async (tx) => {
+        const student = await tx.student.findUnique({
+          where: { id: studentId },
+          include: {
+            currentEnrollment: {
+              include: {
+                classRoom: true
+              }
             }
           }
+        });
+
+        if (!student) {
+          throw new Error('Student not found');
         }
-      });
 
-      if (!student) {
-        throw new Error('Student not found');
-      }
-
-      if (!student.currentEnrollment) {
-        throw new Error('Student is not currently enrolled in any class');
-      }
-
-      // ✅ Check if transferring to same class
-      if (student.currentEnrollment.classRoomId === newClassRoomId) {
-        throw new Error('Student is already enrolled in this class');
-      }
-
-      // Check if new class exists
-      const newClassRoom = await tx.classRoom.findUnique({
-        where: { id: newClassRoomId }
-      });
-
-      if (!newClassRoom) {
-        throw new Error('New class room not found');
-      }
-
-      // End current enrollment (PRESERVES HISTORY)
-      await tx.enrollment.update({
-        where: { id: student.currentEnrollment.id },
-        data: { 
-          isCurrent: false, 
-          endDate: new Date(),
-          promotedTo: reason || `Transferred to ${newClassRoom.name}`  // ✅ Use custom reason
+        if (!student.currentEnrollment) {
+          throw new Error('Student is not currently enrolled in any class');
         }
-      });
 
-      // ✅ Generate roll number with transaction
-      const rollNumber = await generateRollNumber(newClassRoomId, tx);
-      
-      // Create new enrollment (CREATES NEW RECORD)
-      const newEnrollment = await tx.enrollment.create({
-        data: {
-          studentId,
-          classRoomId: newClassRoomId,
-          rollNumber,
-          isCurrent: true,
-          startDate: new Date()
-        },
-        include: {
-          classRoom: {
-            select: {
-              id: true,
-              name: true,
-              grade: true,
-              section: true,
-              type: true
-            }
+        if (student.currentEnrollment.classRoomId === newClassRoomId) {
+          throw new Error('Student is already enrolled in this class');
+        }
+
+        const newClassRoom = await tx.classRoom.findUnique({
+          where: { id: newClassRoomId }
+        });
+
+        if (!newClassRoom) {
+          throw new Error('New class room not found');
+        }
+
+        await tx.enrollment.update({
+          where: { id: student.currentEnrollment.id },
+          data: { 
+            isCurrent: false, 
+            endDate: new Date(),
+            promotedTo: reason || `Transferred to ${newClassRoom.name}`
+          }
+        });
+
+        const rollNumber = await generateRollNumber(newClassRoomId, tx);
+        
+        const newEnrollment = await tx.enrollment.create({
+          data: {
+            studentId,
+            classRoomId: newClassRoomId,
+            rollNumber,
+            isCurrent: true,
+            startDate: new Date()
           },
-          student: {
-            include: {
-              user: {
-                select: {
-                  id: true,
-                  name: true,
-                  email: true
+          include: {
+            classRoom: {
+              select: {
+                id: true,
+                name: true,
+                grade: true,
+                section: true,
+                type: true
+              }
+            },
+            student: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true
+                  }
                 }
               }
             }
           }
-        }
+        });
+
+        await tx.student.update({
+          where: { id: studentId },
+          data: { currentEnrollmentId: newEnrollment.id }
+        });
+
+        return {
+          newEnrollment,
+          previousClass: student.currentEnrollment.classRoom.name,
+          newClass: newClassRoom.name
+        };
       });
 
-      // Update student's current enrollment pointer
-      await tx.student.update({
-        where: { id: studentId },
-        data: { currentEnrollmentId: newEnrollment.id }
+      res.json({
+        message: 'Student transferred successfully',
+        transfer: {
+          from: result.previousClass,
+          to: result.newClass,
+          transferDate: new Date()
+        },
+        enrollment: result.newEnrollment
       });
 
-      return {
-        newEnrollment,
-        previousClass: student.currentEnrollment.classRoom.name,
-        newClass: newClassRoom.name
-      };
-    });
-
-    res.json({
-      message: 'Student transferred successfully',
-      transfer: {
-        from: result.previousClass,
-        to: result.newClass,
-        transferDate: new Date()
-      },
-      enrollment: result.newEnrollment
-    });
-
-  } catch (error) {
-    console.error('Transfer student error:', error);
-    res.status(500).json({ error: error.message || 'Internal server error' });
+    } catch (error) {
+      console.error('Transfer student error:', error);
+      res.status(500).json({ error: error.message || 'Internal server error' });
+    }
   }
-}
 
   // Get student enrollment history
   async getStudentEnrollmentHistory(req, res) {
@@ -598,7 +734,6 @@ class EnrollmentController {
       const { page = 1, limit = 10 } = req.query;
       const skip = (page - 1) * limit;
 
-      // Check if student exists
       const student = await prisma.student.findUnique({
         where: { id: studentId },
         include: {
@@ -660,6 +795,5 @@ class EnrollmentController {
     }
   }
 }
-
 
 module.exports = new EnrollmentController();

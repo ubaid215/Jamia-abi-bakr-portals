@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useEnrollment } from '../../contexts/EnrollmentContext';
-import { User, Mail, Phone, BookOpen, Calendar, MapPin, FileText, Award, Briefcase, Upload } from 'lucide-react';
+import { User, Mail, Phone, BookOpen, Calendar, MapPin, FileText, Award, Briefcase, Upload, X, Image as ImageIcon, File } from 'lucide-react';
 
 const TeacherEnrollment = () => {
   const { registerTeacher, loading, error, success, resetState } = useEnrollment();
@@ -21,63 +21,245 @@ const TeacherEnrollment = () => {
       emergencyContactRelation: '',
       phoneSecondary: '',
       phoneEmergency: '',
-      profileImage: '',
-      cnicFront: '',
-      cnicBack: '',
-      degreeDocuments: '',
-      otherDocuments: '',
       joiningDate: '',
       salary: '',
       employmentType: ''
     }
   });
 
+  // File states
+  const [files, setFiles] = useState({
+    profileImage: null,
+    cnicFront: null,
+    cnicBack: null,
+    degreeDocuments: [],
+    otherDocuments: []
+  });
+
+  // Preview states
+  const [previews, setPreviews] = useState({
+    profileImage: null,
+    cnicFront: null,
+    cnicBack: null
+  });
+
   const [credentials, setCredentials] = useState(null);
+  const [fileErrors, setFileErrors] = useState({});
 
   const handleChange = (e) => {
-  const { name, value, type, checked, files } = e.target;
+    const { name, value, type, checked } = e.target;
 
-  // 🧠 Detect numeric fields you want to auto-convert
-  const numericFields = ["experience", "salary", "age"];
+    const numericFields = ["experience", "salary"];
 
-  // Determine finalValue based on input type
-  let finalValue;
-  if (type === "checkbox") {
-    finalValue = checked;
-  } else if (type === "file") {
-    finalValue = files.length > 1 ? Array.from(files) : files[0];
-  } else if (numericFields.includes(name.split(".").pop())) {
-    finalValue = value === "" ? null : Number(value); // convert to number
-  } else {
-    finalValue = value;
-  }
+    let finalValue;
+    if (type === "checkbox") {
+      finalValue = checked;
+    } else if (numericFields.includes(name.split(".").pop())) {
+      finalValue = value === "" ? null : Number(value);
+    } else {
+      finalValue = value;
+    }
 
-  // 🔹 Handle nested fields like profileData.experience
-  if (name.startsWith("profileData.")) {
-    const profileField = name.split(".")[1];
-    setFormData((prev) => ({
+    if (name.startsWith("profileData.")) {
+      const profileField = name.split(".")[1];
+      setFormData((prev) => ({
+        ...prev,
+        profileData: {
+          ...prev.profileData,
+          [profileField]: finalValue,
+        },
+      }));
+    } else {
+      setFormData((prev) => ({
+        ...prev,
+        [name]: finalValue,
+      }));
+    }
+  };
+
+  // Validate file
+  const validateFile = (file, fieldName) => {
+    const errors = {};
+    
+    // Check file size (5MB = 5 * 1024 * 1024 bytes)
+    if (file.size > 5 * 1024 * 1024) {
+      errors[fieldName] = 'File size must be less than 5MB';
+      return errors;
+    }
+
+    // Check file type
+    const imageTypes = ['image/jpeg', 'image/jpg', 'image/png', 'image/gif', 'image/webp'];
+    const docTypes = ['application/pdf', 'application/msword', 'application/vnd.openxmlformats-officedocument.wordprocessingml.document'];
+    
+    const isImage = imageTypes.includes(file.type);
+    const isDoc = docTypes.includes(file.type);
+
+    if (fieldName === 'profileImage' || fieldName === 'cnicFront' || fieldName === 'cnicBack') {
+      if (!isImage) {
+        errors[fieldName] = 'Only image files (JPEG, PNG, GIF, WEBP) are allowed';
+        return errors;
+      }
+    } else {
+      if (!isImage && !isDoc) {
+        errors[fieldName] = 'Only images or documents (PDF, DOC, DOCX) are allowed';
+        return errors;
+      }
+    }
+
+    return errors;
+  };
+
+  // Handle single file upload
+  const handleFileChange = (e, fieldName) => {
+    const file = e.target.files[0];
+    if (!file) return;
+
+    const errors = validateFile(file, fieldName);
+    
+    if (Object.keys(errors).length > 0) {
+      setFileErrors(prev => ({ ...prev, ...errors }));
+      e.target.value = ''; // Reset input
+      return;
+    }
+
+    // Clear any previous errors for this field
+    setFileErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[fieldName];
+      return newErrors;
+    });
+
+    setFiles(prev => ({
       ...prev,
-      profileData: {
-        ...prev.profileData,
-        [profileField]: finalValue,
-      },
+      [fieldName]: file
     }));
-  } else {
-    setFormData((prev) => ({
-      ...prev,
-      [name]: finalValue,
-    }));
-  }
-};
 
+    // Create preview for images
+    if (file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onloadend = () => {
+        setPreviews(prev => ({
+          ...prev,
+          [fieldName]: reader.result
+        }));
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  // Handle multiple file upload
+  const handleMultipleFileChange = (e, fieldName) => {
+    const selectedFiles = Array.from(e.target.files);
+    
+    if (selectedFiles.length === 0) return;
+
+    const maxFiles = fieldName === 'degreeDocuments' ? 5 : 10;
+    const currentFiles = files[fieldName] || [];
+    
+    if (currentFiles.length + selectedFiles.length > maxFiles) {
+      setFileErrors(prev => ({
+        ...prev,
+        [fieldName]: `Maximum ${maxFiles} files allowed`
+      }));
+      e.target.value = '';
+      return;
+    }
+
+    // Validate each file
+    let hasErrors = false;
+    for (const file of selectedFiles) {
+      const errors = validateFile(file, fieldName);
+      if (Object.keys(errors).length > 0) {
+        setFileErrors(prev => ({ ...prev, ...errors }));
+        hasErrors = true;
+        break;
+      }
+    }
+
+    if (hasErrors) {
+      e.target.value = '';
+      return;
+    }
+
+    // Clear errors
+    setFileErrors(prev => {
+      const newErrors = { ...prev };
+      delete newErrors[fieldName];
+      return newErrors;
+    });
+
+    setFiles(prev => ({
+      ...prev,
+      [fieldName]: [...currentFiles, ...selectedFiles]
+    }));
+
+    e.target.value = ''; // Reset input for reuse
+  };
+
+  // Remove single file
+  const removeFile = (fieldName) => {
+    setFiles(prev => ({
+      ...prev,
+      [fieldName]: null
+    }));
+    setPreviews(prev => ({
+      ...prev,
+      [fieldName]: null
+    }));
+  };
+
+  // Remove file from multiple files
+  const removeMultipleFile = (fieldName, index) => {
+    setFiles(prev => ({
+      ...prev,
+      [fieldName]: prev[fieldName].filter((_, i) => i !== index)
+    }));
+  };
 
   const handleSubmit = async (e) => {
     e.preventDefault();
     resetState();
+
+    // Validate required profile image
+    if (!files.profileImage) {
+      setFileErrors({ profileImage: 'Profile image is required' });
+      return;
+    }
     
     try {
-      const result = await registerTeacher(formData);
+      // Create FormData
+      const data = new FormData();
+      
+      // Add text fields
+      data.append('name', formData.name);
+      if (formData.phone) data.append('phone', formData.phone);
+      
+      // Add profile data as JSON string
+      data.append('profileData', JSON.stringify(formData.profileData));
+      
+      // Add files
+      if (files.profileImage) {
+        data.append('profileImage', files.profileImage);
+      }
+      if (files.cnicFront) {
+        data.append('cnicFront', files.cnicFront);
+      }
+      if (files.cnicBack) {
+        data.append('cnicBack', files.cnicBack);
+      }
+      
+      // Add multiple files
+      files.degreeDocuments.forEach(file => {
+        data.append('degreeDocuments', file);
+      });
+      
+      files.otherDocuments.forEach(file => {
+        data.append('otherDocuments', file);
+      });
+
+      const result = await registerTeacher(data);
       setCredentials(result.credentials);
+      
       // Reset form
       setFormData({
         name: '',
@@ -96,16 +278,29 @@ const TeacherEnrollment = () => {
           emergencyContactRelation: '',
           phoneSecondary: '',
           phoneEmergency: '',
-          profileImage: '',
-          cnicFront: '',
-          cnicBack: '',
-          degreeDocuments: '',
-          otherDocuments: '',
           joiningDate: '',
           salary: '',
           employmentType: ''
         }
       });
+      
+      // Reset files
+      setFiles({
+        profileImage: null,
+        cnicFront: null,
+        cnicBack: null,
+        degreeDocuments: [],
+        otherDocuments: []
+      });
+      
+      setPreviews({
+        profileImage: null,
+        cnicFront: null,
+        cnicBack: null
+      });
+      
+      setFileErrors({});
+      
     } catch (error) {
       console.error('Registration failed:', error);
     }
@@ -191,6 +386,57 @@ const TeacherEnrollment = () => {
               </div>
             </div>
 
+            {/* Profile Image - REQUIRED */}
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-black mb-4 flex items-center">
+                <ImageIcon className="h-5 w-5 text-amber-600 mr-2" />
+                Profile Image *
+              </h2>
+              <div className="space-y-4">
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Upload Profile Image (Required - Max 5MB)
+                  </label>
+                  <div className="flex items-center space-x-4">
+                    <label className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50">
+                      <Upload className="h-4 w-4 mr-2" />
+                      Choose File
+                      <input
+                        type="file"
+                        accept="image/*"
+                        onChange={(e) => handleFileChange(e, 'profileImage')}
+                        className="hidden"
+                      />
+                    </label>
+                    {files.profileImage && (
+                      <span className="text-sm text-gray-600">{files.profileImage.name}</span>
+                    )}
+                  </div>
+                  {fileErrors.profileImage && (
+                    <p className="text-sm text-red-600 mt-1">{fileErrors.profileImage}</p>
+                  )}
+                </div>
+                
+                {/* Preview */}
+                {previews.profileImage && (
+                  <div className="relative inline-block">
+                    <img 
+                      src={previews.profileImage} 
+                      alt="Profile preview" 
+                      className="w-32 h-32 object-cover rounded-lg border-2 border-gray-300"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => removeFile('profileImage')}
+                      className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                    >
+                      <X className="h-4 w-4" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            </div>
+
             {/* Personal Details */}
             <div className="mb-8">
               <h2 className="text-xl font-semibold text-black mb-4 flex items-center">
@@ -235,8 +481,95 @@ const TeacherEnrollment = () => {
                     value={formData.profileData.cnic}
                     onChange={handleChange}
                     className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
-                    placeholder="Enter CNIC number"
+                    placeholder="12345-1234567-1"
                   />
+                </div>
+              </div>
+            </div>
+
+            {/* CNIC Documents */}
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-black mb-4 flex items-center">
+                <FileText className="h-5 w-5 text-amber-600 mr-2" />
+                CNIC Documents
+              </h2>
+              <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                {/* CNIC Front */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CNIC Front (Max 5MB)
+                  </label>
+                  <label className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50">
+                    <Upload className="h-4 w-4 mr-2" />
+                    Choose File
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleFileChange(e, 'cnicFront')}
+                      className="hidden"
+                    />
+                  </label>
+                  {files.cnicFront && (
+                    <p className="text-sm text-gray-600 mt-1">{files.cnicFront.name}</p>
+                  )}
+                  {fileErrors.cnicFront && (
+                    <p className="text-sm text-red-600 mt-1">{fileErrors.cnicFront}</p>
+                  )}
+                  {previews.cnicFront && (
+                    <div className="relative inline-block mt-2">
+                      <img 
+                        src={previews.cnicFront} 
+                        alt="CNIC Front" 
+                        className="w-full h-32 object-cover rounded-lg border-2 border-gray-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeFile('cnicFront')}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
+                </div>
+
+                {/* CNIC Back */}
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    CNIC Back (Max 5MB)
+                  </label>
+                  <label className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50">
+                    <Upload className="h-4 w-4 mr-2" />
+                    Choose File
+                    <input
+                      type="file"
+                      accept="image/*"
+                      onChange={(e) => handleFileChange(e, 'cnicBack')}
+                      className="hidden"
+                    />
+                  </label>
+                  {files.cnicBack && (
+                    <p className="text-sm text-gray-600 mt-1">{files.cnicBack.name}</p>
+                  )}
+                  {fileErrors.cnicBack && (
+                    <p className="text-sm text-red-600 mt-1">{fileErrors.cnicBack}</p>
+                  )}
+                  {previews.cnicBack && (
+                    <div className="relative inline-block mt-2">
+                      <img 
+                        src={previews.cnicBack} 
+                        alt="CNIC Back" 
+                        className="w-full h-32 object-cover rounded-lg border-2 border-gray-300"
+                      />
+                      <button
+                        type="button"
+                        onClick={() => removeFile('cnicBack')}
+                        className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-1 hover:bg-red-600"
+                      >
+                        <X className="h-4 w-4" />
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -303,6 +636,133 @@ const TeacherEnrollment = () => {
                     <option value="CONTRACT">Contract</option>
                   </select>
                 </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Joining Date
+                  </label>
+                  <input
+                    type="date"
+                    name="profileData.joiningDate"
+                    value={formData.profileData.joiningDate}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                  />
+                </div>
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 mb-2">
+                    Salary
+                  </label>
+                  <input
+                    type="number"
+                    name="profileData.salary"
+                    value={formData.profileData.salary}
+                    onChange={handleChange}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                    placeholder="Monthly salary"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* Degree Documents */}
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-black mb-4 flex items-center">
+                <Award className="h-5 w-5 text-amber-600 mr-2" />
+                Degree Documents
+              </h2>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Upload Degree Documents (Max 5 files, 5MB each)
+                </label>
+                <label className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 w-fit">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Choose Files
+                  <input
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx"
+                    multiple
+                    onChange={(e) => handleMultipleFileChange(e, 'degreeDocuments')}
+                    className="hidden"
+                  />
+                </label>
+                {fileErrors.degreeDocuments && (
+                  <p className="text-sm text-red-600 mt-1">{fileErrors.degreeDocuments}</p>
+                )}
+                
+                {/* File List */}
+                {files.degreeDocuments.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {files.degreeDocuments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                        <div className="flex items-center">
+                          <File className="h-4 w-4 text-gray-600 mr-2" />
+                          <span className="text-sm text-gray-700">{file.name}</span>
+                          <span className="text-xs text-gray-500 ml-2">
+                            ({(file.size / 1024).toFixed(2)} KB)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeMultipleFile('degreeDocuments', index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            {/* Other Documents */}
+            <div className="mb-8">
+              <h2 className="text-xl font-semibold text-black mb-4 flex items-center">
+                <FileText className="h-5 w-5 text-amber-600 mr-2" />
+                Other Documents
+              </h2>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Upload Other Documents (Max 10 files, 5MB each)
+                </label>
+                <label className="flex items-center px-4 py-2 bg-white border border-gray-300 rounded-md cursor-pointer hover:bg-gray-50 w-fit">
+                  <Upload className="h-4 w-4 mr-2" />
+                  Choose Files
+                  <input
+                    type="file"
+                    accept="image/*,.pdf,.doc,.docx"
+                    multiple
+                    onChange={(e) => handleMultipleFileChange(e, 'otherDocuments')}
+                    className="hidden"
+                  />
+                </label>
+                {fileErrors.otherDocuments && (
+                  <p className="text-sm text-red-600 mt-1">{fileErrors.otherDocuments}</p>
+                )}
+                
+                {/* File List */}
+                {files.otherDocuments.length > 0 && (
+                  <div className="mt-4 space-y-2">
+                    {files.otherDocuments.map((file, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 bg-gray-50 rounded-md">
+                        <div className="flex items-center">
+                          <File className="h-4 w-4 text-gray-600 mr-2" />
+                          <span className="text-sm text-gray-700">{file.name}</span>
+                          <span className="text-xs text-gray-500 ml-2">
+                            ({(file.size / 1024).toFixed(2)} KB)
+                          </span>
+                        </div>
+                        <button
+                          type="button"
+                          onClick={() => removeMultipleFile('otherDocuments', index)}
+                          className="text-red-500 hover:text-red-700"
+                        >
+                          <X className="h-4 w-4" />
+                        </button>
+                      </div>
+                    ))}
+                  </div>
+                )}
               </div>
             </div>
 
@@ -364,6 +824,34 @@ const TeacherEnrollment = () => {
                       onChange={handleChange}
                       className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
                       placeholder="Relationship"
+                    />
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Secondary Phone
+                    </label>
+                    <input
+                      type="tel"
+                      name="profileData.phoneSecondary"
+                      value={formData.profileData.phoneSecondary}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      placeholder="Secondary phone number"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 mb-2">
+                      Emergency Phone
+                    </label>
+                    <input
+                      type="tel"
+                      name="profileData.phoneEmergency"
+                      value={formData.profileData.phoneEmergency}
+                      onChange={handleChange}
+                      className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-transparent"
+                      placeholder="Emergency phone number"
                     />
                   </div>
                 </div>

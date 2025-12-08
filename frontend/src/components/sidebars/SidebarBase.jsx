@@ -6,7 +6,7 @@ const SidebarBase = ({
   onClose, 
   onToggle, 
   children, 
-  title = "Madrassa System" 
+  title = "Jamia Abi Bakar" 
 }) => {
   return (
     <>
@@ -30,7 +30,7 @@ const SidebarBase = ({
         <div className="flex items-center justify-between p-6 border-b border-gold-100">
           <div className="flex items-center space-x-3">
             <div className="w-10 h-10 bg-linear-to-br from-[#F59E0B] to-[#D97706] rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">M</span>
+              <span className="text-white font-bold text-lg">K</span>
             </div>
             <div>
               <h1 className="text-xl font-bold text-black">{title}</h1>

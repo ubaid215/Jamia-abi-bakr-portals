@@ -2,12 +2,19 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const authController = require('../controllers/authController');
-const { generateRollNumber } = require('../utils/passwordGenerator');
 const { 
   authenticateToken, 
   requireSuperAdmin, 
   requireAdmin
 } = require('../middlewares/auth');
+const { upload } = require('../middlewares/upload'); // Import the upload instance
+
+// ============================================
+// PUBLIC ROUTES - MUST BE FIRST!
+// ============================================
+
+// Public profile image endpoint - NO AUTH REQUIRED
+router.get('/public/profile-image/:userId', adminController.serveProfileImage);
 
 // ============================================
 // SUPER ADMIN ONLY ROUTES
@@ -19,21 +26,32 @@ router.delete('/users/:id', authenticateToken, requireSuperAdmin, adminControlle
 // ============================================
 // ADMIN AND SUPER ADMIN ROUTES
 // ============================================
+
 // System stats and overview
 router.get('/stats', authenticateToken, requireAdmin, adminController.getSystemStats);
 
 // Teacher management
 router.get('/teachers', authenticateToken, requireAdmin, adminController.getAllTeachers);
 router.get('/teachers/:id', authenticateToken, requireAdmin, adminController.getTeacherDetails);
+router.get('/teachers/:id/documents', authenticateToken, requireAdmin, adminController.getTeacherWithDocuments);
 
 // Student management
 router.get('/students', authenticateToken, requireAdmin, adminController.getAllStudents);
 router.get('/students/:id', authenticateToken, requireAdmin, adminController.getStudentDetails);
+router.get('/students/:id/documents', authenticateToken, requireAdmin, adminController.getStudentWithDocuments);
 
-// ✅ FIXED: Student enrollment history - 
+// Student profile image upload
+router.put('/students/:id/profile-image', 
+  authenticateToken, 
+  requireAdmin, 
+  upload.single('profileImage'), // Now this will work
+  adminController.updateStudentProfileImage
+);
+
+// Student enrollment history
 router.get('/students/:studentId/enrollment-history', authenticateToken, requireAdmin, adminController.getStudentEnrollmentHistory);
 
-// ✅ NEW: Batch student promotion
+// Batch student promotion
 router.post('/students/promote', authenticateToken, requireAdmin, adminController.promoteStudents);
 
 // User management
@@ -47,13 +65,58 @@ router.get('/leave-requests', authenticateToken, requireAdmin, adminController.m
 router.put('/leave-requests/:id', authenticateToken, requireAdmin, adminController.updateLeaveRequest);
 
 // ============================================
+// FILE SERVING ROUTES - Profile Images & Documents
+// ============================================
+
+// Protected profile image endpoint (for admin dashboard use)
+router.get('/files/profile-image/:userId', authenticateToken, requireAdmin, adminController.serveProfileImage);
+
+// Serve teacher documents
+router.get('/teachers/:teacherId/documents/:type', authenticateToken, requireAdmin, adminController.serveTeacherDocument);
+
+// Serve student documents
+router.get('/students/:studentId/documents/:type', authenticateToken, requireAdmin, adminController.serveStudentDocument);
+
+// Export user documents info
+router.get('/users/:userId/documents-info/:userType', authenticateToken, requireAdmin, adminController.exportUserDocumentsInfo);
+
+// ============================================
+// DOCUMENT UPLOAD ROUTES
+// ============================================
+router.post('/students/:id/documents', 
+  authenticateToken, 
+  requireAdmin, 
+  upload.single('document'),
+  adminController.uploadStudentDocument
+);
+
+router.post('/teachers/:id/documents', 
+  authenticateToken, 
+  requireAdmin, 
+  upload.single('document'),
+  adminController.uploadTeacherDocument
+);
+
+router.delete('/students/:studentId/documents/:type', 
+  authenticateToken, 
+  requireAdmin, 
+  adminController.deleteStudentDocument
+);
+
+router.delete('/teachers/:teacherId/documents/:type', 
+  authenticateToken, 
+  requireAdmin, 
+  adminController.deleteTeacherDocument
+);
+
+// ============================================
 // ATTENDANCE OVERVIEW ROUTES
 // ============================================
 router.get('/attendance-overview', authenticateToken, requireAdmin, adminController.getAttendanceOverview);
 router.get('/attendance-trends', authenticateToken, requireAdmin, adminController.getAttendanceTrends);
 router.get('/class-attendance-comparison', authenticateToken, requireAdmin, adminController.getClassAttendanceComparison);
 
-// Legacy attendance route (keep for backward compatibility)
+// Legacy attendance route
 router.get('/attendance', authenticateToken, requireAdmin, adminController.getAttendanceOverview);
 
 module.exports = router;

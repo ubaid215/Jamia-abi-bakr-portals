@@ -1,6 +1,9 @@
 const bcrypt = require('bcryptjs');
 const prisma = require('../db/prismaClient');
 const { generateStrongPassword, generateEmail, generateRollNumber } = require('../utils/passwordGenerator');
+const fs = require('fs');
+const path = require('path');
+
 
 const saltRounds = 12;
 
@@ -735,6 +738,8 @@ class AdminController {
       res.status(500).json({ error: 'Internal server error' });
     }
   }
+
+
 
   // Manage leave requests
   async manageLeaveRequests(req, res) {
@@ -1724,6 +1729,1068 @@ class AdminController {
       averageDailyLines: Math.round(averageDailyLines * 100) / 100,
       isCompleted: completionPercentage >= 100
     };
+  }
+
+  // ============================================
+  // FILE SERVING METHODS
+  // ============================================
+
+  // Serve profile image for any user
+
+  async serveProfileImage(req, res) {
+    try {
+      const { userId } = req.params;
+
+      console.log(`📸 [Profile Image Request] User ID: ${userId}`);
+
+      // Find user with profile image
+      const user = await prisma.user.findUnique({
+        where: { id: userId },
+        select: {
+          id: true,
+          name: true,
+          profileImage: true,
+          role: true
+        }
+      });
+
+      if (!user) {
+        console.log(`❌ User not found: ${userId}`);
+        return res.status(404).json({
+          error: 'User not found',
+          userId
+        });
+      }
+
+      if (!user.profileImage) {
+        console.log(`⚠️ No profile image for user: ${user.name} (${userId})`);
+        return res.status(404).json({
+          error: 'Profile image not found for this user',
+          user: { id: user.id, name: user.name, role: user.role }
+        });
+      }
+
+      // Construct file path
+      const filePath = path.join(__dirname, '..', user.profileImage);
+
+      console.log(`📁 Looking for file: ${filePath}`);
+
+      // Check if file exists
+      if (!fs.existsSync(filePath)) {
+        console.log(`❌ File not found on disk: ${filePath}`);
+        console.log(`   Stored path in DB: ${user.profileImage}`);
+        return res.status(404).json({
+          error: 'Profile image file not found on server',
+          storedPath: user.profileImage,
+          resolvedPath: filePath,
+          user: { id: user.id, name: user.name, role: user.role }
+        });
+      }
+
+      // Determine content type based on file extension
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = {
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp'
+      }[ext] || 'image/jpeg';
+
+      console.log(`✅ Serving image: ${user.name} (${ext})`);
+
+      // Set appropriate headers
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Cache-Control', 'public, max-age=86400'); // Cache for 24 hours
+      res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+      res.setHeader('Access-Control-Allow-Origin', '*'); // Allow all origins for public images
+
+      // Send file
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error('❌ Error serving profile image:', error);
+      res.status(500).json({
+        error: 'Internal server error',
+        message: error.message,
+        ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
+      });
+    }
+  }
+
+  // Serve teacher documents
+  async serveTeacherDocument(req, res) {
+    try {
+      const { teacherId, type } = req.params;
+      const { index } = req.query;
+
+      // Find teacher and get document path
+      const teacher = await prisma.teacher.findUnique({
+        where: { id: teacherId },
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      if (!teacher) {
+        return res.status(404).json({ error: 'Teacher not found' });
+      }
+
+      let documentPath;
+      let fileName;
+
+      switch (type) {
+        case 'cnic-front':
+          documentPath = teacher.cnicFront;
+          fileName = `cnic-front-${teacher.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          break;
+
+        case 'cnic-back':
+          documentPath = teacher.cnicBack;
+          fileName = `cnic-back-${teacher.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          break;
+
+        case 'degree':
+          const degreePaths = teacher.degreeDocuments ? JSON.parse(teacher.degreeDocuments) : [];
+          if (index !== undefined && degreePaths[index]) {
+            documentPath = degreePaths[index];
+            fileName = `degree-${index}-${teacher.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          } else {
+            return res.status(400).json({
+              error: 'Specify document index (0-based)',
+              availableDocuments: degreePaths.length
+            });
+          }
+          break;
+
+        case 'other':
+          const otherPaths = teacher.otherDocuments ? JSON.parse(teacher.otherDocuments) : [];
+          if (index !== undefined && otherPaths[index]) {
+            documentPath = otherPaths[index];
+            fileName = `other-${index}-${teacher.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          } else {
+            return res.status(400).json({
+              error: 'Specify document index (0-based)',
+              availableDocuments: otherPaths.length
+            });
+          }
+          break;
+
+        default:
+          return res.status(400).json({
+            error: 'Invalid document type',
+            validTypes: ['cnic-front', 'cnic-back', 'degree', 'other']
+          });
+      }
+
+      if (!documentPath) {
+        return res.status(404).json({
+          error: 'Document not found',
+          teacher: teacher.user.name,
+          documentType: type,
+          teacherId
+        });
+      }
+
+      const filePath = path.join(__dirname, '..', documentPath);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          error: 'Document file not found on server',
+          storedPath: documentPath,
+          resolvedPath: filePath,
+          teacher: teacher.user.name
+        });
+      }
+
+      // Set appropriate headers for download
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp'
+      }[ext] || 'application/octet-stream';
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName || path.basename(filePath)}"`);
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error('Error serving teacher document:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Serve student documents
+  async serveStudentDocument(req, res) {
+    try {
+      const { studentId, type } = req.params;
+      const { index } = req.query;
+
+      // Find student and get document path
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: {
+          user: {
+            select: {
+              name: true,
+              email: true
+            }
+          }
+        }
+      });
+
+      if (!student) {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      let documentPath;
+      let fileName;
+
+      switch (type) {
+        case 'birth-certificate':
+          documentPath = student.birthCertificate;
+          fileName = `birth-certificate-${student.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          break;
+
+        case 'cnic-bform':
+          documentPath = student.cnicOrBForm;
+          fileName = `cnic-bform-${student.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          break;
+
+        case 'previous-school':
+          documentPath = student.previousSchoolCertificate;
+          fileName = `previous-school-${student.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          break;
+
+        case 'other':
+          const otherPaths = student.otherDocuments ? JSON.parse(student.otherDocuments) : [];
+          if (index !== undefined && otherPaths[index]) {
+            documentPath = otherPaths[index];
+            fileName = `other-${index}-${student.user.name.replace(/\s+/g, '-')}${path.extname(documentPath || '')}`;
+          } else {
+            return res.status(400).json({
+              error: 'Specify document index (0-based)',
+              availableDocuments: otherPaths.length
+            });
+          }
+          break;
+
+        default:
+          return res.status(400).json({
+            error: 'Invalid document type',
+            validTypes: ['birth-certificate', 'cnic-bform', 'previous-school', 'other']
+          });
+      }
+
+      if (!documentPath) {
+        return res.status(404).json({
+          error: 'Document not found',
+          student: student.user.name,
+          documentType: type,
+          studentId
+        });
+      }
+
+      const filePath = path.join(__dirname, '..', documentPath);
+
+      if (!fs.existsSync(filePath)) {
+        return res.status(404).json({
+          error: 'Document file not found on server',
+          storedPath: documentPath,
+          resolvedPath: filePath,
+          student: student.user.name
+        });
+      }
+
+      // Set appropriate headers for download
+      const ext = path.extname(filePath).toLowerCase();
+      const contentType = {
+        '.pdf': 'application/pdf',
+        '.doc': 'application/msword',
+        '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+        '.jpg': 'image/jpeg',
+        '.jpeg': 'image/jpeg',
+        '.png': 'image/png',
+        '.gif': 'image/gif',
+        '.webp': 'image/webp'
+      }[ext] || 'application/octet-stream';
+
+      res.setHeader('Content-Type', contentType);
+      res.setHeader('Content-Disposition', `attachment; filename="${fileName || path.basename(filePath)}"`);
+      res.sendFile(filePath);
+    } catch (error) {
+      console.error('Error serving student document:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Update student profile image
+async updateStudentProfileImage(req, res) {
+  try {
+    const { id } = req.params;
+    
+    if (!req.file) {
+      return res.status(400).json({ error: 'No image file provided' });
+    }
+
+    // Find student
+    const student = await prisma.student.findFirst({
+      where: { OR: [{ id }, { userId: id }] }
+    });
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Delete old image if exists
+    if (student.profileImage) {
+      const oldPath = path.join(__dirname, '..', student.profileImage);
+      if (fs.existsSync(oldPath)) {
+        fs.unlinkSync(oldPath);
+      }
+    }
+
+    // Update with new image
+    const updatedStudent = await prisma.student.update({
+      where: { id: student.id },
+      data: { profileImage: req.file.path }
+    });
+
+    // Also update user table
+    await prisma.user.update({
+      where: { id: student.userId },
+      data: { profileImage: req.file.path }
+    });
+
+    res.json({
+      message: 'Profile image updated successfully',
+      profileImage: req.file.path
+    });
+
+  } catch (error) {
+    console.error('Error updating profile image:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// Upload student document
+async uploadStudentDocument(req, res) {
+  try {
+    const { id } = req.params; // This should be student.id, not user.id
+    const { type } = req.body;
+
+    console.log(`📁 [Upload Document] Student ID: ${id}, Type: ${type}`);
+    
+    if (!req.file) {
+      console.log('❌ No file uploaded');
+      return res.status(400).json({ error: 'No document file uploaded' });
+    }
+
+    if (!type || !['birth-certificate', 'cnic-bform', 'previous-school', 'other'].includes(type)) {
+      console.log(`❌ Invalid document type: ${type}`);
+      return res.status(400).json({ 
+        error: 'Valid document type is required',
+        validTypes: ['birth-certificate', 'cnic-bform', 'previous-school', 'other']
+      });
+    }
+
+    console.log(`📄 File uploaded: ${req.file.filename}, Size: ${req.file.size}`);
+
+    // First try to find by student.id
+    let student = await prisma.student.findUnique({
+      where: { id }
+    });
+
+    // If not found, try to find by userId
+    if (!student) {
+      console.log(`🔄 Student not found by ID ${id}, trying by userId...`);
+      student = await prisma.student.findFirst({
+        where: { userId: id }
+      });
+    }
+
+    if (!student) {
+      console.log(`❌ Student not found with ID: ${id}`);
+      // Delete uploaded file since student not found
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        await fs.unlink(req.file.path);
+        console.log(`🗑️ Deleted orphan file: ${req.file.path}`);
+      }
+      return res.status(404).json({ 
+        error: 'Student not found',
+        message: `No student found with ID: ${id}`
+      });
+    }
+
+    console.log(`✅ Student found: ${student.admissionNo} (User ID: ${student.userId})`);
+
+    let updateData = {};
+    
+    // Determine which field to update based on document type
+    switch(type) {
+      case 'birth-certificate':
+        // Delete old file if exists
+        if (student.birthCertificate && fs.existsSync(student.birthCertificate)) {
+          await fs.unlink(student.birthCertificate);
+          console.log(`🗑️ Deleted old birth certificate: ${student.birthCertificate}`);
+        }
+        updateData = { birthCertificate: req.file.path };
+        break;
+        
+      case 'cnic-bform':
+        if (student.cnicOrBForm && fs.existsSync(student.cnicOrBForm)) {
+          await fs.unlink(student.cnicOrBForm);
+          console.log(`🗑️ Deleted old CNIC/B-Form: ${student.cnicOrBForm}`);
+        }
+        updateData = { cnicOrBForm: req.file.path };
+        break;
+        
+      case 'previous-school':
+        if (student.previousSchoolCertificate && fs.existsSync(student.previousSchoolCertificate)) {
+          await fs.unlink(student.previousSchoolCertificate);
+          console.log(`🗑️ Deleted old school certificate: ${student.previousSchoolCertificate}`);
+        }
+        updateData = { previousSchoolCertificate: req.file.path };
+        break;
+        
+      case 'other':
+        // For other documents, append to array
+        let existingDocs = [];
+        try {
+          existingDocs = student.otherDocuments ? JSON.parse(student.otherDocuments) : [];
+        } catch (e) {
+          console.log('⚠️ Error parsing otherDocuments, initializing as empty array');
+          existingDocs = [];
+        }
+        existingDocs.push(req.file.path);
+        updateData = { otherDocuments: JSON.stringify(existingDocs) };
+        console.log(`➕ Added other document, total: ${existingDocs.length}`);
+        break;
+        
+      default:
+        if (req.file.path && fs.existsSync(req.file.path)) {
+          await fs.unlink(req.file.path);
+        }
+        return res.status(400).json({ error: 'Invalid document type' });
+    }
+
+    // Update student record
+    const updatedStudent = await prisma.student.update({
+      where: { id: student.id },
+      data: updateData
+    });
+
+    console.log(`✅ Document uploaded successfully for student: ${student.admissionNo}`);
+
+    res.json({
+      message: `Document uploaded successfully`,
+      document: {
+        type,
+        path: req.file.path,
+        fileName: req.file.originalname,
+        size: req.file.size,
+        uploadedAt: new Date()
+      },
+      student: {
+        id: student.id,
+        userId: student.userId,
+        admissionNo: student.admissionNo
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Upload student document error:', error);
+    
+    // Clean up uploaded file on error
+    if (req.file && req.file.path) {
+      try {
+        if (fs.existsSync(req.file.path)) {
+          await fs.unlink(req.file.path);
+          console.log(`🗑️ Cleaned up file after error: ${req.file.path}`);
+        }
+      } catch (cleanupError) {
+        console.error('Error cleaning up file:', cleanupError);
+      }
+    }
+    
+    res.status(500).json({ 
+      error: 'Failed to upload document',
+      details: error.message 
+    });
+  }
+}s
+
+// Delete student document
+async deleteStudentDocument(req, res) {
+  try {
+    const { studentId, type } = req.params;
+    const { index } = req.query;
+
+    console.log(`🗑️ [Delete Document] Student ID: ${studentId}, Type: ${type}, Index: ${index}`);
+
+    const student = await prisma.student.findUnique({
+      where: { id: studentId }
+    });
+
+    if (!student) {
+      console.log(`❌ Student not found: ${studentId}`);
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    let updateData = {};
+    let filePathToDelete = null;
+
+    switch(type) {
+      case 'birth-certificate':
+        if (!student.birthCertificate) {
+          return res.status(404).json({ error: 'Birth certificate not found' });
+        }
+        filePathToDelete = student.birthCertificate;
+        updateData = { birthCertificate: null };
+        break;
+        
+      case 'cnic-bform':
+        if (!student.cnicOrBForm) {
+          return res.status(404).json({ error: 'CNIC/B-Form not found' });
+        }
+        filePathToDelete = student.cnicOrBForm;
+        updateData = { cnicOrBForm: null };
+        break;
+        
+      case 'previous-school':
+        if (!student.previousSchoolCertificate) {
+          return res.status(404).json({ error: 'Previous school certificate not found' });
+        }
+        filePathToDelete = student.previousSchoolCertificate;
+        updateData = { previousSchoolCertificate: null };
+        break;
+        
+      case 'other':
+        let existingDocs = [];
+        try {
+          existingDocs = student.otherDocuments ? JSON.parse(student.otherDocuments) : [];
+        } catch (e) {
+          return res.status(400).json({ error: 'Error parsing document list' });
+        }
+        
+        const docIndex = parseInt(index) || 0;
+        if (docIndex >= existingDocs.length || docIndex < 0) {
+          return res.status(404).json({ 
+            error: 'Document not found at specified index',
+            availableCount: existingDocs.length 
+          });
+        }
+        
+        filePathToDelete = existingDocs[docIndex];
+        existingDocs.splice(docIndex, 1);
+        updateData = { otherDocuments: JSON.stringify(existingDocs) };
+        break;
+        
+      default:
+        return res.status(400).json({ 
+          error: 'Invalid document type',
+          validTypes: ['birth-certificate', 'cnic-bform', 'previous-school', 'other']
+        });
+    }
+
+    // Delete file from disk
+    if (filePathToDelete) {
+      try {
+        if (fs.existsSync(filePathToDelete)) {
+          await fs.unlink(filePathToDelete);
+          console.log(`✅ Deleted file from disk: ${filePathToDelete}`);
+        } else {
+          console.log(`⚠️ File not found on disk: ${filePathToDelete}`);
+        }
+      } catch (fileError) {
+        console.error('Error deleting file from disk:', fileError);
+        // Continue anyway - we'll still update the database
+      }
+    }
+
+    // Update database
+    await prisma.student.update({
+      where: { id: studentId },
+      data: updateData
+    });
+
+    console.log(`✅ Document deleted successfully from database for student: ${student.admissionNo}`);
+
+    res.json({
+      message: 'Document deleted successfully',
+      deleted: {
+        type,
+        path: filePathToDelete,
+        student: {
+          id: student.id,
+          admissionNo: student.admissionNo
+        }
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Delete student document error:', error);
+    res.status(500).json({ 
+      error: 'Failed to delete document',
+      details: error.message 
+    });
+  }
+}
+
+// Upload teacher document
+async uploadTeacherDocument(req, res) {
+  try {
+    const { id } = req.params;
+    const { type } = req.body;
+
+    if (!req.file) {
+      return res.status(400).json({ error: 'No document file uploaded' });
+    }
+
+    if (!type || !['cnic-front', 'cnic-back', 'qualification', 'experience', 'other'].includes(type)) {
+      return res.status(400).json({ error: 'Valid document type is required' });
+    }
+
+    const teacher = await prisma.teacher.findUnique({
+      where: { id }
+    });
+
+    if (!teacher) {
+      if (req.file.path && fs.existsSync(req.file.path)) {
+        fs.unlinkSync(req.file.path);
+      }
+      return res.status(404).json({ error: 'Teacher not found' });
+    }
+
+    let updateData = {};
+    let fileName = `${type}-${teacher.cnic || teacher.id}`;
+
+    if (type === 'cnic-front') {
+      if (teacher.cnicFront && fs.existsSync(teacher.cnicFront)) {
+        fs.unlinkSync(teacher.cnicFront);
+      }
+      updateData = { cnicFront: req.file.path };
+    } 
+    else if (type === 'cnic-back') {
+      if (teacher.cnicBack && fs.existsSync(teacher.cnicBack)) {
+        fs.unlinkSync(teacher.cnicBack);
+      }
+      updateData = { cnicBack: req.file.path };
+    } 
+    else if (type === 'qualification') {
+      const existingDocs = teacher.qualificationCertificates ? JSON.parse(teacher.qualificationCertificates) : [];
+      existingDocs.push(req.file.path);
+      updateData = { qualificationCertificates: JSON.stringify(existingDocs) };
+    } 
+    else if (type === 'experience') {
+      const existingDocs = teacher.experienceCertificates ? JSON.parse(teacher.experienceCertificates) : [];
+      existingDocs.push(req.file.path);
+      updateData = { experienceCertificates: JSON.stringify(existingDocs) };
+    } 
+    else if (type === 'other') {
+      const existingDocs = teacher.otherDocuments ? JSON.parse(teacher.otherDocuments) : [];
+      existingDocs.push(req.file.path);
+      updateData = { otherDocuments: JSON.stringify(existingDocs) };
+    }
+
+    await prisma.teacher.update({
+      where: { id },
+      data: updateData
+    });
+
+    res.json({
+      message: `${type.replace('-', ' ')} uploaded successfully`,
+      document: {
+        type,
+        path: req.file.path,
+        fileName: req.file.originalname,
+        size: req.file.size
+      }
+    });
+
+  } catch (error) {
+    console.error('Upload teacher document error:', error);
+    
+    if (req.file && req.file.path && fs.existsSync(req.file.path)) {
+      fs.unlinkSync(req.file.path);
+    }
+    
+    res.status(500).json({ error: 'Failed to upload document' });
+  }
+}
+
+
+// Delete teacher document
+async deleteTeacherDocument(req, res) {
+  try {
+    const { teacherId, type } = req.params;
+    const { index } = req.query;
+
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: teacherId }
+    });
+
+    if (!teacher) {
+      return res.status(404).json({ error: 'Teacher not found' });
+    }
+
+    let updateData = {};
+    let filePathToDelete = null;
+
+    if (type === 'cnic-front') {
+      if (!teacher.cnicFront) {
+        return res.status(404).json({ error: 'CNIC front not found' });
+      }
+      filePathToDelete = teacher.cnicFront;
+      updateData = { cnicFront: null };
+    } 
+    else if (type === 'cnic-back') {
+      if (!teacher.cnicBack) {
+        return res.status(404).json({ error: 'CNIC back not found' });
+      }
+      filePathToDelete = teacher.cnicBack;
+      updateData = { cnicBack: null };
+    } 
+    else if (type === 'qualification') {
+      const existingDocs = teacher.qualificationCertificates ? JSON.parse(teacher.qualificationCertificates) : [];
+      const docIndex = parseInt(index) || 0;
+      
+      if (docIndex >= existingDocs.length) {
+        return res.status(404).json({ error: 'Qualification document not found at specified index' });
+      }
+      
+      filePathToDelete = existingDocs[docIndex];
+      existingDocs.splice(docIndex, 1);
+      updateData = { qualificationCertificates: JSON.stringify(existingDocs) };
+    } 
+    else if (type === 'experience') {
+      const existingDocs = teacher.experienceCertificates ? JSON.parse(teacher.experienceCertificates) : [];
+      const docIndex = parseInt(index) || 0;
+      
+      if (docIndex >= existingDocs.length) {
+        return res.status(404).json({ error: 'Experience document not found at specified index' });
+      }
+      
+      filePathToDelete = existingDocs[docIndex];
+      existingDocs.splice(docIndex, 1);
+      updateData = { experienceCertificates: JSON.stringify(existingDocs) };
+    } 
+    else if (type === 'other') {
+      const existingDocs = teacher.otherDocuments ? JSON.parse(teacher.otherDocuments) : [];
+      const docIndex = parseInt(index) || 0;
+      
+      if (docIndex >= existingDocs.length) {
+        return res.status(404).json({ error: 'Document not found at specified index' });
+      }
+      
+      filePathToDelete = existingDocs[docIndex];
+      existingDocs.splice(docIndex, 1);
+      updateData = { otherDocuments: JSON.stringify(existingDocs) };
+    } 
+    else {
+      return res.status(400).json({ error: 'Invalid document type' });
+    }
+
+    // Delete file from disk
+    if (filePathToDelete && fs.existsSync(filePathToDelete)) {
+      fs.unlinkSync(filePathToDelete);
+    }
+
+    // Update database
+    await prisma.teacher.update({
+      where: { id: teacherId },
+      data: updateData
+    });
+
+    res.json({
+      message: 'Document deleted successfully',
+      deleted: {
+        type,
+        path: filePathToDelete
+      }
+    });
+
+  } catch (error) {
+    console.error('Delete teacher document error:', error);
+    res.status(500).json({ error: 'Failed to delete document' });
+  }
+}
+
+  // Get teacher with all document info (without serving files)
+  async getTeacherWithDocuments(req, res) {
+    try {
+      const { id } = req.params;
+
+      const teacher = await prisma.teacher.findUnique({
+        where: { id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              profileImage: true,
+              status: true,
+              createdAt: true
+            }
+          }
+        }
+      });
+
+      if (!teacher) {
+        return res.status(404).json({ error: 'Teacher not found' });
+      }
+
+      // Parse document arrays
+      const documents = {
+        profileImage: teacher.profileImage,
+        cnicFront: teacher.cnicFront,
+        cnicBack: teacher.cnicBack,
+        degreeDocuments: teacher.degreeDocuments ? JSON.parse(teacher.degreeDocuments) : [],
+        otherDocuments: teacher.otherDocuments ? JSON.parse(teacher.otherDocuments) : []
+      };
+
+      // Generate URLs for each document
+      const generateFileUrl = (type, teacherId, index = null) => {
+        let url = `/api/admin/teachers/${teacherId}/documents/${type}`;
+        if (index !== null) {
+          url += `?index=${index}`;
+        }
+        return url;
+      };
+
+      const documentUrls = {
+        profileImageUrl: generateFileUrl('profile-image', teacher.userId),
+        cnicFrontUrl: teacher.cnicFront ? generateFileUrl('cnic-front', teacher.id) : null,
+        cnicBackUrl: teacher.cnicBack ? generateFileUrl('cnic-back', teacher.id) : null,
+        degreeDocumentsUrls: documents.degreeDocuments.map((_, index) =>
+          generateFileUrl('degree', teacher.id, index)
+        ),
+        otherDocumentsUrls: documents.otherDocuments.map((_, index) =>
+          generateFileUrl('other', teacher.id, index)
+        )
+      };
+
+      res.json({
+        teacher: teacher.user,
+        profile: {
+          bio: teacher.bio,
+          specialization: teacher.specialization,
+          qualification: teacher.qualification,
+          cnic: teacher.cnic,
+          experience: teacher.experience,
+          joiningDate: teacher.joiningDate,
+          salary: teacher.salary,
+          employmentType: teacher.employmentType
+        },
+        documents: documents,
+        urls: documentUrls
+      });
+
+    } catch (error) {
+      console.error('Get teacher with documents error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Get student with all document info (without serving files)
+  async getStudentWithDocuments(req, res) {
+    try {
+      const { id } = req.params;
+
+      const student = await prisma.student.findUnique({
+        where: { id },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true,
+              phone: true,
+              profileImage: true,
+              status: true,
+              createdAt: true
+            }
+          },
+          currentEnrollment: {
+            include: {
+              classRoom: {
+                select: {
+                  name: true,
+                  grade: true,
+                  type: true
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!student) {
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      // Parse document arrays
+      const documents = {
+        profileImage: student.profileImage,
+        birthCertificate: student.birthCertificate,
+        cnicOrBForm: student.cnicOrBForm,
+        previousSchoolCertificate: student.previousSchoolCertificate,
+        otherDocuments: student.otherDocuments ? JSON.parse(student.otherDocuments) : []
+      };
+
+      // Generate URLs for each document
+      const generateFileUrl = (type, studentId, index = null) => {
+        let url = `/api/admin/students/${studentId}/documents/${type}`;
+        if (index !== null) {
+          url += `?index=${index}`;
+        }
+        return url;
+      };
+
+      const documentUrls = {
+        profileImageUrl: `/api/admin/files/profile-image/${student.userId}`,
+        birthCertificateUrl: student.birthCertificate ? generateFileUrl('birth-certificate', student.id) : null,
+        cnicBformUrl: student.cnicOrBForm ? generateFileUrl('cnic-bform', student.id) : null,
+        previousSchoolCertificateUrl: student.previousSchoolCertificate ? generateFileUrl('previous-school', student.id) : null,
+        otherDocumentsUrls: documents.otherDocuments.map((_, index) =>
+          generateFileUrl('other', student.id, index)
+        )
+      };
+
+      res.json({
+        student: student.user,
+        profile: {
+          admissionNo: student.admissionNo,
+          dateOfBirth: student.dob,
+          gender: student.gender,
+          guardianName: student.guardianName,
+          guardianPhone: student.guardianPhone,
+          address: student.address,
+          city: student.city,
+          province: student.province
+        },
+        academic: {
+          currentClass: student.currentEnrollment?.classRoom,
+          rollNumber: student.currentEnrollment?.rollNumber
+        },
+        documents: documents,
+        urls: documentUrls
+      });
+
+    } catch (error) {
+      console.error('Get student with documents error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Export all user documents as JSON info (not the actual files)
+  async exportUserDocumentsInfo(req, res) {
+    try {
+      const { userId, userType } = req.params;
+
+      let documents = [];
+      let userInfo = {};
+
+      if (userType === 'teacher') {
+        const teacher = await prisma.teacher.findFirst({
+          where: { userId },
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        });
+
+        if (teacher) {
+          userInfo = {
+            type: 'teacher',
+            name: teacher.user.name,
+            email: teacher.user.email,
+            teacherId: teacher.id
+          };
+
+          documents = [
+            { type: 'profile-image', path: teacher.profileImage, url: `/api/admin/files/profile-image/${userId}` },
+            { type: 'cnic-front', path: teacher.cnicFront, url: teacher.cnicFront ? `/api/admin/teachers/${teacher.id}/documents/cnic-front` : null },
+            { type: 'cnic-back', path: teacher.cnicBack, url: teacher.cnicBack ? `/api/admin/teachers/${teacher.id}/documents/cnic-back` : null },
+            ...(teacher.degreeDocuments ? JSON.parse(teacher.degreeDocuments).map((path, index) => ({
+              type: 'degree',
+              index,
+              path,
+              url: `/api/admin/teachers/${teacher.id}/documents/degree?index=${index}`
+            })) : []),
+            ...(teacher.otherDocuments ? JSON.parse(teacher.otherDocuments).map((path, index) => ({
+              type: 'other',
+              index,
+              path,
+              url: `/api/admin/teachers/${teacher.id}/documents/other?index=${index}`
+            })) : [])
+          ].filter(doc => doc.path); // Only include documents that have paths
+        }
+      } else if (userType === 'student') {
+        const student = await prisma.student.findFirst({
+          where: { userId },
+          include: {
+            user: {
+              select: {
+                name: true,
+                email: true
+              }
+            }
+          }
+        });
+
+        if (student) {
+          userInfo = {
+            type: 'student',
+            name: student.user.name,
+            email: student.user.email,
+            studentId: student.id,
+            admissionNo: student.admissionNo
+          };
+
+          documents = [
+            { type: 'profile-image', path: student.profileImage, url: `/api/admin/files/profile-image/${userId}` },
+            { type: 'birth-certificate', path: student.birthCertificate, url: student.birthCertificate ? `/api/admin/students/${student.id}/documents/birth-certificate` : null },
+            { type: 'cnic-bform', path: student.cnicOrBForm, url: student.cnicOrBForm ? `/api/admin/students/${student.id}/documents/cnic-bform` : null },
+            { type: 'previous-school', path: student.previousSchoolCertificate, url: student.previousSchoolCertificate ? `/api/admin/students/${student.id}/documents/previous-school` : null },
+            ...(student.otherDocuments ? JSON.parse(student.otherDocuments).map((path, index) => ({
+              type: 'other',
+              index,
+              path,
+              url: `/api/admin/students/${student.id}/documents/other?index=${index}`
+            })) : [])
+          ].filter(doc => doc.path);
+        }
+      }
+
+      res.json({
+        user: userInfo,
+        documents: documents,
+        summary: {
+          totalDocuments: documents.length,
+          availableForDownload: documents.filter(doc => doc.url).length
+        }
+      });
+
+    } catch (error) {
+      console.error('Export documents info error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
 
 

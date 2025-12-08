@@ -1,19 +1,8 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
-  Search, 
-  Filter, 
-  Mail,
-  Phone,
-  MapPin,
-  BookOpen,
-  Calendar,
-  GraduationCap,
-  Users,
-  TrendingUp,
-  History,
-  CheckSquare,
-  Square
+  Search, Filter, Mail, Phone, MapPin, BookOpen, Calendar, 
+  GraduationCap, Users, TrendingUp, History, CheckSquare, Square, Eye
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
 import BatchPromotionModal from '../../components/BatchPromotionModal';
@@ -32,112 +21,163 @@ const StudentLists = () => {
     fetchStudents();
   }, [fetchStudents]);
 
-  // Toggle student selection
+  // ============================================
+  // Helper Functions for Safe Data Access
+  // ============================================
+  
+  const getStudentName = (student) => 
+    student.user?.name || student.name || 'Unknown Student';
+
+  const getStudentEmail = (student) => 
+    student.user?.email || student.email || 'No email';
+
+  const getStudentStatus = (student) => 
+    student.user?.status || student.status || 'UNKNOWN';
+
+  const getStudentProfileImage = (student) => 
+    student.user?.profileImage || 
+    student.profileImage || 
+    student.studentProfile?.profileImage || 
+    null;
+
+  const getStudentUserId = (student) => 
+    student.user?.id || student.userId || student.id;
+
+  const getCurrentClass = (student) => 
+    student.currentEnrollment?.classRoom || 
+    student.currentClass || 
+    student.classRoom || 
+    student.studentProfile?.currentEnrollment?.classRoom || 
+    null;
+
+  const getAdmissionNo = (student) => 
+    student.admissionNo || student.studentProfile?.admissionNo || 'N/A';
+
+  // ============================================
+  // Profile Image URL Generation
+  // ============================================
+  
+  // Generate profile image URL - Using PUBLIC endpoint (no auth required)
+const getProfileImageUrl = useCallback((student) => {
+  try {
+    const userId = getStudentUserId(student);
+    const profileImage = getStudentProfileImage(student);
+    
+    if (!profileImage) {
+      console.log(`⚠️ No profile image found for student`, student);
+      return null;
+    }
+
+    // If already a full URL, return as-is
+    if (profileImage.startsWith('http') || profileImage.startsWith('data:')) {
+      console.log(`🔗 Using existing URL:`, profileImage);
+      return profileImage;
+    }
+
+    // CRITICAL: Use PUBLIC endpoint - does NOT require authentication
+    const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+    
+    // OLD (Wrong): const imageUrl = `${baseUrl}/admin/files/profile-image/${userId}`;
+    // NEW (Correct): Use public endpoint
+    const imageUrl = `${baseUrl}/admin/public/profile-image/${userId}`;
+    
+    console.log(`🖼️ Generated PUBLIC image URL for ${getStudentName(student)}:`, imageUrl);
+    return imageUrl;
+  } catch (error) {
+    console.error('❌ Error generating profile image URL:', error);
+    return null;
+  }
+}, []);
+
+  // ============================================
+  // Student Selection Handlers
+  // ============================================
+  
   const toggleStudentSelection = (student) => {
     setSelectedStudents(prev => {
       const isSelected = prev.some(s => s.id === student.id);
-      if (isSelected) {
-        return prev.filter(s => s.id !== student.id);
-      } else {
-        return [...prev, student];
-      }
+      return isSelected 
+        ? prev.filter(s => s.id !== student.id)
+        : [...prev, student];
     });
   };
 
-  // Select all filtered students
   const selectAllStudents = () => {
-    if (selectedStudents.length === filteredStudents.length) {
-      setSelectedStudents([]);
-    } else {
-      setSelectedStudents([...filteredStudents]);
-    }
+    setSelectedStudents(
+      selectedStudents.length === filteredStudents.length 
+        ? [] 
+        : [...filteredStudents]
+    );
   };
 
-  // Safe filtering with proper data access
+  const isStudentSelected = (studentId) => 
+    selectedStudents.some(s => s.id === studentId);
+
+  // ============================================
+  // Filtering Logic
+  // ============================================
+  
   const filteredStudents = Array.isArray(students) 
     ? students.filter(student => {
-        const userName = student.user?.name || student.name || '';
-        const userEmail = student.user?.email || student.email || '';
-        const userStatus = student.user?.status || student.status || '';
-        const admissionNo = student.admissionNo || '';
-        
-        const currentClass = student.currentEnrollment?.classRoom || student.classRoom;
+        const studentName = getStudentName(student).toLowerCase();
+        const studentEmail = getStudentEmail(student).toLowerCase();
+        const admissionNo = getAdmissionNo(student).toLowerCase();
+        const studentStatus = getStudentStatus(student);
+        const currentClass = getCurrentClass(student);
         const className = currentClass?.name || '';
 
         const matchesSearch = 
-          userName.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          userEmail.toLowerCase().includes(searchTerm.toLowerCase()) ||
-          admissionNo.toLowerCase().includes(searchTerm.toLowerCase());
+          studentName.includes(searchTerm.toLowerCase()) ||
+          studentEmail.includes(searchTerm.toLowerCase()) ||
+          admissionNo.includes(searchTerm.toLowerCase());
 
-        const matchesStatus = statusFilter === 'ALL' || userStatus === statusFilter;
+        const matchesStatus = statusFilter === 'ALL' || studentStatus === statusFilter;
         const matchesClass = classFilter === 'ALL' || className === classFilter;
 
         return matchesSearch && matchesStatus && matchesClass;
       })
     : [];
 
-  const getStatusColor = (status) => {
-    switch (status) {
-      case 'ACTIVE': return 'bg-green-100 text-green-800';
-      case 'INACTIVE': return 'bg-yellow-100 text-yellow-800';
-      case 'TERMINATED': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const getClassTypeColor = (type) => {
-    switch (type) {
-      case 'REGULAR': return 'bg-blue-100 text-blue-800';
-      case 'HIFZ': return 'bg-purple-100 text-purple-800';
-      case 'NAZRA': return 'bg-orange-100 text-orange-800';
-      default: return 'bg-gray-100 text-gray-800';
-    }
-  };
-
-  const handleStudentClick = (student, e) => {
-    // Prevent navigation when clicking checkbox
-    if (e.target.type === 'checkbox' || e.target.closest('.selection-checkbox')) {
-      return;
-    }
-    const studentId = student.user?.id || student.id;
-    navigate(`/admin/students/${studentId}`);
-  };
-
-  const getStudentData = (student) => {
-    const currentClass = student.currentEnrollment?.classRoom || student.classRoom;
-    
-    return {
-      id: student.id,
-      user: student.user || { 
-        id: student.id, 
-        name: student.name || 'Unknown Student',
-        email: student.email || 'No email',
-        status: student.status || 'UNKNOWN',
-        profileImage: student.profileImage
-      },
-      admissionNo: student.admissionNo || 'N/A',
-      guardianName: student.guardianName || 'Not specified',
-      guardianPhone: student.guardianPhone || '',
-      address: student.address || '',
-      currentEnrollment: student.currentEnrollment || null,
-      currentClass: currentClass || null
-    };
-  };
-
   const uniqueClasses = Array.isArray(students) 
     ? [...new Set(students
-        .map(student => {
-          const currentClass = student.currentEnrollment?.classRoom || student.classRoom;
-          return currentClass?.name;
-        })
+        .map(student => getCurrentClass(student)?.name)
         .filter(Boolean)
       )]
     : [];
 
-  const mockAttendance = {};
+  // ============================================
+  // Style Helpers
+  // ============================================
+  
+  const getStatusColor = (status) => {
+    const colors = {
+      ACTIVE: 'bg-green-100 text-green-800 border-green-200',
+      INACTIVE: 'bg-yellow-100 text-yellow-800 border-yellow-200',
+      TERMINATED: 'bg-red-100 text-red-800 border-red-200'
+    };
+    return `${colors[status] || 'bg-gray-100 text-gray-800 border-gray-200'} border`;
+  };
 
-  const getStudentAttendance = (studentId) => {
-    return mockAttendance[studentId] || { present: 0, total: 0, percentage: 0 };
+  const getClassTypeColor = (type) => {
+    const colors = {
+      REGULAR: 'bg-blue-100 text-blue-800 border-blue-200',
+      HIFZ: 'bg-purple-100 text-purple-800 border-purple-200',
+      NAZRA: 'bg-orange-100 text-orange-800 border-orange-200'
+    };
+    return `${colors[type] || 'bg-gray-100 text-gray-800 border-gray-200'} border`;
+  };
+
+  // ============================================
+  // Event Handlers
+  // ============================================
+  
+  const handleStudentClick = (student, e) => {
+    if (e.target.type === 'checkbox' || 
+        e.target.closest('.selection-checkbox') || 
+        e.target.closest('button')) {
+      return;
+    }
+    navigate(`/admin/students/${getStudentUserId(student)}`);
   };
 
   const handlePromotionSuccess = () => {
@@ -146,33 +186,36 @@ const StudentLists = () => {
     toast.success('Students promoted successfully');
   };
 
-  const isStudentSelected = (studentId) => {
-    return selectedStudents.some(s => s.id === studentId);
-  };
+  // Mock attendance - replace with real API data
+  const getStudentAttendance = () => ({ present: 0, total: 0, percentage: 0 });
 
+  // ============================================
+  // Render
+  // ============================================
+  
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
-        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-[#92400E]">Student Management</h1>
-            <p className="text-[#B45309] text-sm sm:text-base mt-1 sm:mt-2">
+            <p className="text-[#B45309] text-sm sm:text-base mt-1">
               Manage students and track their progress
             </p>
           </div>
-          <div className="mt-4 sm:mt-0 flex items-center space-x-3">
+          <div className="flex items-center gap-3">
             {selectedStudents.length > 0 && (
               <button
                 onClick={() => setShowPromotionModal(true)}
-                className="flex items-center space-x-2 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm"
+                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
               >
                 <TrendingUp className="h-4 w-4" />
                 <span>Promote ({selectedStudents.length})</span>
               </button>
             )}
-            <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A]">
-              Total: {filteredStudents.length}
+            <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A] shadow-sm">
+              📊 Total: {filteredStudents.length}
             </div>
           </div>
         </div>
@@ -180,8 +223,8 @@ const StudentLists = () => {
 
       {/* Filters and Search */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
-        <div className="flex flex-col space-y-4">
-          <div className="flex flex-col sm:flex-row sm:items-center space-y-4 sm:space-y-0 sm:space-x-4">
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
             {/* Search */}
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
@@ -190,17 +233,17 @@ const StudentLists = () => {
                 placeholder="Search students by name, email, or admission number..."
                 value={searchTerm}
                 onChange={(e) => setSearchTerm(e.target.value)}
-                className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
+                className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
               />
             </div>
 
             {/* Status Filter */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-gray-400" />
               <select
                 value={statusFilter}
                 onChange={(e) => setStatusFilter(e.target.value)}
-                className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
+                className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
               >
                 <option value="ALL">All Status</option>
                 <option value="ACTIVE">Active</option>
@@ -210,12 +253,12 @@ const StudentLists = () => {
             </div>
 
             {/* Class Filter */}
-            <div className="flex items-center space-x-2">
+            <div className="flex items-center gap-2">
               <BookOpen className="h-4 w-4 text-gray-400" />
               <select
                 value={classFilter}
                 onChange={(e) => setClassFilter(e.target.value)}
-                className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base"
+                className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
               >
                 <option value="ALL">All Classes</option>
                 {uniqueClasses.map(className => (
@@ -227,27 +270,32 @@ const StudentLists = () => {
 
           {/* Selection Controls */}
           {filteredStudents.length > 0 && (
-            <div className="flex items-center justify-between pt-2 border-t border-gray-200">
+            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
               <button
                 onClick={selectAllStudents}
-                className="flex items-center space-x-2 text-sm text-gray-600 hover:text-gray-900"
+                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors duration-200"
               >
                 {selectedStudents.length === filteredStudents.length ? (
-                  <CheckSquare className="h-4 w-4 text-[#F59E0B]" />
+                  <CheckSquare className="h-5 w-5 text-[#F59E0B]" />
                 ) : (
-                  <Square className="h-4 w-4" />
+                  <Square className="h-5 w-5" />
                 )}
-                <span>
-                  {selectedStudents.length === filteredStudents.length 
-                    ? 'Deselect All' 
-                    : 'Select All'
-                  }
+                <span className="font-medium">
+                  {selectedStudents.length === filteredStudents.length ? 'Deselect All' : 'Select All'}
                 </span>
               </button>
               {selectedStudents.length > 0 && (
-                <span className="text-sm text-gray-600">
-                  {selectedStudents.length} student{selectedStudents.length > 1 ? 's' : ''} selected
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-600">
+                    📋 {selectedStudents.length} student{selectedStudents.length > 1 ? 's' : ''} selected
+                  </span>
+                  <button
+                    onClick={() => setSelectedStudents([])}
+                    className="text-xs text-red-600 hover:text-red-800 px-2 py-1 hover:bg-red-50 rounded transition-colors duration-200"
+                  >
+                    Clear
+                  </button>
+                </div>
               )}
             </div>
           )}
@@ -259,173 +307,58 @@ const StudentLists = () => {
         {loading ? (
           // Loading Skeleton
           Array.from({ length: 6 }).map((_, index) => (
-            <div key={index} className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100 animate-pulse">
-              <div className="flex items-center space-x-3 mb-4">
-                <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
-                <div className="space-y-2 flex-1">
-                  <div className="h-4 bg-gray-200 rounded w-3/4"></div>
-                  <div className="h-3 bg-gray-200 rounded w-1/2"></div>
-                </div>
-              </div>
-              <div className="space-y-2">
-                <div className="h-3 bg-gray-200 rounded"></div>
-                <div className="h-3 bg-gray-200 rounded w-5/6"></div>
-              </div>
-            </div>
+            <LoadingSkeleton key={index} />
           ))
         ) : filteredStudents.length === 0 ? (
-          <div className="col-span-full text-center py-12">
-            <GraduationCap className="h-16 w-16 mx-auto text-gray-300 mb-4" />
-            <h3 className="text-lg font-semibold text-gray-900 mb-2">
-              {students.length === 0 ? 'No students enrolled yet' : 'No students found'}
-            </h3>
-            <p className="text-gray-500 text-sm">
-              {students.length === 0 
-                ? 'Use the enrollment page to register new students' 
-                : 'Try adjusting your search criteria'
-              }
-            </p>
-          </div>
+          <EmptyState studentsCount={students.length} />
         ) : (
-          filteredStudents.map((student) => {
-            const studentData = getStudentData(student);
-            const attendance = getStudentAttendance(studentData.id);
-            const currentClass = studentData.currentClass;
-            const selected = isStudentSelected(studentData.id);
-
-            return (
-              <div
-                key={studentData.id}
-                onClick={(e) => handleStudentClick(student, e)}
-                className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-200 cursor-pointer group ${
-                  selected 
-                    ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-50' 
-                    : 'border-gray-100 hover:border-[#F59E0B] hover:shadow-xl'
-                }`}
-              >
-                {/* Selection Checkbox */}
-                <div className="flex items-start justify-between mb-4">
-                  <div 
-                    className="selection-checkbox flex items-center space-x-3"
-                    onClick={(e) => e.stopPropagation()}
-                  >
-                    <input
-                      type="checkbox"
-                      checked={selected}
-                      onChange={() => toggleStudentSelection(studentData)}
-                      className="w-5 h-5 text-[#F59E0B] border-gray-300 rounded focus:ring-[#F59E0B] cursor-pointer"
-                    />
-                    {studentData.user.profileImage ? (
-                      <img 
-                        src={studentData.user.profileImage} 
-                        alt={studentData.user.name}
-                        className="w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover"
-                      />
-                    ) : (
-                      <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base">
-                        {studentData.user.name.charAt(0).toUpperCase()}
-                      </div>
-                    )}
-                    <div>
-                      <h3 className="font-semibold text-gray-900 text-sm sm:text-base group-hover:text-[#92400E]">
-                        {studentData.user.name}
-                      </h3>
-                      <p className="text-gray-500 text-xs sm:text-sm">Admission: {studentData.admissionNo}</p>
-                    </div>
-                  </div>
-                  <div className="flex flex-col items-end space-y-1">
-                    <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(studentData.user.status)}`}>
-                      {studentData.user.status}
-                    </span>
-                    {currentClass && (
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${getClassTypeColor(currentClass.type)}`}>
-                        {currentClass.type}
-                      </span>
-                    )}
-                  </div>
-                </div>
-
-                {/* Contact Info */}
-                <div className="space-y-2 mb-4">
-                  <div className="flex items-center space-x-2 text-gray-600 text-xs sm:text-sm">
-                    <Mail className="h-3 w-3 sm:h-4 sm:w-4" />
-                    <span className="truncate">{studentData.user.email}</span>
-                  </div>
-                  {studentData.guardianPhone && (
-                    <div className="flex items-center space-x-2 text-gray-600 text-xs sm:text-sm">
-                      <Phone className="h-3 w-3 sm:h-4 sm:w-4" />
-                      <span>{studentData.guardianPhone}</span>
-                    </div>
-                  )}
-                  {studentData.address && (
-                    <div className="flex items-center space-x-2 text-gray-600 text-xs sm:text-sm">
-                      <MapPin className="h-3 w-3 sm:h-4 sm:w-4" />
-                      <span className="truncate">{studentData.address}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Class & Guardian Info */}
-                <div className="grid grid-cols-2 gap-2 mb-4 text-xs sm:text-sm">
-                  {currentClass && (
-                    <div className="flex items-center space-x-1 text-gray-600">
-                      <BookOpen className="h-3 w-3 sm:h-4 sm:w-4" />
-                      <span className="truncate">{currentClass.name}</span>
-                    </div>
-                  )}
-                  {studentData.guardianName && (
-                    <div className="flex items-center space-x-1 text-gray-600">
-                      <Users className="h-3 w-3 sm:h-4 sm:w-4" />
-                      <span className="truncate">{studentData.guardianName}</span>
-                    </div>
-                  )}
-                </div>
-
-                {/* Attendance & Progress */}
-                <div className="border-t border-gray-100 pt-3">
-                  <div className="flex items-center justify-between mb-2">
-                    <span className="text-xs font-medium text-gray-700">Attendance</span>
-                    <Calendar className="h-3 w-3 text-gray-400" />
-                  </div>
-                  <div className="space-y-2">
-                    <div className="flex items-center justify-between text-xs">
-                      <span>This Month:</span>
-                      <span className="font-medium">{attendance.present}/{attendance.total} days</span>
-                    </div>
-                    <div className="w-full bg-gray-200 rounded-full h-2">
-                      <div 
-                        className="bg-green-500 h-2 rounded-full transition-all duration-300"
-                        style={{ width: `${attendance.percentage}%` }}
-                      ></div>
-                    </div>
-                    <div className="flex justify-between text-xs text-gray-600">
-                      <span>Rate:</span>
-                      <span className="font-medium">{attendance.percentage}%</span>
-                    </div>
-                  </div>
-                </div>
-
-                {/* Action Buttons */}
-                <div className="mt-4 pt-3 border-t border-gray-100 flex space-x-2">
-                  <button 
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      navigate(`/admin/students/${studentData.id}/history`);
-                    }}
-                    className="flex-1 flex items-center justify-center space-x-1 text-blue-600 hover:text-blue-800 text-xs font-medium transition-colors duration-200 py-2 border border-blue-200 rounded-lg hover:bg-blue-50"
-                  >
-                    <History className="h-3 w-3" />
-                    <span>History</span>
-                  </button>
-                  <button className="flex-1 text-center text-[#F59E0B] hover:text-[#D97706] text-xs font-medium transition-colors duration-200 py-2 border border-[#FDE68A] rounded-lg hover:bg-[#FFFBEB]">
-                    View Details →
-                  </button>
-                </div>
-              </div>
-            );
-          })
+          filteredStudents.map((student) => (
+            <StudentCard
+              key={student.id}
+              student={student}
+              studentName={getStudentName(student)}
+              studentEmail={getStudentEmail(student)}
+              studentStatus={getStudentStatus(student)}
+              admissionNo={getAdmissionNo(student)}
+              currentClass={getCurrentClass(student)}
+              attendance={getStudentAttendance()}
+              selected={isStudentSelected(student.id)}
+              profileImageUrl={getProfileImageUrl(student)}
+              onToggleSelection={() => toggleStudentSelection(student)}
+              onClick={(e) => handleStudentClick(student, e)}
+              onViewHistory={() => navigate(`/admin/students/${student.id}/history`)}
+              onViewDetails={() => navigate(`/admin/students/${student.id}`)}
+              getStatusColor={getStatusColor}
+              getClassTypeColor={getClassTypeColor}
+            />
+          ))
         )}
       </div>
+
+      {/* Selection Summary */}
+      {selectedStudents.length > 0 && (
+        <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-50">
+          <div className="flex items-center justify-between gap-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-[#F59E0B] rounded-full flex items-center justify-center">
+                <span className="text-white font-bold text-sm">{selectedStudents.length}</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">
+                  {selectedStudents.length} student{selectedStudents.length > 1 ? 's' : ''} selected
+                </p>
+                <p className="text-xs text-gray-500">Ready for promotion</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setShowPromotionModal(true)}
+              className="px-3 py-1.5 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white text-xs font-medium rounded-lg hover:shadow-lg transition-all duration-200"
+            >
+              Promote Now
+            </button>
+          </div>
+        </div>
+      )}
 
       {/* Batch Promotion Modal */}
       <BatchPromotionModal
@@ -434,6 +367,262 @@ const StudentLists = () => {
         selectedStudents={selectedStudents}
         onSuccess={handlePromotionSuccess}
       />
+    </div>
+  );
+};
+
+// ============================================
+// Sub-Components
+// ============================================
+
+const LoadingSkeleton = () => (
+  <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100 animate-pulse">
+    <div className="flex items-center gap-3 mb-4">
+      <div className="w-12 h-12 bg-gray-200 rounded-full"></div>
+      <div className="space-y-2 flex-1">
+        <div className="h-4 bg-gray-200 rounded w-3/4"></div>
+        <div className="h-3 bg-gray-200 rounded w-1/2"></div>
+      </div>
+    </div>
+    <div className="space-y-2">
+      <div className="h-3 bg-gray-200 rounded"></div>
+      <div className="h-3 bg-gray-200 rounded w-5/6"></div>
+    </div>
+  </div>
+);
+
+const EmptyState = ({ studentsCount }) => (
+  <div className="col-span-full text-center py-12 bg-gradient-to-br from-gray-50 to-white rounded-2xl border border-gray-200">
+    <GraduationCap className="h-16 w-16 mx-auto text-gray-300 mb-4" />
+    <h3 className="text-lg font-semibold text-gray-900 mb-2">
+      {studentsCount === 0 ? 'No students enrolled yet' : 'No students found'}
+    </h3>
+    <p className="text-gray-500 text-sm">
+      {studentsCount === 0 
+        ? 'Use the enrollment page to register new students' 
+        : 'Try adjusting your search criteria'
+      }
+    </p>
+  </div>
+);
+
+const StudentCard = ({ 
+  student, studentName, studentEmail, studentStatus, admissionNo, 
+  currentClass, attendance, selected, profileImageUrl, onToggleSelection, 
+  onClick, onViewHistory, onViewDetails, getStatusColor, getClassTypeColor
+}) => (
+  <div
+    onClick={onClick}
+    className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl ${
+      selected 
+        ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white' 
+        : 'border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50'
+    }`}
+  >
+    {/* Student Header */}
+    <div className="flex items-start justify-between mb-4">
+      <div className="flex items-center gap-3 flex-1">
+        <div 
+          className="selection-checkbox"
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleSelection();
+          }}
+        >
+          <input
+            type="checkbox"
+            checked={selected}
+            onChange={() => {}}
+            className="w-5 h-5 text-[#F59E0B] border-gray-300 rounded focus:ring-[#F59E0B] cursor-pointer hover:border-[#F59E0B] transition-colors"
+          />
+        </div>
+        
+        <ProfileImage 
+          profileImageUrl={profileImageUrl}
+          studentName={studentName}
+          studentStatus={studentStatus}
+        />
+        
+        <div className="flex-1 min-w-0">
+          <h3 className="font-bold text-gray-900 text-sm sm:text-base group-hover:text-[#92400E] truncate">
+            {studentName}
+          </h3>
+          <p className="text-gray-500 text-xs sm:text-sm truncate">
+            🎫 Admission: {admissionNo}
+          </p>
+          {currentClass && (
+            <p className="text-gray-600 text-xs mt-1 truncate">
+              🏫 {currentClass.name}
+            </p>
+          )}
+        </div>
+      </div>
+      
+      <div className="flex flex-col items-end gap-1">
+        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(studentStatus)}`}>
+          {studentStatus}
+        </span>
+        {currentClass && (
+          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getClassTypeColor(currentClass.type)}`}>
+            {currentClass.type}
+          </span>
+        )}
+      </div>
+    </div>
+
+    {/* Contact Info */}
+    <div className="space-y-2 mb-4">
+      <div className="flex items-center gap-2 text-gray-600 text-xs sm:text-sm p-2 bg-gray-50 rounded-lg">
+        <Mail className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+        <span className="truncate">{studentEmail}</span>
+      </div>
+      {student.guardianPhone && (
+        <div className="flex items-center gap-2 text-gray-600 text-xs sm:text-sm p-2 bg-gray-50 rounded-lg">
+          <Phone className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+          <span className="truncate">📞 {student.guardianPhone}</span>
+        </div>
+      )}
+      {student.address && (
+        <div className="flex items-center gap-2 text-gray-600 text-xs sm:text-sm p-2 bg-gray-50 rounded-lg">
+          <MapPin className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
+          <span className="truncate">{student.address}</span>
+        </div>
+      )}
+    </div>
+
+    {/* Guardian & Class Info */}
+    <div className="grid grid-cols-2 gap-3 mb-4">
+      {currentClass && (
+        <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg">
+          <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500">Class</p>
+            <p className="text-sm font-medium text-gray-900 truncate">{currentClass.name}</p>
+          </div>
+        </div>
+      )}
+      {student.guardianName && (
+        <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg">
+          <Users className="h-3 w-3 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500">Guardian</p>
+            <p className="text-sm font-medium text-gray-900 truncate">{student.guardianName}</p>
+          </div>
+        </div>
+      )}
+    </div>
+
+    {/* Attendance */}
+    <div className="border-t border-gray-100 pt-4">
+      <div className="flex items-center justify-between mb-3">
+        <div className="flex items-center gap-2">
+          <Calendar className="h-4 w-4 text-gray-400" />
+          <span className="text-sm font-medium text-gray-700">Attendance</span>
+        </div>
+        <span className="text-xs font-medium text-gray-500">This Month</span>
+      </div>
+      <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="flex items-baseline gap-2">
+            <span className="text-lg font-bold text-gray-900">{attendance.present}</span>
+            <span className="text-sm text-gray-500">/ {attendance.total} days</span>
+          </div>
+          <span className={`text-sm font-bold ${
+            attendance.percentage > 80 ? 'text-green-600' : 
+            attendance.percentage > 60 ? 'text-yellow-600' : 'text-red-600'
+          }`}>
+            {attendance.percentage}%
+          </span>
+        </div>
+        <div className="w-full bg-gray-200 rounded-full h-2">
+          <div 
+            className={`h-2 rounded-full transition-all duration-500 ${
+              attendance.percentage > 80 ? 'bg-green-500' : 
+              attendance.percentage > 60 ? 'bg-yellow-500' : 'bg-red-500'
+            }`}
+            style={{ width: `${Math.min(attendance.percentage, 100)}%` }}
+          />
+        </div>
+      </div>
+    </div>
+
+    {/* Action Buttons */}
+    <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          onViewHistory();
+        }}
+        className="flex-1 flex items-center justify-center gap-2 text-blue-600 hover:text-blue-800 text-xs font-medium transition-all duration-200 py-2.5 border border-blue-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 hover:shadow-sm"
+      >
+        <History className="h-3 w-3" />
+        <span>History</span>
+      </button>
+      <button 
+        onClick={(e) => {
+          e.stopPropagation();
+          onViewDetails();
+        }}
+        className="flex-1 flex items-center justify-center gap-2 text-[#F59E0B] hover:text-[#D97706] text-xs font-medium transition-all duration-200 py-2.5 border border-[#FDE68A] rounded-xl hover:bg-[#FFFBEB] hover:border-[#F59E0B] hover:shadow-sm"
+      >
+        <Eye className="h-3 w-3" />
+        <span>Details</span>
+      </button>
+    </div>
+  </div>
+);
+
+const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
+  const [imgLoaded, setImgLoaded] = useState(false);
+  const [imgError, setImgError] = useState(false);
+
+  const initials = studentName
+    .split(' ')
+    .map(n => n[0])
+    .join('')
+    .toUpperCase()
+    .substring(0, 2);
+
+  useEffect(() => {
+    setImgLoaded(false);
+    setImgError(false);
+  }, [profileImageUrl]);
+
+  const shouldShowImage = profileImageUrl && !imgError;
+
+  return (
+    <div className="relative flex-shrink-0">
+      {shouldShowImage ? (
+        <>
+          {!imgLoaded && (
+            <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-200 rounded-full animate-pulse" />
+          )}
+          
+          <img
+            src={profileImageUrl}
+            alt={studentName}
+            className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-white shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:border-[#F59E0B] ${
+              imgLoaded ? 'block' : 'hidden'
+            }`}
+            onLoad={() => {
+              console.log(`✅ Image loaded: ${studentName}`);
+              setImgLoaded(true);
+            }}
+            onError={() => {
+              console.error(`❌ Image failed: ${studentName}`, profileImageUrl);
+              setImgError(true);
+            }}
+          />
+        </>
+      ) : (
+        <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gradient-to-br from-[#F59E0B] via-[#D97706] to-[#B45309] rounded-full flex items-center justify-center text-white font-bold border-2 border-white shadow-lg text-sm">
+          {initials}
+        </div>
+      )}
+      
+      {studentStatus === 'ACTIVE' && (
+        <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
+      )}
     </div>
   );
 };

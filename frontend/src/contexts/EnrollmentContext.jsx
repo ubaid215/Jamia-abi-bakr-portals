@@ -101,58 +101,17 @@ export const EnrollmentProvider = ({ children }) => {
     });
   }, []);
 
-  // Handle form data with file uploads
-  // eslint-disable-next-line no-unused-vars
-  const prepareFormData = (data, fileFields = []) => {
-    const formData = new FormData();
-    
-    // Add all regular fields
-    Object.keys(data).forEach(key => {
-      if (data[key] !== undefined && data[key] !== null) {
-        if (typeof data[key] === 'object' && !(data[key] instanceof File)) {
-          // Handle nested objects
-          if (Array.isArray(data[key])) {
-            data[key].forEach((item, index) => {
-              if (item instanceof File) {
-                formData.append(key, item);
-              } else if (typeof item === 'object') {
-                Object.keys(item).forEach(subKey => {
-                  formData.append(`${key}[${index}][${subKey}]`, item[subKey]);
-                });
-              } else {
-                formData.append(`${key}[${index}]`, item);
-              }
-            });
-          } else {
-            Object.keys(data[key]).forEach(subKey => {
-              formData.append(`${key}[${subKey}]`, data[key][subKey]);
-            });
-          }
-        } else if (data[key] instanceof File) {
-          formData.append(key, data[key]);
-        } else {
-          formData.append(key, data[key]);
-        }
-      }
-    });
-
-    return formData;
-  };
-
   // Register teacher with file upload support
   const registerTeacher = useCallback(async (teacherData) => {
     try {
       setLoading(true);
-      setUploadProgress(0);
+      setUploadProgress(0, true);
       
-      // Prepare form data for file uploads
-      const formData = prepareFormData(teacherData);
-      
-      // Upload with progress tracking
-      const result = await enrollmentService.registerTeacher(formData, {
+      // teacherData should already be FormData from the component
+      const result = await enrollmentService.registerTeacher(teacherData, {
         onUploadProgress: (progressEvent) => {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(progress);
+          setUploadProgress(progress, true);
         }
       });
       
@@ -172,16 +131,13 @@ export const EnrollmentProvider = ({ children }) => {
   const registerStudent = useCallback(async (studentData) => {
     try {
       setLoading(true);
-      setUploadProgress(0);
+      setUploadProgress(0, true);
       
-      // Prepare form data for file uploads
-      const formData = prepareFormData(studentData);
-      
-      // Upload with progress tracking
-      const result = await enrollmentService.registerStudent(formData, {
+      // studentData should already be FormData from the component
+      const result = await enrollmentService.registerStudent(studentData, {
         onUploadProgress: (progressEvent) => {
           const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
-          setUploadProgress(progress);
+          setUploadProgress(progress, true);
         }
       });
       
@@ -280,6 +236,62 @@ export const EnrollmentProvider = ({ children }) => {
     }
   }, [setLoading]);
 
+  // Update teacher profile image
+  const updateTeacherProfileImage = useCallback(async (teacherId, imageFile) => {
+    try {
+      setLoading(true);
+      setUploadProgress(0, true);
+      
+      const formData = new FormData();
+      formData.append('profileImage', imageFile);
+      
+      const result = await enrollmentService.updateTeacherProfileImage(teacherId, formData, {
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(progress, true);
+        }
+      });
+      
+      dispatch({ 
+        type: ENROLLMENT_ACTIONS.SET_SUCCESS, 
+        payload: 'Profile image updated successfully' 
+      });
+      return result;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to update profile image';
+      dispatch({ type: ENROLLMENT_ACTIONS.SET_ERROR, payload: errorMessage });
+      throw error;
+    }
+  }, [setLoading, setUploadProgress]);
+
+  // Update student profile image
+  const updateStudentProfileImage = useCallback(async (studentId, imageFile) => {
+    try {
+      setLoading(true);
+      setUploadProgress(0, true);
+      
+      const formData = new FormData();
+      formData.append('profileImage', imageFile);
+      
+      const result = await enrollmentService.updateStudentProfileImage(studentId, formData, {
+        onUploadProgress: (progressEvent) => {
+          const progress = Math.round((progressEvent.loaded * 100) / progressEvent.total);
+          setUploadProgress(progress, true);
+        }
+      });
+      
+      dispatch({ 
+        type: ENROLLMENT_ACTIONS.SET_SUCCESS, 
+        payload: 'Profile image updated successfully' 
+      });
+      return result;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to update profile image';
+      dispatch({ type: ENROLLMENT_ACTIONS.SET_ERROR, payload: errorMessage });
+      throw error;
+    }
+  }, [setLoading, setUploadProgress]);
+
   // Clear success message
   const clearSuccess = useCallback(() => {
     dispatch({ type: ENROLLMENT_ACTIONS.SET_SUCCESS, payload: null });
@@ -303,6 +315,8 @@ export const EnrollmentProvider = ({ children }) => {
     transferStudent,
     getStudentEnrollmentHistory,
     getClassEnrollments,
+    updateTeacherProfileImage,
+    updateStudentProfileImage,
     resetState,
     setLoading,
     clearSuccess,
