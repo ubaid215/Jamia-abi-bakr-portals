@@ -51,19 +51,19 @@ const adminReducer = (state, action) => {
       return { ...state, loading: action.payload };
 
     case ACTION_TYPES.SET_ADMINS:
-      return { ...state, admins: action.payload };
+      return { ...state, admins: Array.isArray(action.payload) ? action.payload : [] };
 
     case ACTION_TYPES.SET_USERS:
-      return { ...state, users: action.payload };
+      return { ...state, users: Array.isArray(action.payload) ? action.payload : [] };
 
     case ACTION_TYPES.SET_TEACHERS:
-      return { ...state, teachers: action.payload };
+      return { ...state, teachers: Array.isArray(action.payload) ? action.payload : [] };
 
     case ACTION_TYPES.SET_STUDENTS:
-      return { ...state, students: action.payload };
+      return { ...state, students: Array.isArray(action.payload) ? action.payload : [] };
 
     case ACTION_TYPES.SET_LEAVE_REQUESTS:
-      return { ...state, leaveRequests: action.payload };
+      return { ...state, leaveRequests: Array.isArray(action.payload) ? action.payload : [] };
 
     case ACTION_TYPES.SET_STATS:
       return { ...state, stats: action.payload };
@@ -86,50 +86,61 @@ const adminReducer = (state, action) => {
     case ACTION_TYPES.UPDATE_USER:
       return {
         ...state,
-        users: state.users.map((user) =>
-          user.id === action.payload.id ? action.payload : user
-        ),
-        admins: state.admins.map((admin) =>
-          admin.id === action.payload.id ? action.payload : admin
-        ),
-        teachers: state.teachers.map((teacher) =>
-          teacher.userId === action.payload.id
-            ? { ...teacher, user: action.payload }
-            : teacher
-        ),
-        students: state.students.map((student) =>
-          student.userId === action.payload.id
-            ? { ...student, user: action.payload }
-            : student
-        ),
+        // FIX: Ensure all state arrays exist before mapping
+        users: Array.isArray(state.users) 
+          ? state.users.map((user) => user.id === action.payload.id ? action.payload : user)
+          : [],
+        admins: Array.isArray(state.admins) 
+          ? state.admins.map((admin) => admin.id === action.payload.id ? action.payload : admin)
+          : [],
+        teachers: Array.isArray(state.teachers) 
+          ? state.teachers.map((teacher) => 
+              teacher.userId === action.payload.id 
+                ? { ...teacher, user: action.payload } 
+                : teacher
+            )
+          : [],
+        students: Array.isArray(state.students) 
+          ? state.students.map((student) => 
+              student.userId === action.payload.id 
+                ? { ...student, user: action.payload } 
+                : student
+            )
+          : [],
       };
 
     case ACTION_TYPES.UPDATE_LEAVE_REQUEST:
       return {
         ...state,
-        leaveRequests: state.leaveRequests.map((request) =>
-          request.id === action.payload.id ? action.payload : request
-        ),
+        leaveRequests: Array.isArray(state.leaveRequests)
+          ? state.leaveRequests.map((request) => 
+              request.id === action.payload.id ? action.payload : request
+            )
+          : [],
       };
 
     case ACTION_TYPES.ADD_ADMIN:
       return {
         ...state,
-        admins: [...state.admins, action.payload],
-        users: [...state.users, action.payload],
+        admins: Array.isArray(state.admins) ? [...state.admins, action.payload] : [action.payload],
+        users: Array.isArray(state.users) ? [...state.users, action.payload] : [action.payload],
       };
 
     case ACTION_TYPES.DELETE_USER:
       return {
         ...state,
-        users: state.users.filter((user) => user.id !== action.payload),
-        admins: state.admins.filter((admin) => admin.id !== action.payload),
-        teachers: state.teachers.filter(
-          (teacher) => teacher.userId !== action.payload
-        ),
-        students: state.students.filter(
-          (student) => student.userId !== action.payload
-        ),
+        users: Array.isArray(state.users) 
+          ? state.users.filter((user) => user.id !== action.payload) 
+          : [],
+        admins: Array.isArray(state.admins) 
+          ? state.admins.filter((admin) => admin.id !== action.payload) 
+          : [],
+        teachers: Array.isArray(state.teachers) 
+          ? state.teachers.filter((teacher) => teacher.userId !== action.payload)
+          : [],
+        students: Array.isArray(state.students) 
+          ? state.students.filter((student) => student.userId !== action.payload)
+          : [],
       };
 
     default:
@@ -164,33 +175,60 @@ export const AdminProvider = ({ children }) => {
   }, []);
 
   const fetchAdmins = useCallback(async () => {
-    setLoading(true);
-    try {
-      const users = await adminService.getUsers({ role: "ADMIN" });
-      dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: users });
-      return users;
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to fetch admins");
-      throw error;
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const response = await adminService.getUsers({ role: "ADMIN" });
+    
+    // Ensure we're getting an array from the response
+    let adminsArray = [];
+    if (Array.isArray(response)) {
+      adminsArray = response;
+    } else if (response && Array.isArray(response.users)) {
+      adminsArray = response.users;
+    } else if (response && Array.isArray(response.admins)) {
+      adminsArray = response.admins;
+    } else if (response && response.data && Array.isArray(response.data)) {
+      adminsArray = response.data;
     }
-  }, []);
+    
+    dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: adminsArray });
+    return adminsArray;
+  } catch (error) {
+    setError(error.response?.data?.message || "Failed to fetch admins");
+    // Ensure we dispatch an empty array on error
+    dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: [] });
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   // User Management
   const fetchUsers = useCallback(async (filters = {}) => {
-    setLoading(true);
-    try {
-      const users = await adminService.getUsers(filters);
-      dispatch({ type: ACTION_TYPES.SET_USERS, payload: users });
-      return users;
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to fetch users");
-      throw error;
-    } finally {
-      setLoading(false);
+  setLoading(true);
+  try {
+    const response = await adminService.getUsers(filters);
+    
+    // Ensure we're getting an array from the response
+    let usersArray = [];
+    if (Array.isArray(response)) {
+      usersArray = response;
+    } else if (response && Array.isArray(response.users)) {
+      usersArray = response.users;
+    } else if (response && response.data && Array.isArray(response.data)) {
+      usersArray = response.data;
     }
-  }, []);
+    
+    dispatch({ type: ACTION_TYPES.SET_USERS, payload: usersArray });
+    return usersArray;
+  } catch (error) {
+    setError(error.response?.data?.message || "Failed to fetch users");
+    dispatch({ type: ACTION_TYPES.SET_USERS, payload: [] });
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   const updateUserStatus = useCallback(async (userId, status) => {
     setLoading(true);

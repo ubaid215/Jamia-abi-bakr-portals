@@ -11,7 +11,10 @@ import {
   UserCheck,
   UserX,
   Mail,
-  Phone
+  Phone,
+  CheckCircle,
+  XCircle,
+  PauseCircle
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { toast } from 'react-hot-toast';
@@ -23,6 +26,7 @@ const AdminManagement = () => {
   const [showCreateModal, setShowCreateModal] = useState(false);
   const [selectedAdmin, setSelectedAdmin] = useState(null);
   const [actionMenu, setActionMenu] = useState(null);
+  const [updatingStatus, setUpdatingStatus] = useState(null); // Track which admin is updating status
 
   const [newAdmin, setNewAdmin] = useState({
     name: '',
@@ -36,10 +40,16 @@ const AdminManagement = () => {
     fetchAdmins();
   }, [fetchAdmins]);
 
-  const filteredAdmins = admins.filter(admin => {
-    const matchesSearch = admin.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                         admin.email?.toLowerCase().includes(searchTerm.toLowerCase());
-    const matchesStatus = statusFilter === 'ALL' || admin.status === statusFilter;
+  // FIX: Safely handle admins data - ensure it's always an array
+  const filteredAdmins = (Array.isArray(admins) ? admins : []).filter(admin => {
+    // Add null checks for admin properties
+    const adminName = admin?.name || '';
+    const adminEmail = admin?.email || '';
+    const adminStatus = admin?.status || '';
+    
+    const matchesSearch = adminName.toLowerCase().includes(searchTerm.toLowerCase()) ||
+                         adminEmail.toLowerCase().includes(searchTerm.toLowerCase());
+    const matchesStatus = statusFilter === 'ALL' || adminStatus === statusFilter;
     return matchesSearch && matchesStatus;
   });
 
@@ -75,12 +85,15 @@ const AdminManagement = () => {
   };
 
   const handleStatusChange = async (adminId, newStatus) => {
+    setUpdatingStatus(adminId);
     try {
       await updateUserStatus(adminId, newStatus);
-      toast.success(`Admin status updated to ${newStatus}`);
+      toast.success(`Admin status updated to ${getStatusLabel(newStatus)}`);
       setActionMenu(null);
     } catch (error) {
       toast.error(error.message || 'Failed to update status');
+    } finally {
+      setUpdatingStatus(null);
     }
   };
 
@@ -96,14 +109,66 @@ const AdminManagement = () => {
     }
   };
 
-  const getStatusColor = (status) => {
+  // Get status label with icon
+  const getStatusLabel = (status) => {
     switch (status) {
-      case 'ACTIVE': return 'bg-green-100 text-green-800';
-      case 'INACTIVE': return 'bg-yellow-100 text-yellow-800';
-      case 'TERMINATED': return 'bg-red-100 text-red-800';
-      default: return 'bg-gray-100 text-gray-800';
+      case 'ACTIVE': return 'Active';
+      case 'INACTIVE': return 'Inactive';
+      case 'TERMINATED': return 'Terminated';
+      default: return 'Unknown';
     }
   };
+
+  // Get status icon
+  const getStatusIcon = (status) => {
+    switch (status) {
+      case 'ACTIVE': return <CheckCircle className="h-4 w-4" />;
+      case 'INACTIVE': return <PauseCircle className="h-4 w-4" />;
+      case 'TERMINATED': return <XCircle className="h-4 w-4" />;
+      default: return null;
+    }
+  };
+
+  // Get status color with improved UI
+  const getStatusColor = (status) => {
+    switch (status) {
+      case 'ACTIVE': 
+        return {
+          bg: 'bg-green-50',
+          text: 'text-green-700',
+          border: 'border-green-200',
+          dot: 'bg-green-500'
+        };
+      case 'INACTIVE': 
+        return {
+          bg: 'bg-yellow-50',
+          text: 'text-yellow-700',
+          border: 'border-yellow-200',
+          dot: 'bg-yellow-500'
+        };
+      case 'TERMINATED': 
+        return {
+          bg: 'bg-red-50',
+          text: 'text-red-700',
+          border: 'border-red-200',
+          dot: 'bg-red-500'
+        };
+      default: 
+        return {
+          bg: 'bg-gray-50',
+          text: 'text-gray-700',
+          border: 'border-gray-200',
+          dot: 'bg-gray-500'
+        };
+    }
+  };
+
+  // Status options for dropdown
+  const statusOptions = [
+    { value: 'ACTIVE', label: 'Active', icon: <CheckCircle className="h-4 w-4 text-green-600" /> },
+    { value: 'INACTIVE', label: 'Inactive', icon: <PauseCircle className="h-4 w-4 text-yellow-600" /> },
+    { value: 'TERMINATED', label: 'Terminated', icon: <XCircle className="h-4 w-4 text-red-600" /> },
+  ];
 
   return (
     <div className="space-y-6">
@@ -172,70 +237,92 @@ const AdminManagement = () => {
               <p className="text-sm">No admins found</p>
             </div>
           ) : (
-            filteredAdmins.map((admin) => (
-              <div key={admin.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center space-x-3">
-                    <div className="w-10 h-10 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm">
-                      {admin.name?.charAt(0).toUpperCase()}
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-gray-900 text-sm">{admin.name}</h3>
-                      <p className="text-gray-500 text-xs">{admin.email}</p>
-                    </div>
-                  </div>
-                  <div className="relative">
-                    <button
-                      onClick={() => setActionMenu(admin.id)}
-                      className="p-1 hover:bg-gray-100 rounded-lg"
-                    >
-                      <MoreVertical className="h-4 w-4 text-gray-400" />
-                    </button>
-                    {actionMenu === admin.id && (
-                      <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-10 w-32">
-                        <button
-                          onClick={() => handleStatusChange(admin.id, 'ACTIVE')}
-                          className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                        >
-                          <UserCheck className="h-3 w-3 text-green-600" />
-                          <span>Activate</span>
-                        </button>
-                        <button
-                          onClick={() => handleStatusChange(admin.id, 'INACTIVE')}
-                          className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm hover:bg-gray-50"
-                        >
-                          <UserX className="h-3 w-3 text-yellow-600" />
-                          <span>Deactivate</span>
-                        </button>
-                        <button
-                          onClick={() => handleDeleteAdmin(admin.id)}
-                          className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
-                        >
-                          <Trash2 className="h-3 w-3" />
-                          <span>Delete</span>
-                        </button>
+            filteredAdmins.map((admin) => {
+              const statusColors = getStatusColor(admin.status);
+              return (
+                <div key={admin.id} className="border border-gray-200 rounded-xl p-4 space-y-3">
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-3">
+                      <div className="w-10 h-10 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold text-sm">
+                        {admin.name?.charAt(0).toUpperCase()}
                       </div>
-                    )}
+                      <div>
+                        <h3 className="font-semibold text-gray-900 text-sm">{admin.name}</h3>
+                        <p className="text-gray-500 text-xs">{admin.email}</p>
+                      </div>
+                    </div>
+                    <div className="relative">
+                      <button
+                        onClick={() => setActionMenu(actionMenu === admin.id ? null : admin.id)}
+                        className="p-1 hover:bg-gray-100 rounded-lg"
+                      >
+                        <MoreVertical className="h-4 w-4 text-gray-400" />
+                      </button>
+                      {actionMenu === admin.id && (
+                        <div className="absolute right-0 top-8 bg-white border border-gray-200 rounded-lg shadow-lg z-20 w-48">
+                          <div className="px-3 py-2 border-b border-gray-100">
+                            <p className="text-xs font-medium text-gray-500">Change Status</p>
+                          </div>
+                          {statusOptions.map((option) => {
+                            const isCurrent = admin.status === option.value;
+                            return (
+                              <button
+                                key={option.value}
+                                onClick={() => handleStatusChange(admin.id, option.value)}
+                                disabled={updatingStatus === admin.id || isCurrent}
+                                className={`flex items-center justify-between w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                                  isCurrent ? 'bg-gray-50' : ''
+                                } ${updatingStatus === admin.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                              >
+                                <div className="flex items-center space-x-2">
+                                  {option.icon}
+                                  <span>{option.label}</span>
+                                </div>
+                                {isCurrent && (
+                                  <CheckCircle className="h-3 w-3 text-green-500" />
+                                )}
+                              </button>
+                            );
+                          })}
+                          <div className="border-t border-gray-100">
+                            <button
+                              onClick={() => handleDeleteAdmin(admin.id)}
+                              className="flex items-center space-x-2 w-full px-3 py-2 text-left text-sm text-red-600 hover:bg-red-50"
+                            >
+                              <Trash2 className="h-3 w-3" />
+                              <span>Delete Admin</span>
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
                   </div>
-                </div>
-                
-                <div className="flex items-center justify-between text-xs">
-                  <span className={`px-2 py-1 rounded-full ${getStatusColor(admin.status)}`}>
-                    {admin.status}
-                  </span>
-                  <span className="text-gray-500">
-                    {new Date(admin.createdAt).toLocaleDateString()}
-                  </span>
-                </div>
+                  
+                  {/* Status Display */}
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center space-x-2">
+                      <div className={`flex items-center space-x-1 px-3 py-1 rounded-full border ${statusColors.bg} ${statusColors.text} ${statusColors.border}`}>
+                        <div className={`w-2 h-2 rounded-full ${statusColors.dot}`}></div>
+                        <span className="text-xs font-medium">{getStatusLabel(admin.status)}</span>
+                      </div>
+                      {updatingStatus === admin.id && (
+                        <div className="animate-spin rounded-full h-3 w-3 border-b-2 border-[#F59E0B]"></div>
+                      )}
+                    </div>
+                    <span className="text-gray-500 text-xs">
+                      {new Date(admin.createdAt).toLocaleDateString()}
+                    </span>
+                  </div>
 
-                {admin.phone && (
-                  <div className="flex items-center space-x-2 text-xs text-gray-600">
-                    <Phone className="h-3 w-3" />
-                    <span>{admin.phone}</span>
-                  </div>
-                )}
-              </div>
-            ))
+                  {admin.phone && (
+                    <div className="flex items-center space-x-2 text-xs text-gray-600">
+                      <Phone className="h-3 w-3" />
+                      <span>{admin.phone}</span>
+                    </div>
+                  )}
+                </div>
+              );
+            })
           )}
         </div>
 
@@ -268,68 +355,122 @@ const AdminManagement = () => {
                   </td>
                 </tr>
               ) : (
-                filteredAdmins.map((admin) => (
-                  <tr key={admin.id} className="border-b border-gray-100 hover:bg-gray-50">
-                    <td className="py-4 px-6">
-                      <div className="flex items-center space-x-3">
-                        <div className="w-10 h-10 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold">
-                          {admin.name?.charAt(0).toUpperCase()}
-                        </div>
-                        <div>
-                          <h3 className="font-semibold text-gray-900">{admin.name}</h3>
-                          <p className="text-gray-500 text-sm">Admin Account</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="space-y-1">
-                        <div className="flex items-center space-x-2 text-sm text-gray-600">
-                          <Mail className="h-4 w-4" />
-                          <span>{admin.email}</span>
-                        </div>
-                        {admin.phone && (
-                          <div className="flex items-center space-x-2 text-sm text-gray-600">
-                            <Phone className="h-4 w-4" />
-                            <span>{admin.phone}</span>
+                filteredAdmins.map((admin) => {
+                  const statusColors = getStatusColor(admin.status);
+                  return (
+                    <tr key={admin.id} className="border-b border-gray-100 hover:bg-gray-50">
+                      <td className="py-4 px-6">
+                        <div className="flex items-center space-x-3">
+                          <div className="w-10 h-10 bg-linear-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white font-semibold">
+                            {admin.name?.charAt(0).toUpperCase()}
                           </div>
-                        )}
-                      </div>
-                    </td>
-                    <td className="py-4 px-6">
-                      <span className={`px-3 py-1 rounded-full text-sm font-medium ${getStatusColor(admin.status)}`}>
-                        {admin.status}
-                      </span>
-                    </td>
-                    <td className="py-4 px-6 text-sm text-gray-600">
-                      {new Date(admin.createdAt).toLocaleDateString()}
-                    </td>
-                    <td className="py-4 px-6">
-                      <div className="flex items-center space-x-2">
-                        <button
-                          onClick={() => handleStatusChange(admin.id, 'ACTIVE')}
-                          className="p-2 text-green-600 hover:bg-green-50 rounded-lg transition-colors"
-                          title="Activate"
-                        >
-                          <UserCheck className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleStatusChange(admin.id, 'INACTIVE')}
-                          className="p-2 text-yellow-600 hover:bg-yellow-50 rounded-lg transition-colors"
-                          title="Deactivate"
-                        >
-                          <UserX className="h-4 w-4" />
-                        </button>
-                        <button
-                          onClick={() => handleDeleteAdmin(admin.id)}
-                          className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                          title="Delete"
-                        >
-                          <Trash2 className="h-4 w-4" />
-                        </button>
-                      </div>
-                    </td>
-                  </tr>
-                ))
+                          <div>
+                            <h3 className="font-semibold text-gray-900">{admin.name}</h3>
+                            <p className="text-gray-500 text-sm">Admin Account</p>
+                          </div>
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="space-y-1">
+                          <div className="flex items-center space-x-2 text-sm text-gray-600">
+                            <Mail className="h-4 w-4" />
+                            <span>{admin.email}</span>
+                          </div>
+                          {admin.phone && (
+                            <div className="flex items-center space-x-2 text-sm text-gray-600">
+                              <Phone className="h-4 w-4" />
+                              <span>{admin.phone}</span>
+                            </div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="flex items-center space-x-2">
+                          <div className={`flex items-center space-x-2 px-3 py-1.5 rounded-full border ${statusColors.bg} ${statusColors.text} ${statusColors.border}`}>
+                            <div className={`w-2 h-2 rounded-full ${statusColors.dot}`}></div>
+                            <span className="text-sm font-medium">{getStatusLabel(admin.status)}</span>
+                          </div>
+                          {updatingStatus === admin.id && (
+                            <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-[#F59E0B]"></div>
+                          )}
+                        </div>
+                      </td>
+                      <td className="py-4 px-6 text-sm text-gray-600">
+                        {new Date(admin.createdAt).toLocaleDateString()}
+                      </td>
+                      <td className="py-4 px-6">
+                        <div className="relative">
+                          <div className="flex items-center space-x-2">
+                            {/* Quick Status Change Buttons */}
+                            <div className="flex items-center space-x-1 bg-gray-100 rounded-lg p-1">
+                              {statusOptions.map((option) => {
+                                const isCurrent = admin.status === option.value;
+                                return (
+                                  <button
+                                    key={option.value}
+                                    onClick={() => handleStatusChange(admin.id, option.value)}
+                                    disabled={updatingStatus === admin.id || isCurrent}
+                                    className={`p-2 rounded-md transition-all ${
+                                      isCurrent 
+                                        ? 'bg-white shadow-sm border border-gray-200' 
+                                        : 'hover:bg-gray-200'
+                                    } ${updatingStatus === admin.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                    title={`Set to ${option.label}`}
+                                  >
+                                    <div className={`${option.value === 'ACTIVE' ? 'text-green-600' : ''} ${
+                                      option.value === 'INACTIVE' ? 'text-yellow-600' : ''
+                                    } ${option.value === 'TERMINATED' ? 'text-red-600' : ''}`}>
+                                      {React.cloneElement(option.icon, {
+                                        className: `h-4 w-4 ${isCurrent ? 'opacity-100' : 'opacity-60'}`
+                                      })}
+                                    </div>
+                                  </button>
+                                );
+                              })}
+                            </div>
+                            
+                            {/* Delete Button */}
+                            <button
+                              onClick={() => handleDeleteAdmin(admin.id)}
+                              className="p-2 text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                              title="Delete Admin"
+                            >
+                              <Trash2 className="h-4 w-4" />
+                            </button>
+                          </div>
+                          
+                          {/* Status Dropdown (Alternative) */}
+                          <div className="absolute right-0 mt-1 w-48 bg-white border border-gray-200 rounded-lg shadow-lg z-10 hidden">
+                            <div className="px-3 py-2 border-b border-gray-100">
+                              <p className="text-xs font-medium text-gray-500">Change Status</p>
+                            </div>
+                            {statusOptions.map((option) => {
+                              const isCurrent = admin.status === option.value;
+                              return (
+                                <button
+                                  key={option.value}
+                                  onClick={() => handleStatusChange(admin.id, option.value)}
+                                  disabled={updatingStatus === admin.id || isCurrent}
+                                  className={`flex items-center justify-between w-full px-3 py-2 text-left text-sm hover:bg-gray-50 ${
+                                    isCurrent ? 'bg-gray-50' : ''
+                                  } ${updatingStatus === admin.id ? 'opacity-50 cursor-not-allowed' : ''}`}
+                                >
+                                  <div className="flex items-center space-x-2">
+                                    {option.icon}
+                                    <span>{option.label}</span>
+                                  </div>
+                                  {isCurrent && (
+                                    <CheckCircle className="h-3 w-3 text-green-500" />
+                                  )}
+                                </button>
+                              );
+                            })}
+                          </div>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })
               )}
             </tbody>
           </table>
@@ -360,7 +501,7 @@ const AdminManagement = () => {
                 />
               </div>
               
-              <div>
+              {/* <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Email Address
                 </label>
@@ -372,7 +513,7 @@ const AdminManagement = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
                   placeholder="Enter email address"
                 />
-              </div>
+              </div> */}
               
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -387,7 +528,7 @@ const AdminManagement = () => {
                 />
               </div>
               
-              <div>
+              {/* <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">
                   Password
                 </label>
@@ -413,7 +554,7 @@ const AdminManagement = () => {
                   className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
                   placeholder="Confirm password"
                 />
-              </div>
+              </div> */}
               
               <div className="flex space-x-3 pt-4">
                 <button

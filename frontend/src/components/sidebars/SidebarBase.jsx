@@ -6,7 +6,8 @@ const SidebarBase = ({
   onClose, 
   onToggle, 
   children, 
-  title = "Jamia Abi Bakar" 
+  title = "Jamia Abi Bakar",
+  subtitle = "Al-Islamia Institute"
 }) => {
   return (
     <>
@@ -29,12 +30,30 @@ const SidebarBase = ({
         {/* Header */}
         <div className="flex items-center justify-between p-6 border-b border-gold-100">
           <div className="flex items-center space-x-3">
-            <div className="w-10 h-10 bg-linear-to-br from-[#F59E0B] to-[#D97706] rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-lg">K</span>
+            {/* Logo Container - Original gold gradient */}
+            <div className="w-10 h-10 bg-linear-to-br from-[#F59E0B] to-[#D97706] rounded-lg flex items-center justify-center shadow-md">
+              {/* Option 1: Arabic letter 'ج' for Jamia */}
+              {/* <span className="text-white font-bold text-xl" style={{ fontFamily: "'Amiri', serif" }}>
+                ج
+              </span> */}
+              
+              {/* Option 2: Or use 'J' for Jamia */}
+              {/* <span className="text-white font-bold text-lg">J</span> */}
+              
+              {/* Option 3: Or use your actual logo image */}
+              <img 
+                src="/images/Astana-logo.png" 
+                alt="Jamia Abi Bakar Logo"
+                className="w-8 h-8 object-contain"
+              />
             </div>
+            
+            {/* Institute Name */}
             <div>
-              <h1 className="text-xl font-bold text-black">{title}</h1>
-              <p className="text-xs text-[#B45309]">Management System</p>
+              <h1 className="text-xl font-bold text-black leading-tight">{title}</h1>
+              <p className="text-xs text-[#B45309] font-medium">{subtitle}</p>
+              {/* Optional: Add location or tagline */}
+              <p className="text-xs text-amber-700 mt-0.5">Islamic Education Center</p>
             </div>
           </div>
           <button
@@ -50,15 +69,29 @@ const SidebarBase = ({
           {children}
         </nav>
 
-        {/* Mobile Toggle Button */}
-        <div className="lg:hidden p-4 border-t border-gold-100">
+        {/* Footer with Institute Info */}
+        <div className="lg:hidden p-4 border-t border-gold-100 bg-[#FFFBEB]">
+          <div className="text-center mb-4">
+            <p className="text-sm font-semibold text-[#92400E]">Est. 1985</p>
+            <p className="text-xs text-amber-800 mt-1 italic">Quality Islamic Education</p>
+          </div>
+          
+          {/* Mobile Toggle Button */}
           <button
             onClick={onToggle}
-            className="w-full flex items-center justify-center p-3 bg-[#FFFBEB] text-[#92400E] rounded-lg font-semibold hover:bg-[#FEF3C7] transition-colors duration-200"
+            className="w-full flex items-center justify-center p-3 bg-[#F59E0B] text-white rounded-lg font-semibold hover:bg-[#D97706] transition-colors duration-200"
           >
             <Menu className="h-5 w-5 mr-2" />
             Toggle Menu
           </button>
+        </div>
+        
+        {/* Desktop Footer - Optional additional info */}
+        <div className="hidden lg:block p-4 border-t border-gold-100">
+          <div className="text-center">
+            <p className="text-sm text-[#92400E] font-medium">Jamia Abi Bakar</p>
+            <p className="text-xs text-amber-700 mt-1">Management System v1.0</p>
+          </div>
         </div>
       </div>
 
