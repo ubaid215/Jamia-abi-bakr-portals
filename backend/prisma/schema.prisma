@@ -116,7 +116,7 @@ model Teacher {
   cnic          String?    @unique  // National ID
   qualification String?    // Academic qualifications
   specialization String?   // Teaching specialization
-  experience     Int?       // Years of experience
+  experience    String?       // Years of experience
   
   // Contact details
   address       String?

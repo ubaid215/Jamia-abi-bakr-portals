@@ -88,7 +88,7 @@ class EnrollmentController {
             cnic: parsedProfileData?.cnic || null,
             qualification: parsedProfileData?.qualification || null,
             specialization: parsedProfileData?.specialization || null,
-            experience: parsedProfileData?.experience || null,
+            experience: parsedProfileData?.experience ? String(parsedProfileData.experience) : null,
             address: parsedProfileData?.address || null,
             emergencyContactName: parsedProfileData?.emergencyContactName || null,
             emergencyContactPhone: parsedProfileData?.emergencyContactPhone || null,
