@@ -7,7 +7,7 @@ const SidebarBase = ({
   onToggle, 
   children, 
   title = "Jamia Abi Bakar",
-  subtitle = "Al-Islamia Institute"
+  subtitle = "Islamia Institute"
 }) => {
   return (
     <>
@@ -71,10 +71,7 @@ const SidebarBase = ({
 
         {/* Footer with Institute Info */}
         <div className="lg:hidden p-4 border-t border-gold-100 bg-[#FFFBEB]">
-          <div className="text-center mb-4">
-            <p className="text-sm font-semibold text-[#92400E]">Est. 1985</p>
-            <p className="text-xs text-amber-800 mt-1 italic">Quality Islamic Education</p>
-          </div>
+          
           
           {/* Mobile Toggle Button */}
           <button
