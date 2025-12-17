@@ -32,14 +32,6 @@ const SidebarBase = ({
           <div className="flex items-center space-x-3">
             {/* Logo Container - Original gold gradient */}
             <div className="w-10 h-10 bg-linear-to-br from-[#F59E0B] to-[#D97706] rounded-lg flex items-center justify-center shadow-md">
-              {/* Option 1: Arabic letter 'ج' for Jamia */}
-              {/* <span className="text-white font-bold text-xl" style={{ fontFamily: "'Amiri', serif" }}>
-                ج
-              </span> */}
-              
-              {/* Option 2: Or use 'J' for Jamia */}
-              {/* <span className="text-white font-bold text-lg">J</span> */}
-              
               {/* Option 3: Or use your actual logo image */}
               <img 
                 src="/images/Astana-logo.png" 
@@ -69,30 +61,16 @@ const SidebarBase = ({
           {children}
         </nav>
 
-        {/* Footer with Institute Info */}
-        <div className="lg:hidden p-4 border-t border-gold-100 bg-[#FFFBEB]">
-          
-          
-          {/* Mobile Toggle Button */}
-          <button
-            onClick={onToggle}
-            className="w-full flex items-center justify-center p-3 bg-[#F59E0B] text-white rounded-lg font-semibold hover:bg-[#D97706] transition-colors duration-200"
-          >
-            <Menu className="h-5 w-5 mr-2" />
-            Toggle Menu
-          </button>
-        </div>
-        
-        {/* Desktop Footer - Optional additional info */}
-        <div className="hidden lg:block p-4 border-t border-gold-100">
+        {/* Footer */}
+        <div className="p-4 border-t border-gold-100">
           <div className="text-center">
-            <p className="text-sm text-[#92400E] font-medium">Jamia Abi Bakar</p>
+            <p className="text-sm text-[#92400E] font-medium">{title}</p>
             <p className="text-xs text-amber-700 mt-1">Management System v1.0</p>
           </div>
         </div>
       </div>
 
-      {/* Mobile Menu Toggle */}
+      {/* Mobile Menu Toggle - ONLY show when sidebar is closed */}
       {!isOpen && (
         <button
           onClick={onToggle}

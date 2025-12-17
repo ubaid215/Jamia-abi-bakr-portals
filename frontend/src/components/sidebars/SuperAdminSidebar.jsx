@@ -217,24 +217,6 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
         </div>
       </div>
 
-      {/* System Status */}
-      {/* <div className="mt-4 p-3 bg-gray-50 rounded-lg border border-gray-200">
-        <h4 className="text-xs font-semibold text-gray-700 mb-2">System Status</h4>
-        <div className="space-y-1">
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">Active Admins</span>
-            <span className="font-medium text-green-600">Online</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">Database</span>
-            <span className="font-medium text-green-600">Healthy</span>
-          </div>
-          <div className="flex items-center justify-between text-xs">
-            <span className="text-gray-600">System Load</span>
-            <span className="font-medium text-yellow-600">Normal</span>
-          </div>
-        </div>
-      </div> */}
     </SidebarBase>
   );
 };

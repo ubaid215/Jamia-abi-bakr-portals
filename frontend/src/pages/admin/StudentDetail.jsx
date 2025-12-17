@@ -1,10 +1,13 @@
+/* eslint-disable no-unused-vars */
 import React, { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { 
   ArrowLeft, Mail, Phone, MapPin, Calendar, BookOpen, GraduationCap,
   Users, UserCheck, UserX, Edit, Download, Shield, Heart, AlertTriangle,
   BarChart3, FileText, Home, Award, History, Clock, User, School,
-  TrendingUp, Upload, File, Eye, Trash2, CheckCircle, XCircle, Plus
+  TrendingUp, Upload, File, Eye, Trash2, CheckCircle, XCircle, Plus,
+  Save, X, Globe, UserCircle, PhoneCall, Briefcase, FileDigit, Award as AwardIcon,
+  Book, Cross, Activity, Stethoscope
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
 import { toast } from 'react-hot-toast';
@@ -25,6 +28,12 @@ const StudentDetail = () => {
   const [uploadingDoc, setUploadingDoc] = useState(false);
   const [selectedDocType, setSelectedDocType] = useState('');
   const [uploadFile, setUploadFile] = useState(null);
+  
+  // Edit states
+  const [isEditing, setIsEditing] = useState(false);
+  const [editMode, setEditMode] = useState(''); // 'personal', 'academic', 'contact', 'guardian', 'medical'
+  const [editedData, setEditedData] = useState({});
+  const [isSaving, setIsSaving] = useState(false);
 
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
@@ -46,7 +55,7 @@ const StudentDetail = () => {
 
         // Fetch detailed student information with documents
         const token = localStorage.getItem('authToken');
-        const response = await axios.get(`${API_BASE_URL}/admin/students/${id}/documents`, {
+        const response = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
           headers: { Authorization: `Bearer ${token}` }
         });
         
@@ -130,6 +139,169 @@ const StudentDetail = () => {
     return `${API_BASE_URL}/admin/public/profile-image/${userId}`;
   };
 
+  // Initialize edit data
+  const initializeEditData = (mode) => {
+    if (!currentStudent) return;
+    
+    setEditMode(mode);
+    setIsEditing(true);
+    
+    switch (mode) {
+      case 'personal':
+        setEditedData({
+          name: currentStudent.student?.name || '',
+          email: currentStudent.student?.email || '',
+          phone: currentStudent.student?.phone || '',
+          gender: currentStudent.profile?.gender || '',
+          dob: currentStudent.profile?.dob ? new Date(currentStudent.profile.dob).toISOString().split('T')[0] : '',
+          placeOfBirth: currentStudent.profile?.placeOfBirth || '',
+          nationality: currentStudent.profile?.nationality || '',
+          religion: currentStudent.profile?.religion || '',
+          bloodGroup: currentStudent.profile?.bloodGroup || '',
+        });
+        break;
+        
+      case 'contact':
+        setEditedData({
+          address: currentStudent.profile?.address || '',
+          city: currentStudent.profile?.city || '',
+          province: currentStudent.profile?.province || '',
+          postalCode: currentStudent.profile?.postalCode || '',
+        });
+        break;
+        
+      case 'guardian':
+        setEditedData({
+          guardianName: currentStudent.profile?.guardianName || '',
+          guardianRelation: currentStudent.profile?.guardianRelation || '',
+          guardianPhone: currentStudent.profile?.guardianPhone || '',
+          guardianEmail: currentStudent.profile?.guardianEmail || '',
+          guardianOccupation: currentStudent.profile?.guardianOccupation || '',
+          guardianCNIC: currentStudent.profile?.guardianCNIC || '',
+        });
+        break;
+        
+      case 'academic':
+        setEditedData({
+          admissionNo: currentStudent.profile?.admissionNo || '',
+          rollNumber: currentStudent.academic?.currentEnrollment?.rollNumber || '',
+          enrollmentDate: currentStudent.academic?.currentEnrollment?.startDate 
+            ? new Date(currentStudent.academic.currentEnrollment.startDate).toISOString().split('T')[0] 
+            : '',
+        });
+        break;
+        
+      case 'medical':
+        setEditedData({
+          medicalConditions: currentStudent.profile?.medicalConditions || '',
+          allergies: currentStudent.profile?.allergies || '',
+          medication: currentStudent.profile?.medication || '',
+        });
+        break;
+    }
+  };
+
+  // Handle save data
+  const handleSaveData = async () => {
+    if (!currentStudent) return;
+    
+    try {
+      setIsSaving(true);
+      const token = localStorage.getItem('authToken');
+      const userId = currentStudent.student?.id || id;
+      
+      let endpoint = '';
+      let payload = {};
+      
+      switch (editMode) {
+        case 'personal':
+          endpoint = `${API_BASE_URL}/admin/students/${userId}/personal`;
+          payload = {
+            name: editedData.name,
+            email: editedData.email,
+            phone: editedData.phone,
+            gender: editedData.gender,
+            dob: editedData.dob,
+            placeOfBirth: editedData.placeOfBirth,
+            nationality: editedData.nationality,
+            religion: editedData.religion,
+            bloodGroup: editedData.bloodGroup,
+          };
+          break;
+          
+        case 'contact':
+          endpoint = `${API_BASE_URL}/admin/students/${userId}/contact`;
+          payload = {
+            address: editedData.address,
+            city: editedData.city,
+            province: editedData.province,
+            postalCode: editedData.postalCode,
+          };
+          break;
+          
+        case 'guardian':
+          endpoint = `${API_BASE_URL}/admin/students/${userId}/guardian`;
+          payload = {
+            guardianName: editedData.guardianName,
+            guardianRelation: editedData.guardianRelation,
+            guardianPhone: editedData.guardianPhone,
+            guardianEmail: editedData.guardianEmail,
+            guardianOccupation: editedData.guardianOccupation,
+            guardianCNIC: editedData.guardianCNIC,
+          };
+          break;
+          
+        case 'academic':
+          endpoint = `${API_BASE_URL}/admin/students/${userId}/academic`;
+          payload = {
+            admissionNo: editedData.admissionNo,
+            rollNumber: editedData.rollNumber,
+            enrollmentDate: editedData.enrollmentDate,
+          };
+          break;
+          
+        case 'medical':
+          endpoint = `${API_BASE_URL}/admin/students/${userId}/medical`;
+          payload = {
+            medicalConditions: editedData.medicalConditions,
+            allergies: editedData.allergies,
+            medication: editedData.medication,
+          };
+          break;
+      }
+      
+      const response = await axios.put(endpoint, payload, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      
+      toast.success('Student data updated successfully');
+      
+      // Refresh data
+      const updatedResponse = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setStudentDetails(updatedResponse.data);
+      
+      // Reset edit state
+      setIsEditing(false);
+      setEditMode('');
+      setEditedData({});
+      
+    } catch (error) {
+      console.error('Error updating student data:', error);
+      toast.error(error.response?.data?.error || 'Failed to update student data');
+    } finally {
+      setIsSaving(false);
+    }
+  };
+
+  // Cancel edit
+  const handleCancelEdit = () => {
+    setIsEditing(false);
+    setEditMode('');
+    setEditedData({});
+  };
+
   // Handle profile image upload
   const handleProfileImageUpload = async (e) => {
     const file = e.target.files?.[0];
@@ -169,7 +341,11 @@ const StudentDetail = () => {
       
       // Refresh student data
       await fetchStudents();
-      window.location.reload(); // Reload to show new image
+      const updatedResponse = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setStudentDetails(updatedResponse.data);
+      
     } catch (error) {
       console.error('Error uploading image:', error);
       toast.error(error.response?.data?.error || 'Failed to upload image');
@@ -210,7 +386,7 @@ const StudentDetail = () => {
       setSelectedDocType('');
       
       // Refresh student data
-      const docsResponse = await axios.get(`${API_BASE_URL}/admin/students/${id}/documents`, {
+      const docsResponse = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudentDetails(docsResponse.data);
@@ -279,7 +455,7 @@ const StudentDetail = () => {
       toast.success('Document deleted successfully');
       
       // Refresh student data
-      const response = await axios.get(`${API_BASE_URL}/admin/students/${id}/documents`, {
+      const response = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
         headers: { Authorization: `Bearer ${token}` }
       });
       setStudentDetails(response.data);
@@ -382,6 +558,482 @@ const StudentDetail = () => {
     if (!currentStudent) return [];
     
     return currentStudent.parents || [];
+  };
+
+  // Edit form fields based on mode
+  const renderEditForm = () => {
+    switch (editMode) {
+      case 'personal':
+        return (
+          <div className="space-y-4 p-4 bg-yellow-50 border border-yellow-200 rounded-xl">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-yellow-800">Edit Personal Information</h4>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="p-2 text-gray-600 hover:text-gray-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Full Name</label>
+                <input
+                  type="text"
+                  value={editedData.name || ''}
+                  onChange={(e) => setEditedData({...editedData, name: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editedData.email || ''}
+                  onChange={(e) => setEditedData({...editedData, email: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={editedData.phone || ''}
+                  onChange={(e) => setEditedData({...editedData, phone: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Gender</label>
+                <select
+                  value={editedData.gender || ''}
+                  onChange={(e) => setEditedData({...editedData, gender: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                >
+                  <option value="">Select Gender</option>
+                  <option value="MALE">Male</option>
+                  <option value="FEMALE">Female</option>
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
+                <input
+                  type="date"
+                  value={editedData.dob || ''}
+                  onChange={(e) => setEditedData({...editedData, dob: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Place of Birth</label>
+                <input
+                  type="text"
+                  value={editedData.placeOfBirth || ''}
+                  onChange={(e) => setEditedData({...editedData, placeOfBirth: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Nationality</label>
+                <input
+                  type="text"
+                  value={editedData.nationality || ''}
+                  onChange={(e) => setEditedData({...editedData, nationality: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Religion</label>
+                <input
+                  type="text"
+                  value={editedData.religion || ''}
+                  onChange={(e) => setEditedData({...editedData, religion: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Blood Group</label>
+                <select
+                  value={editedData.bloodGroup || ''}
+                  onChange={(e) => setEditedData({...editedData, bloodGroup: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                >
+                  <option value="">Select Blood Group</option>
+                  <option value="A+">A+</option>
+                  <option value="A-">A-</option>
+                  <option value="B+">B+</option>
+                  <option value="B-">B-</option>
+                  <option value="O+">O+</option>
+                  <option value="O-">O-</option>
+                  <option value="AB+">AB+</option>
+                  <option value="AB-">AB-</option>
+                </select>
+              </div>
+            </div>
+            
+            <div className="flex space-x-3 pt-4">
+              <button
+                onClick={handleCancelEdit}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveData}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 flex items-center justify-center"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+        
+      case 'contact':
+        return (
+          <div className="space-y-4 p-4 bg-blue-50 border border-blue-200 rounded-xl">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-blue-800">Edit Contact Information</h4>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="p-2 text-gray-600 hover:text-gray-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="md:col-span-2">
+                <label className="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <input
+                  type="text"
+                  value={editedData.address || ''}
+                  onChange={(e) => setEditedData({...editedData, address: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">City</label>
+                <input
+                  type="text"
+                  value={editedData.city || ''}
+                  onChange={(e) => setEditedData({...editedData, city: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Province</label>
+                <input
+                  type="text"
+                  value={editedData.province || ''}
+                  onChange={(e) => setEditedData({...editedData, province: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Postal Code</label>
+                <input
+                  type="text"
+                  value={editedData.postalCode || ''}
+                  onChange={(e) => setEditedData({...editedData, postalCode: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+            </div>
+            
+            <div className="flex space-x-3 pt-4">
+              <button
+                onClick={handleCancelEdit}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveData}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 flex items-center justify-center"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+        
+      case 'guardian':
+        return (
+          <div className="space-y-4 p-4 bg-green-50 border border-green-200 rounded-xl">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-green-800">Edit Guardian Information</h4>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="p-2 text-gray-600 hover:text-gray-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Guardian Name</label>
+                <input
+                  type="text"
+                  value={editedData.guardianName || ''}
+                  onChange={(e) => setEditedData({...editedData, guardianName: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Relation</label>
+                <input
+                  type="text"
+                  value={editedData.guardianRelation || ''}
+                  onChange={(e) => setEditedData({...editedData, guardianRelation: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Phone</label>
+                <input
+                  type="tel"
+                  value={editedData.guardianPhone || ''}
+                  onChange={(e) => setEditedData({...editedData, guardianPhone: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                <input
+                  type="email"
+                  value={editedData.guardianEmail || ''}
+                  onChange={(e) => setEditedData({...editedData, guardianEmail: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Occupation</label>
+                <input
+                  type="text"
+                  value={editedData.guardianOccupation || ''}
+                  onChange={(e) => setEditedData({...editedData, guardianOccupation: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">CNIC</label>
+                <input
+                  type="text"
+                  value={editedData.guardianCNIC || ''}
+                  onChange={(e) => setEditedData({...editedData, guardianCNIC: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                  placeholder="XXXXX-XXXXXXX-X"
+                />
+              </div>
+            </div>
+            
+            <div className="flex space-x-3 pt-4">
+              <button
+                onClick={handleCancelEdit}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveData}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 flex items-center justify-center"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+        
+      case 'academic':
+        return (
+          <div className="space-y-4 p-4 bg-purple-50 border border-purple-200 rounded-xl">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-purple-800">Edit Academic Information</h4>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="p-2 text-gray-600 hover:text-gray-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Admission Number</label>
+                <input
+                  type="text"
+                  value={editedData.admissionNo || ''}
+                  onChange={(e) => setEditedData({...editedData, admissionNo: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Roll Number</label>
+                <input
+                  type="text"
+                  value={editedData.rollNumber || ''}
+                  onChange={(e) => setEditedData({...editedData, rollNumber: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Enrollment Date</label>
+                <input
+                  type="date"
+                  value={editedData.enrollmentDate || ''}
+                  onChange={(e) => setEditedData({...editedData, enrollmentDate: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                />
+              </div>
+            </div>
+            
+            <div className="flex space-x-3 pt-4">
+              <button
+                onClick={handleCancelEdit}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveData}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 flex items-center justify-center"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+        
+      case 'medical':
+        return (
+          <div className="space-y-4 p-4 bg-red-50 border border-red-200 rounded-xl">
+            <div className="flex items-center justify-between">
+              <h4 className="font-semibold text-red-800">Edit Medical Information</h4>
+              <div className="flex space-x-2">
+                <button
+                  onClick={handleCancelEdit}
+                  className="p-2 text-gray-600 hover:text-gray-900"
+                >
+                  <X className="h-5 w-5" />
+                </button>
+              </div>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Medical Conditions</label>
+                <textarea
+                  value={editedData.medicalConditions || ''}
+                  onChange={(e) => setEditedData({...editedData, medicalConditions: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] h-24"
+                  placeholder="List any medical conditions..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Allergies</label>
+                <textarea
+                  value={editedData.allergies || ''}
+                  onChange={(e) => setEditedData({...editedData, allergies: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] h-24"
+                  placeholder="List any allergies..."
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Current Medication</label>
+                <textarea
+                  value={editedData.medication || ''}
+                  onChange={(e) => setEditedData({...editedData, medication: e.target.value})}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] h-24"
+                  placeholder="List any current medications..."
+                />
+              </div>
+            </div>
+            
+            <div className="flex space-x-3 pt-4">
+              <button
+                onClick={handleCancelEdit}
+                className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleSaveData}
+                disabled={isSaving}
+                className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 flex items-center justify-center"
+              >
+                {isSaving ? (
+                  <>
+                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                    Saving...
+                  </>
+                ) : (
+                  <>
+                    <Save className="h-4 w-4 mr-2" />
+                    Save Changes
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        );
+        
+      default:
+        return null;
+    }
   };
 
   if ((loading || detailsLoading) && !currentStudent) {
@@ -503,10 +1155,15 @@ const StudentDetail = () => {
               <History className="h-4 w-4" />
               <span>View Full History</span>
             </button>
-            <button className="flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium">
-              <Edit className="h-4 w-4" />
-              <span>Edit</span>
-            </button>
+            {!isEditing && (
+              <button 
+                onClick={() => initializeEditData('personal')}
+                className="flex items-center justify-center space-x-2 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors text-sm font-medium"
+              >
+                <Edit className="h-4 w-4" />
+                <span>Edit Student</span>
+              </button>
+            )}
             <button className="flex items-center justify-center space-x-2 px-4 py-2 border border-[#F59E0B] text-[#F59E0B] rounded-lg hover:bg-[#FFFBEB] transition-colors text-sm font-medium">
               <Download className="h-4 w-4" />
               <span>Export</span>
@@ -514,6 +1171,9 @@ const StudentDetail = () => {
           </div>
         </div>
       </div>
+
+      {/* Edit Form (when active) */}
+      {isEditing && renderEditForm()}
 
       {/* Tabs */}
       <div className="bg-white rounded-2xl p-1 shadow-lg border border-gray-100">
@@ -554,20 +1214,29 @@ const StudentDetail = () => {
       {/* Tab Content */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
         {/* Overview Tab */}
-        {activeTab === 'overview' && (
+        {activeTab === 'overview' && !isEditing && (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
             {/* Personal Information */}
             <div className="lg:col-span-2 space-y-6">
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Personal Information</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Personal Information</h3>
+                  <button 
+                    onClick={() => initializeEditData('personal')}
+                    className="flex items-center space-x-2 text-sm text-[#F59E0B] hover:text-[#D97706]"
+                  >
+                    <Edit className="h-4 w-4" />
+                    <span>Edit</span>
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <InfoItem icon={Mail} label="Email" value={user.email} />
                   <InfoItem icon={Calendar} label="Date of Birth" value={formatDate(profile.dob)} />
                   <InfoItem icon={Calendar} label="Age" value={profile.dob ? `${calculateAge(profile.dob)} years` : 'Unknown'} />
-                  <InfoItem icon={Shield} label="Gender" value={profile.gender} />
+                  <InfoItem icon={UserCircle} label="Gender" value={profile.gender} />
                   <InfoItem icon={MapPin} label="Place of Birth" value={profile.placeOfBirth} />
-                  <InfoItem icon={Shield} label="Nationality" value={profile.nationality} />
-                  <InfoItem icon={Shield} label="Religion" value={profile.religion} />
+                  <InfoItem icon={Globe} label="Nationality" value={profile.nationality} />
+                  <InfoItem icon={Book} label="Religion" value={profile.religion} />
                   <InfoItem icon={Heart} label="Blood Group" value={profile.bloodGroup} />
                 </div>
               </div>
@@ -575,7 +1244,16 @@ const StudentDetail = () => {
               {/* Current Enrollment */}
               {academic.currentEnrollment && (
                 <div>
-                  <h3 className="text-lg font-semibold text-gray-900 mb-4">Current Enrollment</h3>
+                  <div className="flex items-center justify-between mb-4">
+                    <h3 className="text-lg font-semibold text-gray-900">Current Enrollment</h3>
+                    <button 
+                      onClick={() => initializeEditData('academic')}
+                      className="flex items-center space-x-2 text-sm text-[#F59E0B] hover:text-[#D97706]"
+                    >
+                      <Edit className="h-4 w-4" />
+                      <span>Edit</span>
+                    </button>
+                  </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <InfoItem icon={BookOpen} label="Class" value={academic.currentEnrollment.classRoom?.name} />
                     <InfoItem icon={GraduationCap} label="Class Type" value={academic.currentEnrollment.classRoom?.type} />
@@ -590,7 +1268,16 @@ const StudentDetail = () => {
 
               {/* Address Information */}
               <div>
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Address Information</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Address Information</h3>
+                  <button 
+                    onClick={() => initializeEditData('contact')}
+                    className="flex items-center space-x-2 text-sm text-[#F59E0B] hover:text-[#D97706]"
+                  >
+                    <Edit className="h-4 w-4" />
+                    <span>Edit</span>
+                  </button>
+                </div>
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <InfoItem icon={MapPin} label="Address" value={profile.address} />
                   <InfoItem icon={Home} label="City" value={profile.city} />
@@ -660,14 +1347,23 @@ const StudentDetail = () => {
 
               {/* Guardian Information */}
               <div className="bg-gray-50 rounded-xl p-4">
-                <h3 className="text-lg font-semibold text-gray-900 mb-4">Guardian Information</h3>
+                <div className="flex items-center justify-between mb-4">
+                  <h3 className="text-lg font-semibold text-gray-900">Guardian Information</h3>
+                  <button 
+                    onClick={() => initializeEditData('guardian')}
+                    className="flex items-center space-x-2 text-sm text-[#F59E0B] hover:text-[#D97706]"
+                  >
+                    <Edit className="h-4 w-4" />
+                    <span>Edit</span>
+                  </button>
+                </div>
                 <div className="space-y-3 text-sm">
                   <InfoItem icon={Users} label="Name" value={profile.guardianName} />
                   <InfoItem icon={Users} label="Relation" value={profile.guardianRelation} />
                   <InfoItem icon={Phone} label="Phone" value={profile.guardianPhone} />
                   <InfoItem icon={Mail} label="Email" value={profile.guardianEmail} />
-                  <InfoItem icon={Shield} label="Occupation" value={profile.guardianOccupation} />
-                  <InfoItem icon={Shield} label="CNIC" value={profile.guardianCNIC} />
+                  <InfoItem icon={Briefcase} label="Occupation" value={profile.guardianOccupation} />
+                  <InfoItem icon={FileDigit} label="CNIC" value={profile.guardianCNIC} />
                 </div>
               </div>
             </div>
@@ -675,9 +1371,18 @@ const StudentDetail = () => {
         )}
 
         {/* Academic Tab */}
-        {activeTab === 'academic' && (
+        {activeTab === 'academic' && !isEditing && (
           <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Academic Information</h3>
+            <div className="flex items-center justify-between">
+              <h3 className="text-lg font-semibold text-gray-900">Academic Information</h3>
+              <button 
+                onClick={() => initializeEditData('academic')}
+                className="flex items-center space-x-2 text-sm text-[#F59E0B] hover:text-[#D97706]"
+              >
+                <Edit className="h-4 w-4" />
+                <span>Edit</span>
+              </button>
+            </div>
             
             {academic.currentEnrollment ? (
               <>
@@ -728,7 +1433,7 @@ const StudentDetail = () => {
         )}
 
         {/* Progress Tab */}
-        {activeTab === 'progress' && (
+        {activeTab === 'progress' && !isEditing && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">
               {progress.type === 'HIFZ' ? 'Hifz Progress' : 
@@ -829,7 +1534,7 @@ const StudentDetail = () => {
         )}
 
         {/* Attendance Tab */}
-        {activeTab === 'attendance' && (
+        {activeTab === 'attendance' && !isEditing && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Attendance Record</h3>
             
@@ -901,7 +1606,7 @@ const StudentDetail = () => {
         )}
 
         {/* Documents Tab */}
-        {activeTab === 'documents' && (
+        {activeTab === 'documents' && !isEditing && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">Student Documents</h3>
@@ -987,15 +1692,24 @@ const StudentDetail = () => {
         )}
 
         {/* Medical Tab */}
-        {activeTab === 'medical' && (
+        {activeTab === 'medical' && !isEditing && (
           <div className="space-y-6">
-            <h3 className="text-lg font-semibold text-gray-900 mb-4">Medical Information</h3>
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-lg font-semibold text-gray-900">Medical Information</h3>
+              <button 
+                onClick={() => initializeEditData('medical')}
+                className="flex items-center space-x-2 text-sm text-[#F59E0B] hover:text-[#D97706]"
+              >
+                <Edit className="h-4 w-4" />
+                <span>Edit</span>
+              </button>
+            </div>
             
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <div className="space-y-4">
                 <InfoItem icon={AlertTriangle} label="Medical Conditions" value={profile.medicalConditions || 'None'} />
-                <InfoItem icon={AlertTriangle} label="Allergies" value={profile.allergies || 'None'} />
-                <InfoItem icon={AlertTriangle} label="Medication" value={profile.medication || 'None'} />
+                <InfoItem icon={Cross} label="Allergies" value={profile.allergies || 'None'} />
+                <InfoItem icon={Stethoscope} label="Medication" value={profile.medication || 'None'} />
               </div>
               
               <div className="bg-yellow-50 border border-yellow-200 rounded-xl p-4">
@@ -1010,7 +1724,7 @@ const StudentDetail = () => {
         )}
 
         {/* History Tab */}
-        {activeTab === 'history' && (
+        {activeTab === 'history' && !isEditing && (
           <div className="space-y-6">
             <div className="flex items-center justify-between">
               <h3 className="text-lg font-semibold text-gray-900">Enrollment History</h3>
@@ -1165,7 +1879,7 @@ const StudentDetail = () => {
         )}
 
         {/* Parents Tab */}
-        {activeTab === 'parents' && (
+        {activeTab === 'parents' && !isEditing && (
           <div className="space-y-6">
             <h3 className="text-lg font-semibold text-gray-900 mb-4">Parent/Guardian Information</h3>
             

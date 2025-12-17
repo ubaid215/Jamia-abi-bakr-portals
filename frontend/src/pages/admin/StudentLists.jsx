@@ -2,11 +2,14 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, Filter, Mail, Phone, MapPin, BookOpen, Calendar, 
-  GraduationCap, Users, TrendingUp, History, CheckSquare, Square, Eye
+  GraduationCap, Users, TrendingUp, History, CheckSquare, Square, Eye,
+  MoreVertical, Edit, UserCheck, UserX, Trash2, MoveVertical, School,
+  Plus, Check, X
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
 import BatchPromotionModal from '../../components/BatchPromotionModal';
 import { toast } from 'react-hot-toast';
+import axios from 'axios';
 
 const StudentLists = () => {
   const { students, fetchStudents, loading } = useAdmin();
@@ -16,9 +19,23 @@ const StudentLists = () => {
   const [classFilter, setClassFilter] = useState('ALL');
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
+  
+  // New states for dropdown and class assignment
+  const [dropdownOpen, setDropdownOpen] = useState(null);
+  const [showAssignClassModal, setShowAssignClassModal] = useState(false);
+  const [availableClasses, setAvailableClasses] = useState([]);
+  const [selectedClass, setSelectedClass] = useState('');
+  const [assigningClass, setAssigningClass] = useState(false);
+  const [studentsToAssign, setStudentsToAssign] = useState([]);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   useEffect(() => {
     fetchStudents();
+    fetchAvailableClasses();
   }, [fetchStudents]);
 
   // ============================================
@@ -57,37 +74,28 @@ const StudentLists = () => {
   // Profile Image URL Generation
   // ============================================
   
-  // Generate profile image URL - Using PUBLIC endpoint (no auth required)
-const getProfileImageUrl = useCallback((student) => {
-  try {
-    const userId = getStudentUserId(student);
-    const profileImage = getStudentProfileImage(student);
-    
-    if (!profileImage) {
-      console.log(`⚠️ No profile image found for student`, student);
+  const getProfileImageUrl = useCallback((student) => {
+    try {
+      const userId = getStudentUserId(student);
+      const profileImage = getStudentProfileImage(student);
+      
+      if (!profileImage) {
+        return null;
+      }
+
+      if (profileImage.startsWith('http') || profileImage.startsWith('data:')) {
+        return profileImage;
+      }
+
+      const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+      const imageUrl = `${baseUrl}/admin/public/profile-image/${userId}`;
+      
+      return imageUrl;
+    } catch (error) {
+      console.error('Error generating profile image URL:', error);
       return null;
     }
-
-    // If already a full URL, return as-is
-    if (profileImage.startsWith('http') || profileImage.startsWith('data:')) {
-      console.log(`🔗 Using existing URL:`, profileImage);
-      return profileImage;
-    }
-
-    // CRITICAL: Use PUBLIC endpoint - does NOT require authentication
-    const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
-    
-    // OLD (Wrong): const imageUrl = `${baseUrl}/admin/files/profile-image/${userId}`;
-    // NEW (Correct): Use public endpoint
-    const imageUrl = `${baseUrl}/admin/public/profile-image/${userId}`;
-    
-    console.log(`🖼️ Generated PUBLIC image URL for ${getStudentName(student)}:`, imageUrl);
-    return imageUrl;
-  } catch (error) {
-    console.error('❌ Error generating profile image URL:', error);
-    return null;
-  }
-}, []);
+  }, []);
 
   // ============================================
   // Student Selection Handlers
@@ -112,6 +120,175 @@ const getProfileImageUrl = useCallback((student) => {
 
   const isStudentSelected = (studentId) => 
     selectedStudents.some(s => s.id === studentId);
+
+  // ============================================
+  // Dropdown Menu Handlers
+  // ============================================
+  
+  const toggleDropdown = (studentId) => {
+    setDropdownOpen(dropdownOpen === studentId ? null : studentId);
+  };
+
+  const handleAssignClass = (student) => {
+    setStudentsToAssign([student]);
+    setShowAssignClassModal(true);
+    setDropdownOpen(null);
+  };
+
+  const handleBulkAssignClass = () => {
+    if (selectedStudents.length === 0) {
+      toast.error('Please select at least one student');
+      return;
+    }
+    setStudentsToAssign([...selectedStudents]);
+    setShowAssignClassModal(true);
+  };
+
+  const handleUpdateStatus = (student, status) => {
+    setStudentsToAssign([student]);
+    setSelectedStatus(status);
+    setShowStatusModal(true);
+    setDropdownOpen(null);
+  };
+
+  const handleBulkUpdateStatus = (status) => {
+    if (selectedStudents.length === 0) {
+      toast.error('Please select at least one student');
+      return;
+    }
+    setStudentsToAssign([...selectedStudents]);
+    setSelectedStatus(status);
+    setShowStatusModal(true);
+  };
+
+  // ============================================
+  // Class Assignment Functions
+  // ============================================
+  
+  const fetchAvailableClasses = async () => {
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.get(`${API_BASE_URL}/admin/classes`, {
+        headers: { Authorization: `Bearer ${token}` }
+      });
+      setAvailableClasses(response.data || []);
+    } catch (error) {
+      console.error('Error fetching classes:', error);
+      toast.error('Failed to load classes');
+    }
+  };
+
+  const handleClassAssignment = async () => {
+    if (!selectedClass) {
+      toast.error('Please select a class');
+      return;
+    }
+
+    if (studentsToAssign.length === 0) {
+      toast.error('No students selected');
+      return;
+    }
+
+    try {
+      setAssigningClass(true);
+      const token = localStorage.getItem('authToken');
+      
+      // Get the selected class details
+      const classDetails = availableClasses.find(c => c.id === selectedClass);
+      if (!classDetails) {
+        throw new Error('Class not found');
+      }
+
+      // Assign class to each student
+      const promises = studentsToAssign.map(async (student) => {
+        const studentId = getStudentUserId(student);
+        
+        const payload = {
+          classId: selectedClass,
+          classRoom: {
+            id: classDetails.id,
+            name: classDetails.name,
+            type: classDetails.type,
+            grade: classDetails.grade,
+            section: classDetails.section
+          },
+          startDate: new Date().toISOString(),
+          rollNumber: generateRollNumber()
+        };
+
+        return axios.post(
+          `${API_BASE_URL}/admin/students/${studentId}/assign-class`,
+          payload,
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+      });
+
+      await Promise.all(promises);
+      
+      toast.success(`Successfully assigned ${classDetails.name} to ${studentsToAssign.length} student(s)`);
+      setShowAssignClassModal(false);
+      setSelectedClass('');
+      setStudentsToAssign([]);
+      fetchStudents(); // Refresh student list
+    } catch (error) {
+      console.error('Error assigning class:', error);
+      toast.error(error.response?.data?.error || 'Failed to assign class');
+    } finally {
+      setAssigningClass(false);
+    }
+  };
+
+  const generateRollNumber = () => {
+    return Math.floor(1000 + Math.random() * 9000).toString();
+  };
+
+  // ============================================
+  // Status Update Functions
+  // ============================================
+  
+  const handleStatusUpdate = async () => {
+    if (!selectedStatus) {
+      toast.error('Please select a status');
+      return;
+    }
+
+    if (studentsToAssign.length === 0) {
+      toast.error('No students selected');
+      return;
+    }
+
+    try {
+      setUpdatingStatus(true);
+      const token = localStorage.getItem('authToken');
+      
+      const promises = studentsToAssign.map(async (student) => {
+        const studentId = getStudentUserId(student);
+        
+        return axios.put(
+          `${API_BASE_URL}/admin/students/${studentId}/status`,
+          { status: selectedStatus },
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+      });
+
+      await Promise.all(promises);
+      
+      toast.success(`Updated status to ${selectedStatus} for ${studentsToAssign.length} student(s)`);
+      setShowStatusModal(false);
+      setSelectedStatus('');
+      setStudentsToAssign([]);
+      fetchStudents(); // Refresh student list
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast.error(error.response?.data?.error || 'Failed to update status');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
 
   // ============================================
   // Filtering Logic
@@ -151,20 +328,20 @@ const getProfileImageUrl = useCallback((student) => {
   
   const getStatusColor = (status) => {
     const colors = {
-      ACTIVE: 'bg-green-100 text-green-800 border-green-200',
-      INACTIVE: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      TERMINATED: 'bg-red-100 text-red-800 border-red-200'
+      ACTIVE: 'text-green-600',
+      INACTIVE: 'text-yellow-600',
+      TERMINATED: 'text-red-600'
     };
-    return `${colors[status] || 'bg-gray-100 text-gray-800 border-gray-200'} border`;
+    return colors[status] || 'text-gray-600';
   };
 
   const getClassTypeColor = (type) => {
     const colors = {
-      REGULAR: 'bg-blue-100 text-blue-800 border-blue-200',
-      HIFZ: 'bg-purple-100 text-purple-800 border-purple-200',
-      NAZRA: 'bg-orange-100 text-orange-800 border-orange-200'
+      REGULAR: 'text-blue-600',
+      HIFZ: 'text-purple-600',
+      NAZRA: 'text-orange-600'
     };
-    return `${colors[type] || 'bg-gray-100 text-gray-800 border-gray-200'} border`;
+    return colors[type] || 'text-gray-600';
   };
 
   // ============================================
@@ -174,7 +351,8 @@ const getProfileImageUrl = useCallback((student) => {
   const handleStudentClick = (student, e) => {
     if (e.target.type === 'checkbox' || 
         e.target.closest('.selection-checkbox') || 
-        e.target.closest('button')) {
+        e.target.closest('button') ||
+        e.target.closest('.dropdown-menu')) {
       return;
     }
     navigate(`/admin/students/${getStudentUserId(student)}`);
@@ -206,13 +384,22 @@ const getProfileImageUrl = useCallback((student) => {
           </div>
           <div className="flex items-center gap-3">
             {selectedStudents.length > 0 && (
-              <button
-                onClick={() => setShowPromotionModal(true)}
-                className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
-              >
-                <TrendingUp className="h-4 w-4" />
-                <span>Promote ({selectedStudents.length})</span>
-              </button>
+              <>
+                <button
+                  onClick={handleBulkAssignClass}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
+                >
+                  <School className="h-4 w-4" />
+                  <span>Assign Class ({selectedStudents.length})</span>
+                </button>
+                <button
+                  onClick={() => setShowPromotionModal(true)}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
+                >
+                  <TrendingUp className="h-4 w-4" />
+                  <span>Promote ({selectedStudents.length})</span>
+                </button>
+              </>
             )}
             <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A] shadow-sm">
               📊 Total: {filteredStudents.length}
@@ -270,20 +457,54 @@ const getProfileImageUrl = useCallback((student) => {
 
           {/* Selection Controls */}
           {filteredStudents.length > 0 && (
-            <div className="flex items-center justify-between pt-4 border-t border-gray-200">
-              <button
-                onClick={selectAllStudents}
-                className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors duration-200"
-              >
-                {selectedStudents.length === filteredStudents.length ? (
-                  <CheckSquare className="h-5 w-5 text-[#F59E0B]" />
-                ) : (
-                  <Square className="h-5 w-5" />
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-4 border-t border-gray-200 gap-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={selectAllStudents}
+                  className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors duration-200"
+                >
+                  {selectedStudents.length === filteredStudents.length ? (
+                    <CheckSquare className="h-5 w-5 text-[#F59E0B]" />
+                  ) : (
+                    <Square className="h-5 w-5" />
+                  )}
+                  <span className="font-medium">
+                    {selectedStudents.length === filteredStudents.length ? 'Deselect All' : 'Select All'}
+                  </span>
+                </button>
+                
+                {/* Bulk Actions for Selected Students */}
+                {selectedStudents.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 border-l border-gray-300"></div>
+                    <span className="text-sm font-medium text-gray-600">
+                      Bulk Actions:
+                    </span>
+                    <button
+                      onClick={() => handleBulkUpdateStatus('ACTIVE')}
+                      className="flex items-center gap-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-50 px-2 py-1 rounded transition-colors duration-200"
+                    >
+                      <UserCheck className="h-3 w-3" />
+                      <span>Activate</span>
+                    </button>
+                    <button
+                      onClick={() => handleBulkUpdateStatus('INACTIVE')}
+                      className="flex items-center gap-1 text-xs text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 px-2 py-1 rounded transition-colors duration-200"
+                    >
+                      <UserX className="h-3 w-3" />
+                      <span>Deactivate</span>
+                    </button>
+                    <button
+                      onClick={() => handleBulkUpdateStatus('TERMINATED')}
+                      className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors duration-200"
+                    >
+                      <UserX className="h-3 w-3" />
+                      <span>Terminate</span>
+                    </button>
+                  </div>
                 )}
-                <span className="font-medium">
-                  {selectedStudents.length === filteredStudents.length ? 'Deselect All' : 'Select All'}
-                </span>
-              </button>
+              </div>
+              
               {selectedStudents.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-gray-600">
@@ -324,10 +545,14 @@ const getProfileImageUrl = useCallback((student) => {
               attendance={getStudentAttendance()}
               selected={isStudentSelected(student.id)}
               profileImageUrl={getProfileImageUrl(student)}
+              dropdownOpen={dropdownOpen === student.id}
+              onToggleDropdown={() => toggleDropdown(student.id)}
+              onAssignClass={() => handleAssignClass(student)}
+              onUpdateStatus={(status) => handleUpdateStatus(student, status)}
               onToggleSelection={() => toggleStudentSelection(student)}
               onClick={(e) => handleStudentClick(student, e)}
-              onViewHistory={() => navigate(`/admin/students/${student.id}/history`)}
-              onViewDetails={() => navigate(`/admin/students/${student.id}`)}
+              onViewHistory={() => navigate(`/admin/students/${getStudentUserId(student)}/history`)}
+              onViewDetails={() => navigate(`/admin/students/${getStudentUserId(student)}`)}
               getStatusColor={getStatusColor}
               getClassTypeColor={getClassTypeColor}
             />
@@ -337,8 +562,8 @@ const getProfileImageUrl = useCallback((student) => {
 
       {/* Selection Summary */}
       {selectedStudents.length > 0 && (
-        <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-50">
-          <div className="flex items-center justify-between gap-3">
+        <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-50 min-w-[300px]">
+          <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-[#F59E0B] rounded-full flex items-center justify-center">
                 <span className="text-white font-bold text-sm">{selectedStudents.length}</span>
@@ -347,15 +572,201 @@ const getProfileImageUrl = useCallback((student) => {
                 <p className="text-sm font-medium text-gray-900">
                   {selectedStudents.length} student{selectedStudents.length > 1 ? 's' : ''} selected
                 </p>
-                <p className="text-xs text-gray-500">Ready for promotion</p>
+                <p className="text-xs text-gray-500">Ready for actions</p>
               </div>
             </div>
             <button
-              onClick={() => setShowPromotionModal(true)}
-              className="px-3 py-1.5 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white text-xs font-medium rounded-lg hover:shadow-lg transition-all duration-200"
+              onClick={() => setSelectedStudents([])}
+              className="text-gray-400 hover:text-gray-600"
             >
-              Promote Now
+              <X className="h-4 w-4" />
             </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={handleBulkAssignClass}
+              className="flex-1 flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 bg-blue-50 text-blue-600 hover:bg-blue-100 rounded-lg transition-colors"
+            >
+              <School className="h-4 w-4" />
+              Assign Class
+            </button>
+            <button
+              onClick={() => setShowPromotionModal(true)}
+              className="flex-1 flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 bg-[#FEF3C7] text-[#D97706] hover:bg-[#FDE68A] rounded-lg transition-colors"
+            >
+              <TrendingUp className="h-4 w-4" />
+              Promote
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Assign Class Modal */}
+      {showAssignClassModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">
+                Assign Class to {studentsToAssign.length} Student{studentsToAssign.length > 1 ? 's' : ''}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowAssignClassModal(false);
+                  setSelectedClass('');
+                  setStudentsToAssign([]);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Class
+                </label>
+                <select
+                  value={selectedClass}
+                  onChange={(e) => setSelectedClass(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                >
+                  <option value="">Select a class</option>
+                  {availableClasses.map((classItem) => (
+                    <option key={classItem.id} value={classItem.id}>
+                      {classItem.name} - {classItem.type} (Grade {classItem.grade})
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-4 max-h-40 overflow-y-auto">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  Selected Students ({studentsToAssign.length})
+                </h4>
+                <div className="space-y-1">
+                  {studentsToAssign.map((student, index) => (
+                    <div key={index} className="flex items-center justify-between text-sm py-1">
+                      <span className="text-gray-600">{getStudentName(student)}</span>
+                      <span className="text-xs text-gray-500">{getCurrentClass(student)?.name || 'No class'}</span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowAssignClassModal(false);
+                    setSelectedClass('');
+                    setStudentsToAssign([]);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={assigningClass}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleClassAssignment}
+                  disabled={!selectedClass || assigningClass}
+                  className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                >
+                  {assigningClass ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Assigning...
+                    </>
+                  ) : (
+                    'Assign Class'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Update Status Modal */}
+      {showStatusModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">
+                Update Status for {studentsToAssign.length} Student{studentsToAssign.length > 1 ? 's' : ''}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowStatusModal(false);
+                  setSelectedStatus('');
+                  setStudentsToAssign([]);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Status
+                </label>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                >
+                  <option value="">Select status</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                  <option value="TERMINATED">Terminated</option>
+                </select>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-4 max-h-40 overflow-y-auto">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  Selected Students ({studentsToAssign.length})
+                </h4>
+                <div className="space-y-1">
+                  {studentsToAssign.map((student, index) => (
+                    <div key={index} className="flex items-center justify-between text-sm py-1">
+                      <span className="text-gray-600">{getStudentName(student)}</span>
+                      <span className={`text-xs font-medium ${getStatusColor(getStudentStatus(student))}`}>
+                        {getStudentStatus(student)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowStatusModal(false);
+                    setSelectedStatus('');
+                    setStudentsToAssign([]);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={updatingStatus}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStatusUpdate}
+                  disabled={!selectedStatus || updatingStatus}
+                  className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                >
+                  {updatingStatus ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Status'
+                  )}
+                </button>
+              </div>
+            </div>
           </div>
         </div>
       )}
@@ -408,12 +819,13 @@ const EmptyState = ({ studentsCount }) => (
 
 const StudentCard = ({ 
   student, studentName, studentEmail, studentStatus, admissionNo, 
-  currentClass, attendance, selected, profileImageUrl, onToggleSelection, 
+  currentClass, attendance, selected, profileImageUrl, dropdownOpen,
+  onToggleDropdown, onAssignClass, onUpdateStatus, onToggleSelection, 
   onClick, onViewHistory, onViewDetails, getStatusColor, getClassTypeColor
 }) => (
   <div
     onClick={onClick}
-    className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl ${
+    className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl relative ${
       selected 
         ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white' 
         : 'border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50'
@@ -450,22 +862,93 @@ const StudentCard = ({
           <p className="text-gray-500 text-xs sm:text-sm truncate">
             🎫 Admission: {admissionNo}
           </p>
-          {currentClass && (
-            <p className="text-gray-600 text-xs mt-1 truncate">
-              🏫 {currentClass.name}
-            </p>
-          )}
+          <div className="flex items-center gap-2 mt-1">
+            {currentClass && (
+              <p className="text-gray-600 text-xs truncate">
+                🏫 {currentClass.name}
+              </p>
+            )}
+            <span className={`text-xs font-medium ${getStatusColor(studentStatus)}`}>
+              • {studentStatus}
+            </span>
+            {currentClass?.type && (
+              <span className={`text-xs font-medium ${getClassTypeColor(currentClass.type)}`}>
+                • {currentClass.type}
+              </span>
+            )}
+          </div>
         </div>
       </div>
       
-      <div className="flex flex-col items-end gap-1">
-        <span className={`px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(studentStatus)}`}>
-          {studentStatus}
-        </span>
-        {currentClass && (
-          <span className={`px-2 py-1 rounded-full text-xs font-medium ${getClassTypeColor(currentClass.type)}`}>
-            {currentClass.type}
-          </span>
+      {/* Three-dot dropdown menu */}
+      <div className="relative">
+        <button
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDropdown();
+          }}
+          className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+        >
+          <MoreVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+        </button>
+        
+        {dropdownOpen && (
+          <div 
+            className="dropdown-menu absolute right-0 top-8 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10"
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div className="py-1">
+              <button
+                onClick={() => {
+                  onViewDetails();
+                  onToggleDropdown();
+                }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <Eye className="h-4 w-4" />
+                View Details
+              </button>
+              <button
+                onClick={() => {
+                  onViewHistory();
+                  onToggleDropdown();
+                }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <History className="h-4 w-4" />
+                View History
+              </button>
+              <button
+                onClick={onAssignClass}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+              >
+                <School className="h-4 w-4" />
+                Assign Class
+              </button>
+              <div className="border-t border-gray-200 my-1"></div>
+              <button
+                onClick={() => onUpdateStatus('ACTIVE')}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-green-600 hover:bg-green-50"
+              >
+                <UserCheck className="h-4 w-4" />
+                Activate
+              </button>
+              <button
+                onClick={() => onUpdateStatus('INACTIVE')}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
+              >
+                <UserX className="h-4 w-4" />
+                Deactivate
+              </button>
+              <button
+                onClick={() => onUpdateStatus('TERMINATED')}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                <UserX className="h-4 w-4" />
+                Terminate
+              </button>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -492,7 +975,7 @@ const StudentCard = ({
 
     {/* Guardian & Class Info */}
     <div className="grid grid-cols-2 gap-3 mb-4">
-      {currentClass && (
+      {currentClass ? (
         <div className="flex items-center gap-2 p-2 bg-blue-50 rounded-lg">
           <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0" />
           <div>
@@ -500,13 +983,29 @@ const StudentCard = ({
             <p className="text-sm font-medium text-gray-900 truncate">{currentClass.name}</p>
           </div>
         </div>
+      ) : (
+        <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg">
+          <School className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500">Class</p>
+            <p className="text-sm font-medium text-gray-900 truncate">Not Assigned</p>
+          </div>
+        </div>
       )}
-      {student.guardianName && (
+      {student.guardianName ? (
         <div className="flex items-center gap-2 p-2 bg-green-50 rounded-lg">
           <Users className="h-3 w-3 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Guardian</p>
             <p className="text-sm font-medium text-gray-900 truncate">{student.guardianName}</p>
+          </div>
+        </div>
+      ) : (
+        <div className="flex items-center gap-2 p-2 bg-gray-100 rounded-lg">
+          <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
+          <div>
+            <p className="text-xs text-gray-500">Guardian</p>
+            <p className="text-sm font-medium text-gray-900 truncate">Not Provided</p>
           </div>
         </div>
       )}
@@ -605,11 +1104,9 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
               imgLoaded ? 'block' : 'hidden'
             }`}
             onLoad={() => {
-              console.log(`✅ Image loaded: ${studentName}`);
               setImgLoaded(true);
             }}
             onError={() => {
-              console.error(`❌ Image failed: ${studentName}`, profileImageUrl);
               setImgError(true);
             }}
           />

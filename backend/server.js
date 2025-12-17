@@ -17,6 +17,8 @@ const regularProgressRoutes = require('./routes/regularProgressRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
 const studentRoute = require('./routes/studentRoute');
 const hifzReportRoutes = require('./routes/hifzReportRoutes');
+const pdfRoutes = require('./routes/pdfRoutes');
+const hifzRoutes = require('./routes/hifzRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 5000;
@@ -126,6 +128,8 @@ app.use('/api/regular-progress', regularProgressRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/students', studentRoute);
 app.use('/api/hifz-reports', hifzReportRoutes);
+app.use('/api/reports/pdf', pdfRoutes);
+app.use('/api/hifz', hifzRoutes);
 
 // ============================================
 // Health & Info Routes

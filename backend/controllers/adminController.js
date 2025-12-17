@@ -740,6 +740,488 @@ class AdminController {
   }
 
 
+// ============================================
+// CLASS ASSIGNMENT METHODS
+// ============================================
+
+// Assign teacher to class
+async assignTeacherToClass(req, res) {
+  try {
+    const { teacherId, classRoomId } = req.body;
+
+    if (!teacherId || !classRoomId) {
+      return res.status(400).json({ error: 'Teacher ID and Class Room ID are required' });
+    }
+
+    // Check if teacher exists
+    const teacher = await prisma.teacher.findUnique({
+      where: { id: teacherId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        }
+      }
+    });
+
+    if (!teacher) {
+      return res.status(404).json({ error: 'Teacher not found' });
+    }
+
+    // Check if class exists
+    const classRoom = await prisma.classRoom.findUnique({
+      where: { id: classRoomId }
+    });
+
+    if (!classRoom) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    // Update class with teacher
+    const updatedClass = await prisma.classRoom.update({
+      where: { id: classRoomId },
+      data: { teacherId },
+      include: {
+        teacher: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
+        },
+        _count: {
+          select: {
+            enrollments: true,
+            subjects: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      message: `Teacher ${teacher.user.name} assigned to ${classRoom.name} successfully`,
+      class: updatedClass
+    });
+
+  } catch (error) {
+    console.error('Assign teacher to class error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// Assign student to class (enroll student)
+async assignStudentToClass(req, res) {
+  try {
+    const { studentId, classRoomId, startDate } = req.body;
+
+    console.log('📝 Assigning student to class:', { studentId, classRoomId });
+
+    if (!studentId || !classRoomId) {
+      return res.status(400).json({ error: 'Student ID and Class Room ID are required' });
+    }
+
+    // Find student by userId or studentId
+    let student = await prisma.student.findFirst({
+      where: { userId: studentId },
+      include: {
+        user: {
+          select: {
+            id: true,
+            name: true,
+            email: true
+          }
+        },
+        currentEnrollment: {
+          include: {
+            classRoom: {
+              select: {
+                id: true,
+                name: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!student) {
+      student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: {
+          user: {
+            select: {
+              id: true,
+              name: true,
+              email: true
+            }
+          },
+          currentEnrollment: {
+            include: {
+              classRoom: {
+                select: {
+                  id: true,
+                  name: true
+                }
+              }
+            }
+          }
+        }
+      });
+    }
+
+    if (!student) {
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Check if class exists
+    const classRoom = await prisma.classRoom.findUnique({
+      where: { id: classRoomId }
+    });
+
+    if (!classRoom) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    // Check if student already has a current enrollment
+    if (student.currentEnrollment) {
+      // If already enrolled in the same class
+      if (student.currentEnrollment.classRoomId === classRoomId) {
+        return res.status(400).json({ 
+          error: 'Student is already enrolled in this class',
+          currentEnrollment: student.currentEnrollment
+        });
+      }
+
+      // End current enrollment
+      await prisma.enrollment.update({
+        where: { id: student.currentEnrollment.id },
+        data: {
+          isCurrent: false,
+          endDate: new Date()
+        }
+      });
+
+      console.log('✅ Ended previous enrollment');
+    }
+
+    // Generate new roll number
+    const newRollNumber = await generateRollNumber(classRoomId, prisma);
+    const rollNumberInt = Number(newRollNumber);
+
+    console.log('🔢 Generated roll number:', rollNumberInt);
+
+    // Create new enrollment
+    const newEnrollment = await prisma.enrollment.create({
+      data: {
+        studentId: student.id,
+        classRoomId: classRoomId,
+        rollNumber: rollNumberInt,
+        isCurrent: true,
+        startDate: startDate ? new Date(startDate) : new Date()
+      },
+      include: {
+        classRoom: {
+          select: {
+            id: true,
+            name: true,
+            grade: true,
+            section: true,
+            type: true
+          }
+        },
+        student: {
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    // Update student's current enrollment
+    await prisma.student.update({
+      where: { id: student.id },
+      data: { currentEnrollmentId: newEnrollment.id }
+    });
+
+    console.log('✅ Student assigned to class successfully');
+
+    res.json({
+      message: `Student ${student.user.name} assigned to ${classRoom.name} successfully`,
+      enrollment: newEnrollment,
+      student: {
+        id: student.id,
+        name: student.user.name,
+        admissionNo: student.admissionNo
+      }
+    });
+
+  } catch (error) {
+    console.error('❌ Assign student to class error:', error);
+    res.status(500).json({ 
+      error: 'Failed to assign student to class',
+      details: error.message 
+    });
+  }
+}
+
+// Remove teacher from class
+async removeTeacherFromClass(req, res) {
+  try {
+    const { classRoomId } = req.params;
+
+    const classRoom = await prisma.classRoom.findUnique({
+      where: { id: classRoomId },
+      include: {
+        teacher: {
+          include: {
+            user: {
+              select: {
+                name: true
+              }
+            }
+          }
+        }
+      }
+    });
+
+    if (!classRoom) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    if (!classRoom.teacherId) {
+      return res.status(400).json({ error: 'No teacher assigned to this class' });
+    }
+
+    const teacherName = classRoom.teacher?.user?.name || 'Unknown';
+
+    const updatedClass = await prisma.classRoom.update({
+      where: { id: classRoomId },
+      data: { teacherId: null },
+      include: {
+        _count: {
+          select: {
+            enrollments: true,
+            subjects: true
+          }
+        }
+      }
+    });
+
+    res.json({
+      message: `Teacher ${teacherName} removed from ${classRoom.name} successfully`,
+      class: updatedClass
+    });
+
+  } catch (error) {
+    console.error('Remove teacher from class error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// Remove student from class (end enrollment)
+async removeStudentFromClass(req, res) {
+  try {
+    const { enrollmentId } = req.params;
+    const { reason } = req.body;
+
+    const enrollment = await prisma.enrollment.findUnique({
+      where: { id: enrollmentId },
+      include: {
+        student: {
+          include: {
+            user: {
+              select: {
+                name: true
+              }
+            }
+          }
+        },
+        classRoom: {
+          select: {
+            name: true
+          }
+        }
+      }
+    });
+
+    if (!enrollment) {
+      return res.status(404).json({ error: 'Enrollment not found' });
+    }
+
+    if (!enrollment.isCurrent) {
+      return res.status(400).json({ error: 'Enrollment is already ended' });
+    }
+
+    // End enrollment
+    const updatedEnrollment = await prisma.enrollment.update({
+      where: { id: enrollmentId },
+      data: {
+        isCurrent: false,
+        endDate: new Date(),
+        promotedTo: reason || 'Removed from class'
+      }
+    });
+
+    // Update student's current enrollment to null
+    await prisma.student.update({
+      where: { id: enrollment.studentId },
+      data: { currentEnrollmentId: null }
+    });
+
+    res.json({
+      message: `Student ${enrollment.student.user.name} removed from ${enrollment.classRoom.name} successfully`,
+      enrollment: updatedEnrollment
+    });
+
+  } catch (error) {
+    console.error('Remove student from class error:', error);
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
+// Bulk assign students to class
+async bulkAssignStudentsToClass(req, res) {
+  try {
+    const { studentIds, classRoomId, startDate } = req.body;
+
+    if (!Array.isArray(studentIds) || studentIds.length === 0) {
+      return res.status(400).json({ error: 'Student IDs array is required' });
+    }
+
+    if (!classRoomId) {
+      return res.status(400).json({ error: 'Class Room ID is required' });
+    }
+
+    // Check if class exists
+    const classRoom = await prisma.classRoom.findUnique({
+      where: { id: classRoomId }
+    });
+
+    if (!classRoom) {
+      return res.status(404).json({ error: 'Class not found' });
+    }
+
+    const results = await prisma.$transaction(async (tx) => {
+      const assigned = [];
+      const errors = [];
+
+      for (const studentRequestedId of studentIds) {
+        try {
+          // Find student
+          let student = await tx.student.findFirst({
+            where: { userId: studentRequestedId },
+            include: {
+              user: { select: { name: true } },
+              currentEnrollment: true
+            }
+          });
+
+          if (!student) {
+            student = await tx.student.findUnique({
+              where: { id: studentRequestedId },
+              include: {
+                user: { select: { name: true } },
+                currentEnrollment: true
+              }
+            });
+          }
+
+          if (!student) {
+            errors.push({ studentId: studentRequestedId, error: 'Student not found' });
+            continue;
+          }
+
+          // Check if already in target class
+          if (student.currentEnrollment?.classRoomId === classRoomId) {
+            errors.push({
+              studentId: student.id,
+              studentName: student.user.name,
+              error: 'Already enrolled in this class'
+            });
+            continue;
+          }
+
+          // End current enrollment if exists
+          if (student.currentEnrollment) {
+            await tx.enrollment.update({
+              where: { id: student.currentEnrollment.id },
+              data: {
+                isCurrent: false,
+                endDate: new Date()
+              }
+            });
+          }
+
+          // Generate new roll number
+          const newRollNumber = await generateRollNumber(classRoomId, tx);
+          const rollNumberInt = Number(newRollNumber);
+
+          // Create new enrollment
+          const newEnrollment = await tx.enrollment.create({
+            data: {
+              studentId: student.id,
+              classRoomId: classRoomId,
+              rollNumber: rollNumberInt,
+              isCurrent: true,
+              startDate: startDate ? new Date(startDate) : new Date()
+            }
+          });
+
+          // Update student's current enrollment
+          await tx.student.update({
+            where: { id: student.id },
+            data: { currentEnrollmentId: newEnrollment.id }
+          });
+
+          assigned.push({
+            studentId: student.id,
+            studentName: student.user.name,
+            rollNumber: rollNumberInt
+          });
+
+        } catch (err) {
+          errors.push({
+            studentId: studentRequestedId,
+            error: err.message
+          });
+        }
+      }
+
+      return { assigned, errors };
+    });
+
+    res.json({
+      message: `Successfully assigned ${results.assigned.length} student(s) to ${classRoom.name}`,
+      assigned: results.assigned,
+      errors: results.errors,
+      summary: {
+        total: studentIds.length,
+        successful: results.assigned.length,
+        failed: results.errors.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Bulk assign students error:', error);
+    res.status(500).json({ 
+      error: 'Failed to assign students',
+      details: error.message 
+    });
+  }
+}
 
   // Manage leave requests
   async manageLeaveRequests(req, res) {

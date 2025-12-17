@@ -259,37 +259,52 @@ const SuperAdminDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-linear-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-[#92400E]">Super Admin Dashboard</h1>
-            <p className="text-[#B45309] mt-2">
-              Full system control and monitoring • 
-              {new Date().toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
-              })}
-            </p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <select 
-              value={timeRange}
-              onChange={(e) => setTimeRange(e.target.value)}
-              className="bg-white px-4 py-2 rounded-lg border border-[#FDE68A] text-[#92400E] font-medium"
-            >
-              <option value="7days">Last 7 Days</option>
-              <option value="30days">Last 30 Days</option>
-              <option value="90days">Last 90 Days</option>
-            </select>
-            <div className="flex items-center space-x-2 bg-white px-4 py-2 rounded-lg border border-[#FDE68A]">
-              <Shield className="h-6 w-6 text-[#D97706]" />
-              <span className="font-semibold text-[#92400E]">Super Administrator</span>
-            </div>
-          </div>
+      <div className="bg-linear-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-xl sm:rounded-2xl p-4 sm:p-6">
+  <div className="space-y-4 sm:space-y-0">
+    {/* Top row: Title and badge */}
+    <div className="flex flex-col xs:flex-row xs:items-start xs:justify-between gap-3">
+      <div className="flex-1">
+        <h1 className="text-xl sm:text-2xl lg:text-3xl font-bold text-[#92400E] leading-tight">
+          Super Admin Dashboard
+        </h1>
+        <p className="text-[#B45309] mt-1 text-sm sm:text-base">
+          <span className="hidden sm:inline">Full system control • </span>
+          {new Date().toLocaleDateString('en-US', { 
+            weekday: window.innerWidth < 768 ? 'short' : 'long',
+            month: window.innerWidth < 768 ? 'short' : 'long',
+            day: 'numeric',
+            year: window.innerWidth < 640 ? '2-digit' : 'numeric'
+          })}
+        </p>
+      </div>
+      <div className="flex-shrink-0">
+        <div className="flex items-center bg-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#FDE68A]">
+          <Shield className="h-4 w-4 sm:h-5 sm:w-5 text-[#D97706] mr-2 flex-shrink-0" />
+          <span className="font-semibold text-[#92400E] text-sm sm:text-base">
+            <span className="hidden xs:inline">Super Admin</span>
+            <span className="inline xs:hidden">Admin</span>
+          </span>
         </div>
       </div>
+    </div>
+    
+    {/* Bottom row: Time range selector */}
+    <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3">
+      <div className="text-xs sm:text-sm text-[#B45309] italic hidden sm:block">
+        Full system control and monitoring access
+      </div>
+      <select 
+        value={timeRange}
+        onChange={(e) => setTimeRange(e.target.value)}
+        className="bg-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#FDE68A] text-[#92400E] font-medium text-sm sm:text-base w-full sm:w-auto"
+      >
+        <option value="7days">Last 7 Days</option>
+        <option value="30days">Last 30 Days</option>
+        <option value="90days">Last 90 Days</option>
+      </select>
+    </div>
+  </div>
+</div>
 
       {/* Stats Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">

@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 /* eslint-disable react-hooks/exhaustive-deps */
 import React, { useState, useEffect } from 'react';
 import { useTeacher } from '../../contexts/TeacherContext';
@@ -30,7 +31,7 @@ const ApplyLeave = () => {
     teacher
   } = useTeacher();
 
-  const [activeTab, setActiveTab] = useState('apply'); // 'apply', 'history', 'summary'
+  const [activeTab, setActiveTab] = useState('apply'); 
   const [leaveForm, setLeaveForm] = useState({
     fromDate: '',
     toDate: '',
@@ -40,7 +41,7 @@ const ApplyLeave = () => {
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [leaveStats, setLeaveStats] = useState({});
   const [selectedFile, setSelectedFile] = useState(null);
-  const [filterStatus, setFilterStatus] = useState('all'); // 'all', 'pending', 'approved', 'rejected'
+  const [filterStatus, setFilterStatus] = useState('all'); 
   const [expandedLeave, setExpandedLeave] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 

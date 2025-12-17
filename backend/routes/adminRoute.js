@@ -65,6 +65,25 @@ router.get('/leave-requests', authenticateToken, requireAdmin, adminController.m
 router.put('/leave-requests/:id', authenticateToken, requireAdmin, adminController.updateLeaveRequest);
 
 // ============================================
+// CLASS ASSIGNMENT ROUTES
+// ============================================
+
+// Assign teacher to class
+router.post('/assign-teacher-to-class', authenticateToken, requireAdmin, adminController.assignTeacherToClass);
+
+// Assign student to class (single)
+router.post('/assign-student-to-class', authenticateToken, requireAdmin, adminController.assignStudentToClass);
+
+// Bulk assign students to class
+router.post('/bulk-assign-students-to-class', authenticateToken, requireAdmin, adminController.bulkAssignStudentsToClass);
+
+// Remove teacher from class
+router.delete('/classes/:classRoomId/remove-teacher', authenticateToken, requireAdmin, adminController.removeTeacherFromClass);
+
+// Remove student from class (end enrollment)
+router.delete('/enrollments/:enrollmentId/remove-student', authenticateToken, requireAdmin, adminController.removeStudentFromClass);
+
+// ============================================
 // FILE SERVING ROUTES - Profile Images & Documents
 // ============================================
 

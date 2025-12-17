@@ -11,7 +11,8 @@ const ACTION_TYPES = {
   SET_CLASS_SUMMARY: 'SET_CLASS_SUMMARY',
   SET_ERROR: 'SET_ERROR',
   ADD_ATTENDANCE: 'ADD_ATTENDANCE',
-  UPDATE_ATTENDANCE: 'UPDATE_ATTENDANCE'
+  UPDATE_ATTENDANCE: 'UPDATE_ATTENDANCE',
+  UPDATE_BULK_ATTENDANCE: 'UPDATE_BULK_ATTENDANCE'
 };
 
 // Initial state
@@ -58,6 +59,17 @@ const attendanceReducer = (state, action) => {
         )
       }; }
     
+    case ACTION_TYPES.UPDATE_BULK_ATTENDANCE:
+      { const updatedRecords = Array.isArray(action.payload) ? action.payload : [action.payload];
+      const currentAtt = Array.isArray(state.attendance) ? state.attendance : [];
+      const updatedMap = new Map(updatedRecords.map(record => [record.id, record]));
+      return {
+        ...state,
+        attendance: currentAtt.map(record =>
+          updatedMap.has(record.id) ? updatedMap.get(record.id) : record
+        )
+      }; }
+    
     default:
       return state;
   }
@@ -74,7 +86,11 @@ export const AttendanceProvider = ({ children }) => {
     dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
   };
 
-  // Mark attendance
+  // ============================================
+  // MARK ATTENDANCE
+  // ============================================
+
+  // Mark attendance (supports individual, bulk, or bulk marking)
   const markAttendance = useCallback(async (attendanceData) => {
     setLoading(true);
     try {
@@ -85,12 +101,91 @@ export const AttendanceProvider = ({ children }) => {
       }
       return result;
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to mark attendance');
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to mark attendance');
       throw error;
     } finally {
       setLoading(false);
     }
   }, []);
+
+  // Mark attendance with bulk status and exceptions
+  const markAttendanceWithExceptions = useCallback(async (attendanceData) => {
+    setLoading(true);
+    try {
+      const result = await attendanceService.markAttendanceWithExceptions(attendanceData);
+      if (result.attendance && Array.isArray(result.attendance)) {
+        dispatch({ type: ACTION_TYPES.ADD_ATTENDANCE, payload: result.attendance });
+      }
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to mark attendance');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // UPDATE/CORRECTION
+  // ============================================
+
+  // Update single attendance record
+  const updateAttendance = useCallback(async (attendanceId, attendanceData) => {
+    setLoading(true);
+    try {
+      const result = await attendanceService.updateAttendance(attendanceId, attendanceData);
+      // Backend returns { message, attendance }
+      if (result.attendance) {
+        dispatch({ type: ACTION_TYPES.UPDATE_ATTENDANCE, payload: result.attendance });
+      }
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to update attendance');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Update multiple attendance records for same date (bulk correction)
+  const updateBulkAttendance = useCallback(async (updateData) => {
+    setLoading(true);
+    try {
+      const result = await attendanceService.updateBulkAttendance(updateData);
+      // Backend returns { message, attendance: [...] }
+      if (result.attendance && Array.isArray(result.attendance)) {
+        dispatch({ type: ACTION_TYPES.UPDATE_BULK_ATTENDANCE, payload: result.attendance });
+      }
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to update attendance');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // Re-mark entire class attendance for same date (complete correction)
+  const remarkAttendance = useCallback(async (attendanceData) => {
+    setLoading(true);
+    try {
+      const result = await attendanceService.remarkAttendance(attendanceData);
+      // Backend returns { message, attendance: [...] }
+      if (result.attendance && Array.isArray(result.attendance)) {
+        dispatch({ type: ACTION_TYPES.UPDATE_BULK_ATTENDANCE, payload: result.attendance });
+      }
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to re-mark attendance');
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // GET/RETRIEVE
+  // ============================================
 
   // Get attendance for class/subject
   const fetchAttendance = useCallback(async (filters = {}) => {
@@ -100,7 +195,7 @@ export const AttendanceProvider = ({ children }) => {
       dispatch({ type: ACTION_TYPES.SET_ATTENDANCE, payload: attendance });
       return attendance;
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to fetch attendance');
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to fetch attendance');
       throw error;
     } finally {
       setLoading(false);
@@ -115,7 +210,7 @@ export const AttendanceProvider = ({ children }) => {
       dispatch({ type: ACTION_TYPES.SET_STUDENT_ATTENDANCE, payload: attendance });
       return attendance;
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to fetch student attendance');
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to fetch student attendance');
       throw error;
     } finally {
       setLoading(false);
@@ -130,22 +225,7 @@ export const AttendanceProvider = ({ children }) => {
       dispatch({ type: ACTION_TYPES.SET_CLASS_SUMMARY, payload: summary });
       return summary;
     } catch (error) {
-      setError(error.response?.data?.message || 'Failed to fetch class attendance summary');
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  // Update attendance
-  const updateAttendance = useCallback(async (attendanceId, attendanceData) => {
-    setLoading(true);
-    try {
-      const updatedAttendance = await attendanceService.updateAttendance(attendanceId, attendanceData);
-      dispatch({ type: ACTION_TYPES.UPDATE_ATTENDANCE, payload: updatedAttendance });
-      return updatedAttendance;
-    } catch (error) {
-      setError(error.response?.data?.message || 'Failed to update attendance');
+      setError(error.response?.data?.error || error.response?.data?.message || 'Failed to fetch class attendance summary');
       throw error;
     } finally {
       setLoading(false);
@@ -159,12 +239,18 @@ export const AttendanceProvider = ({ children }) => {
 
   const value = {
     ...state,
-    // Methods
+    // Mark methods
     markAttendance,
+    markAttendanceWithExceptions,
+    // Update/Correction methods
+    updateAttendance,
+    updateBulkAttendance,
+    remarkAttendance,
+    // Fetch methods
     fetchAttendance,
     fetchStudentAttendance,
     fetchClassAttendanceSummary,
-    updateAttendance,
+    // Utility methods
     clearError
   };
 

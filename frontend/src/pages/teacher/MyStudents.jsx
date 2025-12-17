@@ -189,76 +189,7 @@ const MyStudents = () => {
           </div>
         </div>
 
-        {/* Expanded Details */}
-        {isExpanded && (
-          <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-              {/* Contact Information */}
-              <div>
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                  <Mail className="h-4 w-4 mr-2" />
-                  Contact Information
-                </h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex items-center space-x-2">
-                    <Mail className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-600">{student.student?.user?.email || 'No email'}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <Phone className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-600">{student.student?.user?.phone || 'No phone'}</span>
-                  </div>
-                  <div className="flex items-center space-x-2">
-                    <MapPin className="h-4 w-4 text-gray-400" />
-                    <span className="text-gray-600">{student.student?.address || 'No address'}</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Additional Information */}
-              <div>
-                <h4 className="font-medium text-gray-900 mb-3 flex items-center">
-                  <Award className="h-4 w-4 mr-2" />
-                  Student Details
-                </h4>
-                <div className="space-y-2 text-sm">
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Father Name:</span>
-                    <span className="font-medium">{student.student?.fatherName || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Mother Name:</span>
-                    <span className="font-medium">{student.student?.motherName || 'N/A'}</span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Enrollment Date:</span>
-                    <span className="font-medium">
-                      {student.enrollmentDate ? new Date(student.enrollmentDate).toLocaleDateString() : 'N/A'}
-                    </span>
-                  </div>
-                  <div className="flex justify-between">
-                    <span className="text-gray-600">Current Enrollment:</span>
-                    <span className={`font-medium ${student.isCurrent ? 'text-green-600' : 'text-red-600'}`}>
-                      {student.isCurrent ? 'Yes' : 'No'}
-                    </span>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Action Buttons */}
-            <div className="flex items-center justify-end space-x-3 mt-4 pt-4 border-t border-gray-200">
-              <button className="flex items-center px-3 py-2 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-md hover:bg-gray-50 transition-colors">
-                <Eye className="h-4 w-4 mr-2" />
-                View Profile
-              </button>
-              <button className="flex items-center px-3 py-2 text-sm font-medium text-white bg-gold rounded-md hover:bg-yellow-600 transition-colors">
-                <MessageCircle className="h-4 w-4 mr-2" />
-                Send Message
-              </button>
-            </div>
-          </div>
-        )}
+        
       </div>
     );
   };
@@ -268,76 +199,112 @@ const MyStudents = () => {
 
     return (
       <div className="bg-white border-b border-gray-200 hover:bg-gray-50 transition-colors">
-        <div className="px-6 py-4">
-          <div className="flex items-center justify-between">
-            <div className="flex items-center space-x-4 flex-1">
-              <div className="h-12 w-12 bg-gold rounded-full flex items-center justify-center text-white font-semibold">
-                {getInitials(student.student?.user?.name)}
-              </div>
-              
-              <div className="flex-1">
-                <div className="flex items-center space-x-3">
-                  <h3 className="font-medium text-gray-900">
-                    {student.student?.user?.name || 'Unknown Student'}
-                  </h3>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(student.student?.status)}`}>
-                    {student.student?.status || 'Active'}
-                  </span>
-                </div>
-                <p className="text-sm text-gray-600 mt-1">
-                  Roll No: {student.rollNumber} • Admission: {student.student?.admissionNo || 'N/A'} • {student.classRoom?.name}
-                </p>
-              </div>
-              
-              <div className="text-right">
-                <p className="text-sm font-medium text-gray-900">{student.classRoom?.name}</p>
-                <p className="text-sm text-gray-600">Grade {student.classRoom?.grade || 'N/A'}</p>
-              </div>
-            </div>
-
-            <div className="flex items-center space-x-4 ml-6">
-              <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getClassTypeColor(student.classRoom?.type)}`}>
-                {student.classRoom?.type || 'Regular'}
-              </span>
-              
-              <button
-                onClick={() => setExpandedStudent(isExpanded ? null : student.id)}
-                className="p-2 hover:bg-gray-200 rounded-lg transition-colors"
-              >
-                <MoreHorizontal className="h-5 w-5 text-gray-600" />
-              </button>
-            </div>
+  <div className="px-4 sm:px-6 py-3 sm:py-4">
+    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
+      <div className="flex items-start sm:items-center space-x-3 sm:space-x-4 flex-1">
+        <div className="h-10 w-10 sm:h-12 sm:w-12 bg-gold rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base flex-shrink-0">
+          {getInitials(student.student?.user?.name)}
+        </div>
+        
+        <div className="flex-1 min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="font-medium text-gray-900 text-sm sm:text-base truncate">
+              {student.student?.user?.name || 'Unknown Student'}
+            </h3>
+            <span className={`inline-flex items-center px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-xs font-medium ${getStatusColor(student.student?.status)}`}>
+              {student.student?.status || 'Active'}
+            </span>
           </div>
-
-          {isExpanded && (
-            <div className="mt-4 pl-16">
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Contact Info</h4>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-gray-600">{student.student?.user?.email || 'No email'}</p>
-                    <p className="text-gray-600">{student.student?.user?.phone || 'No phone'}</p>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Parents</h4>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-gray-600">Father: {student.student?.fatherName || 'N/A'}</p>
-                    <p className="text-gray-600">Mother: {student.student?.motherName || 'N/A'}</p>
-                  </div>
-                </div>
-                <div>
-                  <h4 className="font-medium text-gray-900 mb-2">Details</h4>
-                  <div className="space-y-1 text-sm">
-                    <p className="text-gray-600">Gender: {student.student?.gender || 'N/A'}</p>
-                    <p className="text-gray-600">DOB: {student.student?.dateOfBirth ? new Date(student.student.dateOfBirth).toLocaleDateString() : 'N/A'}</p>
-                  </div>
-                </div>
-              </div>
-            </div>
-          )}
+          <p className="text-xs sm:text-sm text-gray-600 mt-1">
+            <span className="block sm:inline">Roll: {student.rollNumber}</span>
+            <span className="hidden sm:inline"> • </span>
+            <span className="block sm:inline">Adm: {student.student?.admissionNo || 'N/A'}</span>
+            <span className="hidden sm:inline"> • </span>
+            <span className="block sm:inline">{student.classRoom?.name}</span>
+          </p>
+          
+          {/* Mobile class info */}
+          <div className="sm:hidden mt-2">
+            <p className="text-sm font-medium text-gray-900">
+              {student.classRoom?.name}
+            </p>
+            <p className="text-sm text-gray-600">
+              Grade {student.classRoom?.grade || 'N/A'}
+            </p>
+          </div>
+        </div>
+        
+        {/* Desktop class info */}
+        <div className="text-right hidden sm:block flex-shrink-0">
+          <p className="text-sm font-medium text-gray-900 truncate max-w-[120px]">
+            {student.classRoom?.name}
+          </p>
+          <p className="text-sm text-gray-600">
+            Grade {student.classRoom?.grade || 'N/A'}
+          </p>
         </div>
       </div>
+
+      <div className="flex items-center justify-between sm:justify-end space-x-2 sm:space-x-4 ml-0 sm:ml-6 mt-3 sm:mt-0">
+        <span className={`inline-flex items-center px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-xs font-medium ${getClassTypeColor(student.classRoom?.type)}`}>
+          {student.classRoom?.type || 'Regular'}
+        </span>
+        
+        <button
+          onClick={() => setExpandedStudent(isExpanded ? null : student.id)}
+          className="p-1.5 sm:p-2 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
+        >
+          <MoreHorizontal className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600" />
+        </button>
+      </div>
+    </div>
+
+    {isExpanded && (
+      <div className="mt-4 pl-0 sm:pl-16">
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
+          <div>
+            <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Contact Info</h4>
+            <div className="space-y-1 text-xs sm:text-sm">
+              <p className="text-gray-600 truncate">
+                {student.student?.user?.email || 'No email'}
+              </p>
+              <p className="text-gray-600">
+                {student.student?.user?.phone || 'No phone'}
+              </p>
+            </div>
+          </div>
+          <div>
+            <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Parents</h4>
+            <div className="space-y-1 text-xs sm:text-sm">
+              <p className="text-gray-600 truncate">
+                Father: {student.student?.fatherName || 'N/A'}
+              </p>
+              <p className="text-gray-600 truncate">
+                Mother: {student.student?.motherName || 'N/A'}
+              </p>
+            </div>
+          </div>
+          <div>
+            <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Details</h4>
+            <div className="space-y-1 text-xs sm:text-sm">
+              <p className="text-gray-600">
+                Gender: {student.student?.gender || 'N/A'}
+              </p>
+              <p className="text-gray-600">
+                DOB: {student.student?.dateOfBirth ? 
+                  new Date(student.student.dateOfBirth).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric'
+                  }) : 'N/A'}
+              </p>
+            </div>
+          </div>
+        </div>
+      </div>
+    )}
+  </div>
+</div>
     );
   };
 

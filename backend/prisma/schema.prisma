@@ -211,10 +211,13 @@ model Student {
   // all enrollments
   enrollments   Enrollment[] @relation("studentEnrollments")
   
+  
   attendances   Attendance[]
   examResults   ExamResult[]
   nazraProgress  NazraProgress[]
-  hifzProgress   HifzProgress[]
+  // Hifz related
+hifzProgress   HifzProgress[]
+hifzStatus     StudentHifzStatus?
   parents       Parent[] @relation("parentChildren")
   
   // Add missing relation fields
@@ -570,18 +573,88 @@ model HifzProgress {
   teacher     Teacher? @relation(fields: [teacherId], references: [id])
   teacherId   String?
   date        DateTime @default(now())
-  sabaqLines  Int      // lines learned/reviewed in this session
-  sabqiLines  Int      // review lines
-  manzilPara  String?  // optional para description
-  mistakes    Int
-  notes       String?
-  attachments String?  // JSON array of document URLs (audio recordings, notes, etc.)
-  createdAt   DateTime @default(now())
   
-  // New fields for better tracking
-  currentPara  Int?     // Current Para number student is working on (1-30)
-  completedParas Int[]  // Array of completed Para numbers
-  paraProgress Float?   // Progress percentage for current Para (0-100)
+  // Daily progress fields
+  sabaq       String?  // New lesson (e.g., "Surah Al-Baqarah 1-5")
+  sabaqLines  Int      @default(0) // Number of lines in new lesson
+  sabaqMistakes Int    @default(0) // Mistakes in Sabaq
+  
+  sabqi       String?  // Recent revision
+  sabqiLines  Int      @default(0) // Number of lines in revision
+  sabqiMistakes Int    @default(0) // Mistakes in Sabqi
+  
+  manzil      String?  // Older revision (Manzil/Para reference)
+  manzilLines Int      @default(0) // Number of lines in Manzil
+  manzilMistakes Int   @default(0) // Mistakes in Manzil
+  
+  totalMistakes Int    @default(0) // Total mistakes for the day
+  
+  // Attendance
+  attendance  AttendanceStatus @default(PRESENT)
+  
+  // Performance condition (auto-calculated)
+  condition   String?  // "Excellent", "Good", "Medium", "Below Average", "Need Focus"
+  
+  // Para tracking fields
+  currentPara     Int?     // Current Para number (1-30)
+  currentParaProgress Float @default(0) // Progress in current Para (0-100%)
+  completedParas  Int[]    // Array of completed Para numbers
+  
+  // Already memorized tracking (for students joining with prior Hifz)
+  alreadyMemorizedParas Int[] @default([]) // Paras already memorized before joining
+  startingPara    Int?     // Para they started from when joining
+  
+  // Notes and attachments
+  notes       String?
+  remarks     String?
+  attachments String?  // JSON array of document URLs
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
   
   @@index([studentId, date])
+  @@index([date])
+  @@index([studentId, currentPara])
+}
+
+// Add this new model to track student's overall Hifz status
+model StudentHifzStatus {
+  id          String   @id @default(uuid())
+  student     Student  @relation(fields: [studentId], references: [id])
+  studentId   String   @unique
+  
+  // Initial status when joining
+  joiningDate DateTime @default(now())
+  alreadyMemorizedParas Int[] @default([]) // Paras memorized before joining
+  startingPara Int      @default(1) // Para they started from
+  
+  // Current status
+  currentPara     Int      @default(1)
+  currentParaProgress Float @default(0)
+  completedParas  Int[]    @default([])
+  totalParasCompleted Int  @default(0)
+  
+  // Overall progress
+  totalLinesMemorized Int  @default(0)
+  totalDaysActive     Int  @default(0)
+  averageLinesPerDay  Float @default(0)
+  
+  // Completion projection
+  estimatedDaysToComplete Int?
+  estimatedCompletionDate DateTime?
+  
+  // Performance metrics
+  totalMistakes       Int   @default(0)
+  averageMistakesPerDay Float @default(0)
+  mistakeRate         Float @default(0) // Percentage
+  consistencyScore    Float @default(0) // Attendance percentage
+  
+  // Status
+  isActive    Boolean  @default(true)
+  completedAt DateTime?
+  
+  lastUpdated DateTime @updatedAt
+  createdAt   DateTime @default(now())
+  
+  @@index([studentId])
 }

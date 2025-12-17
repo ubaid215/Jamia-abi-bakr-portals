@@ -1,8 +1,8 @@
-import React, { useEffect, useState } from 'react';
-import { 
-  Users, 
-  School, 
-  BookOpen, 
+import React, { useEffect, useState } from "react";
+import {
+  Users,
+  School,
+  BookOpen,
   Calendar,
   BarChart3,
   UserCheck,
@@ -10,27 +10,27 @@ import {
   TrendingUp,
   AlertCircle,
   CheckCircle2,
-  XCircle
-} from 'lucide-react';
-import { useAdmin } from '../../contexts/AdminContext';
+  XCircle,
+} from "lucide-react";
+import { useAdmin } from "../../contexts/AdminContext";
 
 const AdminDashboard = () => {
-  const { 
-    fetchSystemStats, 
+  const {
+    fetchSystemStats,
     fetchAttendanceOverview,
     fetchLeaveRequests,
     stats,
     attendanceOverview,
     leaveRequests,
-    loading 
+    loading,
   } = useAdmin();
 
-  const [timeRange, setTimeRange] = useState('30days');
+  const [timeRange, setTimeRange] = useState("30days");
   const [dashboardStats, setDashboardStats] = useState({
     totalStudents: 0,
     totalTeachers: 0,
     totalClasses: 0,
-    todayAttendance: 0
+    todayAttendance: 0,
   });
 
   useEffect(() => {
@@ -41,33 +41,33 @@ const AdminDashboard = () => {
     try {
       await Promise.all([
         fetchSystemStats(),
-        fetchAttendanceOverview({ 
+        fetchAttendanceOverview({
           startDate: getStartDate(timeRange),
-          endDate: new Date().toISOString().split('T')[0]
+          endDate: new Date().toISOString().split("T")[0],
         }),
-        fetchLeaveRequests({ status: 'PENDING', limit: 5 })
+        fetchLeaveRequests({ status: "PENDING", limit: 5 }),
       ]);
     } catch (error) {
-      console.error('Failed to load dashboard data:', error);
+      console.error("Failed to load dashboard data:", error);
     }
   };
 
   const getStartDate = (range) => {
     const date = new Date();
     switch (range) {
-      case '7days':
+      case "7days":
         date.setDate(date.getDate() - 7);
         break;
-      case '30days':
+      case "30days":
         date.setDate(date.getDate() - 30);
         break;
-      case '90days':
+      case "90days":
         date.setDate(date.getDate() - 90);
         break;
       default:
         date.setDate(date.getDate() - 30);
     }
-    return date.toISOString().split('T')[0];
+    return date.toISOString().split("T")[0];
   };
 
   // Update stats when context data changes
@@ -77,109 +77,109 @@ const AdminDashboard = () => {
         totalStudents: stats.stats.byRole.students || 0,
         totalTeachers: stats.stats.byRole.teachers || 0,
         totalClasses: stats.stats.academic.totalClasses || 0,
-        todayAttendance: stats.stats.academic.todayAttendance || 0
+        todayAttendance: stats.stats.academic.todayAttendance || 0,
       });
     }
   }, [stats]);
 
   const statsCards = [
     {
-      title: 'Total Students',
+      title: "Total Students",
       value: dashboardStats.totalStudents.toLocaleString(),
-      change: '+8%',
-      trend: 'up',
+      change: "+8%",
+      trend: "up",
       icon: Users,
-      color: 'from-blue-500 to-blue-600'
+      color: "from-blue-500 to-blue-600",
     },
     {
-      title: 'Teachers',
+      title: "Teachers",
       value: dashboardStats.totalTeachers.toLocaleString(),
-      change: '+3',
-      trend: 'up',
+      change: "+3",
+      trend: "up",
       icon: UserCheck,
-      color: 'from-green-500 to-green-600'
+      color: "from-green-500 to-green-600",
     },
     {
-      title: 'Classes',
+      title: "Classes",
       value: dashboardStats.totalClasses.toLocaleString(),
-      change: '+2',
-      trend: 'up',
+      change: "+2",
+      trend: "up",
       icon: School,
-      color: 'from-purple-500 to-purple-600'
+      color: "from-purple-500 to-purple-600",
     },
     {
-      title: 'Attendance Today',
-      value: attendanceOverview?.summary?.overallAttendancePercentage 
+      title: "Attendance Today",
+      value: attendanceOverview?.summary?.overallAttendancePercentage
         ? `${attendanceOverview.summary.overallAttendancePercentage}%`
-        : '0%',
-      change: '+2%',
-      trend: 'up',
+        : "0%",
+      change: "+2%",
+      trend: "up",
       icon: Calendar,
-      color: 'from-orange-500 to-orange-600'
-    }
+      color: "from-orange-500 to-orange-600",
+    },
   ];
 
   const quickStats = [
-    { 
-      label: 'Pending Approvals', 
-      value: (leaveRequests?.leaveRequests?.length || 0).toString(), 
-      color: 'bg-red-100 text-red-800' 
+    {
+      label: "Pending Approvals",
+      value: (leaveRequests?.leaveRequests?.length || 0).toString(),
+      color: "bg-red-100 text-red-800",
     },
-    { 
-      label: 'Active Students', 
-      value: (stats?.stats?.byStatus?.active || 0).toString(), 
-      color: 'bg-blue-100 text-blue-800' 
+    {
+      label: "Active Students",
+      value: (stats?.stats?.byStatus?.active || 0).toString(),
+      color: "bg-blue-100 text-blue-800",
     },
-    { 
-      label: 'Leave Requests', 
-      value: (leaveRequests?.leaveRequests?.length || 0).toString(), 
-      color: 'bg-yellow-100 text-yellow-800' 
+    {
+      label: "Leave Requests",
+      value: (leaveRequests?.leaveRequests?.length || 0).toString(),
+      color: "bg-yellow-100 text-yellow-800",
     },
-    { 
-      label: 'System Health', 
-      value: 'Good', 
-      color: 'bg-green-100 text-green-800' 
-    }
+    {
+      label: "System Health",
+      value: "Good",
+      color: "bg-green-100 text-green-800",
+    },
   ];
 
   const recentTasks = [
     {
-      title: 'Review pending teacher applications',
-      priority: 'High',
-      due: 'Today',
-      type: 'approval',
-      status: 'pending'
+      title: "Review pending teacher applications",
+      priority: "High",
+      due: "Today",
+      type: "approval",
+      status: "pending",
     },
     {
-      title: 'Generate monthly attendance report',
-      priority: 'Medium',
-      due: 'Tomorrow',
-      type: 'report',
-      status: 'pending'
+      title: "Generate monthly attendance report",
+      priority: "Medium",
+      due: "Tomorrow",
+      type: "report",
+      status: "pending",
     },
     {
-      title: 'Update class schedules',
-      priority: 'Medium',
-      due: 'This week',
-      type: 'schedule',
-      status: 'in-progress'
+      title: "Update class schedules",
+      priority: "Medium",
+      due: "This week",
+      type: "schedule",
+      status: "in-progress",
     },
     {
-      title: 'Process student transfers',
-      priority: 'Low',
-      due: 'Next week',
-      type: 'transfer',
-      status: 'pending'
-    }
+      title: "Process student transfers",
+      priority: "Low",
+      due: "Next week",
+      type: "transfer",
+      status: "pending",
+    },
   ];
 
   const getStatusIcon = (status) => {
     switch (status) {
-      case 'pending':
+      case "pending":
         return <Clock className="h-4 w-4 text-yellow-600" />;
-      case 'completed':
+      case "completed":
         return <CheckCircle2 className="h-4 w-4 text-green-600" />;
-      case 'in-progress':
+      case "in-progress":
         return <AlertCircle className="h-4 w-4 text-blue-600" />;
       default:
         return <Clock className="h-4 w-4 text-gray-600" />;
@@ -188,14 +188,14 @@ const AdminDashboard = () => {
 
   const getStatusColor = (status) => {
     switch (status) {
-      case 'pending':
-        return 'bg-yellow-100 text-yellow-800';
-      case 'completed':
-        return 'bg-green-100 text-green-800';
-      case 'in-progress':
-        return 'bg-blue-100 text-blue-800';
+      case "pending":
+        return "bg-yellow-100 text-yellow-800";
+      case "completed":
+        return "bg-green-100 text-green-800";
+      case "in-progress":
+        return "bg-blue-100 text-blue-800";
       default:
-        return 'bg-gray-100 text-gray-800';
+        return "bg-gray-100 text-gray-800";
     }
   };
 
@@ -210,32 +210,36 @@ const AdminDashboard = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-linear-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-6">
-        <div className="flex items-center justify-between">
-          <div>
-            <h1 className="text-3xl font-bold text-[#92400E]">Admin Dashboard</h1>
-            <p className="text-[#B45309] mt-2">
-              {new Date().toLocaleDateString('en-US', { 
-                weekday: 'long', 
-                year: 'numeric', 
-                month: 'long', 
-                day: 'numeric' 
+      <div className="bg-linear-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-5 md:p-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl sm:text-2xl md:text-3xl font-bold text-[#92400E] truncate">
+              Admin Dashboard
+            </h1>
+            <p className="text-[#B45309] mt-1 sm:mt-2 text-sm sm:text-base truncate">
+              {new Date().toLocaleDateString("en-US", {
+                weekday: "short",
+                year: "numeric",
+                month: "short",
+                day: "numeric",
               })}
             </p>
           </div>
-          <div className="flex items-center space-x-4">
-            <select 
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 sm:gap-4">
+            <select
               value={timeRange}
               onChange={(e) => setTimeRange(e.target.value)}
-              className="bg-white px-4 py-2 rounded-lg border border-[#FDE68A] text-[#92400E] font-medium"
+              className="bg-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#FDE68A] text-[#92400E] font-medium text-sm sm:text-base w-full sm:w-auto"
             >
               <option value="7days">Last 7 Days</option>
               <option value="30days">Last 30 Days</option>
               <option value="90days">Last 90 Days</option>
             </select>
-            <div className="flex items-center space-x-2 bg-white px-4 py-2 rounded-lg border border-[#FDE68A]">
-              <UserCheck className="h-6 w-6 text-[#D97706]" />
-              <span className="font-semibold text-[#92400E]">Administrator</span>
+            <div className="flex items-center justify-center sm:justify-start bg-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg border border-[#FDE68A] text-sm sm:text-base">
+              <UserCheck className="h-4 w-4 sm:h-5 sm:w-5 md:h-6 md:w-6 text-[#D97706] mr-1.5 sm:mr-2 flex-shrink-0" />
+              <span className="font-semibold text-[#92400E] truncate">
+                Administrator
+              </span>
             </div>
           </div>
         </div>
@@ -246,14 +250,23 @@ const AdminDashboard = () => {
         {statsCards.map((stat, index) => {
           const Icon = stat.icon;
           return (
-            <div key={index} className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow duration-300">
+            <div
+              key={index}
+              className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100 hover:shadow-xl transition-shadow duration-300"
+            >
               <div className="flex items-center justify-between">
                 <div>
-                  <p className="text-sm font-medium text-gray-600">{stat.title}</p>
-                  <p className="text-2xl font-bold text-gray-900 mt-1">{stat.value}</p>
-                  <div className={`flex items-center mt-2 ${
-                    stat.trend === 'up' ? 'text-green-600' : 'text-red-600'
-                  }`}>
+                  <p className="text-sm font-medium text-gray-600">
+                    {stat.title}
+                  </p>
+                  <p className="text-2xl font-bold text-gray-900 mt-1">
+                    {stat.value}
+                  </p>
+                  <div
+                    className={`flex items-center mt-2 ${
+                      stat.trend === "up" ? "text-green-600" : "text-red-600"
+                    }`}
+                  >
                     <TrendingUp className="h-4 w-4 mr-1" />
                     <span className="text-sm font-medium">{stat.change}</span>
                   </div>
@@ -270,12 +283,21 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Quick Stats */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Quick Overview</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            Quick Overview
+          </h2>
           <div className="space-y-3">
             {quickStats.map((stat, index) => (
-              <div key={index} className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors duration-200">
-                <span className="text-sm font-medium text-gray-700">{stat.label}</span>
-                <span className={`px-3 py-1 rounded-full text-sm font-semibold ${stat.color}`}>
+              <div
+                key={index}
+                className="flex items-center justify-between p-3 border border-gray-100 rounded-lg hover:bg-gray-50 transition-colors duration-200"
+              >
+                <span className="text-sm font-medium text-gray-700">
+                  {stat.label}
+                </span>
+                <span
+                  className={`px-3 py-1 rounded-full text-sm font-semibold ${stat.color}`}
+                >
                   {stat.value}
                 </span>
               </div>
@@ -286,40 +308,65 @@ const AdminDashboard = () => {
         {/* Recent Tasks */}
         <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-xl font-bold text-gray-900">Recent Tasks & Alerts</h2>
+            <h2 className="text-xl font-bold text-gray-900">
+              Recent Tasks & Alerts
+            </h2>
             <span className="text-sm text-gray-500">
-              {recentTasks.filter(task => task.status === 'pending').length} pending
+              {recentTasks.filter((task) => task.status === "pending").length}{" "}
+              pending
             </span>
           </div>
           <div className="space-y-4">
             {recentTasks.map((task, index) => (
-              <div key={index} className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200">
+              <div
+                key={index}
+                className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200"
+              >
                 <div className="flex items-center space-x-4">
-                  <div className={`p-2 rounded-lg ${
-                    task.type === 'approval' ? 'bg-blue-100 text-blue-600' :
-                    task.type === 'report' ? 'bg-green-100 text-green-600' :
-                    task.type === 'schedule' ? 'bg-purple-100 text-purple-600' :
-                    'bg-yellow-100 text-yellow-600'
-                  }`}>
-                    {task.type === 'approval' && <UserCheck className="h-5 w-5" />}
-                    {task.type === 'report' && <BarChart3 className="h-5 w-5" />}
-                    {task.type === 'schedule' && <Clock className="h-5 w-5" />}
-                    {task.type === 'transfer' && <Users className="h-5 w-5" />}
+                  <div
+                    className={`p-2 rounded-lg ${
+                      task.type === "approval"
+                        ? "bg-blue-100 text-blue-600"
+                        : task.type === "report"
+                        ? "bg-green-100 text-green-600"
+                        : task.type === "schedule"
+                        ? "bg-purple-100 text-purple-600"
+                        : "bg-yellow-100 text-yellow-600"
+                    }`}
+                  >
+                    {task.type === "approval" && (
+                      <UserCheck className="h-5 w-5" />
+                    )}
+                    {task.type === "report" && (
+                      <BarChart3 className="h-5 w-5" />
+                    )}
+                    {task.type === "schedule" && <Clock className="h-5 w-5" />}
+                    {task.type === "transfer" && <Users className="h-5 w-5" />}
                   </div>
                   <div>
-                    <h3 className="font-semibold text-gray-900">{task.title}</h3>
+                    <h3 className="font-semibold text-gray-900">
+                      {task.title}
+                    </h3>
                     <p className="text-sm text-gray-600">Due: {task.due}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3">
-                  <span className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                    task.priority === 'High' ? 'bg-red-100 text-red-800' :
-                    task.priority === 'Medium' ? 'bg-yellow-100 text-yellow-800' :
-                    'bg-green-100 text-green-800'
-                  }`}>
+                  <span
+                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
+                      task.priority === "High"
+                        ? "bg-red-100 text-red-800"
+                        : task.priority === "Medium"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-green-100 text-green-800"
+                    }`}
+                  >
                     {task.priority}
                   </span>
-                  <div className={`p-1 rounded-full ${getStatusColor(task.status)}`}>
+                  <div
+                    className={`p-1 rounded-full ${getStatusColor(
+                      task.status
+                    )}`}
+                  >
                     {getStatusIcon(task.status)}
                   </div>
                 </div>
@@ -332,8 +379,12 @@ const AdminDashboard = () => {
       {/* Performance Metrics */}
       <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
         <div className="flex items-center justify-between mb-4">
-          <h2 className="text-xl font-bold text-gray-900">Performance Metrics</h2>
-          <span className="text-sm text-gray-500">Last {timeRange.replace('days', '')} days</span>
+          <h2 className="text-xl font-bold text-gray-900">
+            Performance Metrics
+          </h2>
+          <span className="text-sm text-gray-500">
+            Last {timeRange.replace("days", "")} days
+          </span>
         </div>
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
           <div className="text-center p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200">
@@ -344,7 +395,14 @@ const AdminDashboard = () => {
           </div>
           <div className="text-center p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200">
             <div className="text-2xl font-bold text-[#D97706]">
-              {stats?.stats?.byRole?.teachers ? Math.floor((stats.stats.byRole.teachers / Math.max(stats.stats.totalUsers, 1)) * 100) : 0}%
+              {stats?.stats?.byRole?.teachers
+                ? Math.floor(
+                    (stats.stats.byRole.teachers /
+                      Math.max(stats.stats.totalUsers, 1)) *
+                      100
+                  )
+                : 0}
+              %
             </div>
             <p className="text-sm text-gray-600 mt-1">Teacher Ratio</p>
           </div>
@@ -367,11 +425,15 @@ const AdminDashboard = () => {
       <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
         {/* Attendance Summary */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">Attendance Summary</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            Attendance Summary
+          </h2>
           {attendanceOverview ? (
             <div className="space-y-4">
               <div className="flex justify-between items-center">
-                <span className="text-sm text-gray-600">Overall Attendance</span>
+                <span className="text-sm text-gray-600">
+                  Overall Attendance
+                </span>
                 <span className="text-lg font-bold text-green-600">
                   {attendanceOverview.summary.overallAttendancePercentage}%
                 </span>
@@ -400,10 +462,15 @@ const AdminDashboard = () => {
 
         {/* System Alerts */}
         <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
-          <h2 className="text-xl font-bold text-gray-900 mb-4">System Alerts</h2>
+          <h2 className="text-xl font-bold text-gray-900 mb-4">
+            System Alerts
+          </h2>
           <div className="space-y-3">
             {leaveRequests?.leaveRequests?.slice(0, 3).map((request, index) => (
-              <div key={index} className="flex items-center justify-between p-3 border border-yellow-200 bg-yellow-50 rounded-lg">
+              <div
+                key={index}
+                className="flex items-center justify-between p-3 border border-yellow-200 bg-yellow-50 rounded-lg"
+              >
                 <div className="flex items-center space-x-3">
                   <AlertCircle className="h-5 w-5 text-yellow-600" />
                   <div>
