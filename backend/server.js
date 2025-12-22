@@ -12,12 +12,10 @@ const adminRoutes = require('./routes/adminRoute');
 const classRoutes = require('./routes/classRoute');
 const subjectRoutes = require('./routes/subjectRoute');
 const attendanceRoutes = require('./routes/attendanceRoutes');
-const progressRoute = require('./routes/progressRoute');
 const regularProgressRoutes = require('./routes/regularProgressRoutes');
 const teacherRoutes = require('./routes/teacherRoutes');
+const pdfRoute = require('./routes/pdfRoute');
 const studentRoute = require('./routes/studentRoute');
-const hifzReportRoutes = require('./routes/hifzReportRoutes');
-const pdfRoutes = require('./routes/pdfRoutes');
 const hifzRoutes = require('./routes/hifzRoutes');
 
 const app = express();
@@ -123,12 +121,10 @@ app.use('/api/admin', adminRoutes);
 app.use('/api/classes', classRoutes);
 app.use('/api/subjects', subjectRoutes);
 app.use('/api/attendance', attendanceRoutes);
-app.use('/api/progress', progressRoute);
 app.use('/api/regular-progress', regularProgressRoutes);
 app.use('/api/teachers', teacherRoutes);
 app.use('/api/students', studentRoute);
-app.use('/api/hifz-reports', hifzReportRoutes);
-app.use('/api/reports/pdf', pdfRoutes);
+app.use('/api/pdf', pdfRoute);
 app.use('/api/hifz', hifzRoutes);
 
 // ============================================

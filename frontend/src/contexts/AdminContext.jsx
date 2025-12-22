@@ -23,9 +23,14 @@ const ACTION_TYPES = {
   SET_STUDENT_ENROLLMENT_HISTORY: "SET_STUDENT_ENROLLMENT_HISTORY",
   SET_ERROR: "SET_ERROR",
   UPDATE_USER: "UPDATE_USER",
+  UPDATE_TEACHER: "UPDATE_TEACHER",
+  UPDATE_STUDENT: "UPDATE_STUDENT",
+  UPDATE_STUDENT_ACADEMIC: "UPDATE_STUDENT_ACADEMIC",
   UPDATE_LEAVE_REQUEST: "UPDATE_LEAVE_REQUEST",
   ADD_ADMIN: "ADD_ADMIN",
   DELETE_USER: "DELETE_USER",
+  DELETE_TEACHER: "DELETE_TEACHER",
+  DELETE_STUDENT: "DELETE_STUDENT",
 };
 
 // Initial state
@@ -86,7 +91,6 @@ const adminReducer = (state, action) => {
     case ACTION_TYPES.UPDATE_USER:
       return {
         ...state,
-        // FIX: Ensure all state arrays exist before mapping
         users: Array.isArray(state.users) 
           ? state.users.map((user) => user.id === action.payload.id ? action.payload : user)
           : [],
@@ -104,6 +108,61 @@ const adminReducer = (state, action) => {
           ? state.students.map((student) => 
               student.userId === action.payload.id 
                 ? { ...student, user: action.payload } 
+                : student
+            )
+          : [],
+      };
+
+    case ACTION_TYPES.UPDATE_TEACHER:
+      return {
+        ...state,
+        teachers: Array.isArray(state.teachers) 
+          ? state.teachers.map((teacher) => 
+              teacher.id === action.payload.id || 
+              teacher.userId === action.payload.id 
+                ? { ...teacher, ...action.payload } 
+                : teacher
+            )
+          : [],
+        users: Array.isArray(state.users) 
+          ? state.users.map((user) => 
+              user.id === action.payload.id 
+                ? { ...user, ...action.payload.user } 
+                : user
+            )
+          : [],
+      };
+
+    case ACTION_TYPES.UPDATE_STUDENT:
+      return {
+        ...state,
+        students: Array.isArray(state.students) 
+          ? state.students.map((student) => 
+              student.id === action.payload.id || 
+              student.userId === action.payload.id 
+                ? { ...student, ...action.payload } 
+                : student
+            )
+          : [],
+        users: Array.isArray(state.users) 
+          ? state.users.map((user) => 
+              user.id === action.payload.id 
+                ? { ...user, ...action.payload.user } 
+                : user
+            )
+          : [],
+      };
+
+    case ACTION_TYPES.UPDATE_STUDENT_ACADEMIC:
+      return {
+        ...state,
+        students: Array.isArray(state.students) 
+          ? state.students.map((student) => 
+              student.id === action.payload.studentId 
+                ? { 
+                    ...student, 
+                    currentEnrollment: action.payload.enrollment 
+                  } 
                 : student
             )
           : [],
@@ -143,6 +202,34 @@ const adminReducer = (state, action) => {
           : [],
       };
 
+    case ACTION_TYPES.DELETE_TEACHER:
+      return {
+        ...state,
+        teachers: Array.isArray(state.teachers) 
+          ? state.teachers.filter((teacher) => {
+              const teacherId = teacher.userId || teacher.id;
+              return teacherId !== action.payload.id && teacher.id !== action.payload.id;
+            })
+          : [],
+        users: Array.isArray(state.users) 
+          ? state.users.filter((user) => user.id !== action.payload.userId) 
+          : [],
+      };
+
+    case ACTION_TYPES.DELETE_STUDENT:
+      return {
+        ...state,
+        students: Array.isArray(state.students) 
+          ? state.students.filter((student) => {
+              const studentId = student.userId || student.id;
+              return studentId !== action.payload.id && student.id !== action.payload.id;
+            })
+          : [],
+        users: Array.isArray(state.users) 
+          ? state.users.filter((user) => user.id !== action.payload.userId) 
+          : [],
+      };
+
     default:
       return state;
   }
@@ -175,60 +262,57 @@ export const AdminProvider = ({ children }) => {
   }, []);
 
   const fetchAdmins = useCallback(async () => {
-  setLoading(true);
-  try {
-    const response = await adminService.getUsers({ role: "ADMIN" });
-    
-    // Ensure we're getting an array from the response
-    let adminsArray = [];
-    if (Array.isArray(response)) {
-      adminsArray = response;
-    } else if (response && Array.isArray(response.users)) {
-      adminsArray = response.users;
-    } else if (response && Array.isArray(response.admins)) {
-      adminsArray = response.admins;
-    } else if (response && response.data && Array.isArray(response.data)) {
-      adminsArray = response.data;
+    setLoading(true);
+    try {
+      const response = await adminService.getUsers({ role: "ADMIN" });
+      
+      let adminsArray = [];
+      if (Array.isArray(response)) {
+        adminsArray = response;
+      } else if (response && Array.isArray(response.users)) {
+        adminsArray = response.users;
+      } else if (response && Array.isArray(response.admins)) {
+        adminsArray = response.admins;
+      } else if (response && response.data && Array.isArray(response.data)) {
+        adminsArray = response.data;
+      }
+      
+      dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: adminsArray });
+      return adminsArray;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch admins");
+      dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: [] });
+      throw error;
+    } finally {
+      setLoading(false);
     }
-    
-    dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: adminsArray });
-    return adminsArray;
-  } catch (error) {
-    setError(error.response?.data?.message || "Failed to fetch admins");
-    // Ensure we dispatch an empty array on error
-    dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: [] });
-    throw error;
-  } finally {
-    setLoading(false);
-  }
-}, []);
+  }, []);
 
   // User Management
   const fetchUsers = useCallback(async (filters = {}) => {
-  setLoading(true);
-  try {
-    const response = await adminService.getUsers(filters);
-    
-    // Ensure we're getting an array from the response
-    let usersArray = [];
-    if (Array.isArray(response)) {
-      usersArray = response;
-    } else if (response && Array.isArray(response.users)) {
-      usersArray = response.users;
-    } else if (response && response.data && Array.isArray(response.data)) {
-      usersArray = response.data;
+    setLoading(true);
+    try {
+      const response = await adminService.getUsers(filters);
+      
+      let usersArray = [];
+      if (Array.isArray(response)) {
+        usersArray = response;
+      } else if (response && Array.isArray(response.users)) {
+        usersArray = response.users;
+      } else if (response && response.data && Array.isArray(response.data)) {
+        usersArray = response.data;
+      }
+      
+      dispatch({ type: ACTION_TYPES.SET_USERS, payload: usersArray });
+      return usersArray;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch users");
+      dispatch({ type: ACTION_TYPES.SET_USERS, payload: [] });
+      throw error;
+    } finally {
+      setLoading(false);
     }
-    
-    dispatch({ type: ACTION_TYPES.SET_USERS, payload: usersArray });
-    return usersArray;
-  } catch (error) {
-    setError(error.response?.data?.message || "Failed to fetch users");
-    dispatch({ type: ACTION_TYPES.SET_USERS, payload: [] });
-    throw error;
-  } finally {
-    setLoading(false);
-  }
-}, []);
+  }, []);
 
   const updateUserStatus = useCallback(async (userId, status) => {
     setLoading(true);
@@ -276,12 +360,66 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
+  const getTeacherDetails = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const response = await adminService.getTeacherDetails(id);
+      return response;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch teacher details");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // NEW: Update teacher
+  const updateTeacher = useCallback(async (id, teacherData) => {
+    setLoading(true);
+    try {
+      const updatedTeacher = await adminService.updateTeacher(id, teacherData);
+      dispatch({ type: ACTION_TYPES.UPDATE_TEACHER, payload: updatedTeacher.teacher || updatedTeacher });
+      return updatedTeacher;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to update teacher");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const deleteTeacher = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const result = await adminService.deleteTeacher(id);
+      
+      dispatch({ 
+        type: ACTION_TYPES.DELETE_TEACHER, 
+        payload: result.deletedTeacher || { id, userId: id } 
+      });
+      
+      if (result.deletedTeacher?.userId) {
+        dispatch({ 
+          type: ACTION_TYPES.DELETE_USER, 
+          payload: result.deletedTeacher.userId 
+        });
+      }
+      
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to delete teacher");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const registerTeacher = useCallback(
     async (teacherData) => {
       setLoading(true);
       try {
         const newTeacher = await adminService.registerTeacher(teacherData);
-        await fetchTeachers(); // Refresh teachers list
+        await fetchTeachers();
         return newTeacher;
       } catch (error) {
         setError(error.response?.data?.message || "Failed to register teacher");
@@ -311,12 +449,87 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
+  const getStudentDetails = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const response = await adminService.getStudentDetails(id);
+      return response;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch student details");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // NEW: Update student
+  const updateStudent = useCallback(async (id, studentData) => {
+    setLoading(true);
+    try {
+      const updatedStudent = await adminService.updateStudent(id, studentData);
+      dispatch({ type: ACTION_TYPES.UPDATE_STUDENT, payload: updatedStudent.student || updatedStudent });
+      return updatedStudent;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to update student");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // NEW: Update student academic info
+  const updateStudentAcademicInfo = useCallback(async (id, academicData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.updateStudentAcademicInfo(id, academicData);
+      dispatch({ 
+        type: ACTION_TYPES.UPDATE_STUDENT_ACADEMIC, 
+        payload: { 
+          studentId: id, 
+          enrollment: result.student?.currentEnrollment 
+        } 
+      });
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to update student academic info");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const deleteStudent = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const result = await adminService.deleteStudent(id);
+      
+      dispatch({ 
+        type: ACTION_TYPES.DELETE_STUDENT, 
+        payload: result.deletedStudent || { id, userId: id } 
+      });
+      
+      if (result.deletedStudent?.userId) {
+        dispatch({ 
+          type: ACTION_TYPES.DELETE_USER, 
+          payload: result.deletedStudent.userId 
+        });
+      }
+      
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to delete student");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const registerStudent = useCallback(
     async (studentData) => {
       setLoading(true);
       try {
         const newStudent = await adminService.registerStudent(studentData);
-        await fetchStudents(); // Refresh students list
+        await fetchStudents();
         return newStudent;
       } catch (error) {
         setError(error.response?.data?.message || "Failed to register student");
@@ -360,7 +573,7 @@ export const AdminProvider = ({ children }) => {
       setLoading(true);
       try {
         const result = await adminService.promoteStudents(promotionData);
-        await fetchStudents(); // Refresh students list
+        await fetchStudents();
         return result;
       } catch (error) {
         setError(error.response?.data?.message || "Failed to promote students");
@@ -496,7 +709,7 @@ export const AdminProvider = ({ children }) => {
         const enrollment = await adminService.enrollStudentInClass(
           enrollmentData
         );
-        await fetchStudents(); // Refresh students list
+        await fetchStudents();
         return enrollment;
       } catch (error) {
         setError(error.response?.data?.message || "Failed to enroll student");
@@ -513,7 +726,7 @@ export const AdminProvider = ({ children }) => {
       setLoading(true);
       try {
         const result = await adminService.transferStudent(transferData);
-        await fetchStudents(); // Refresh students list
+        await fetchStudents();
         return result;
       } catch (error) {
         setError(error.response?.data?.message || "Failed to transfer student");
@@ -582,9 +795,7 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  // ============================================
-  // ATTENDANCE OVERVIEW METHODS (NEW)
-  // ============================================
+  // Attendance Overview Methods
   const fetchAttendanceOverview = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
@@ -676,9 +887,16 @@ export const AdminProvider = ({ children }) => {
     deleteUser,
     // Teacher management
     fetchTeachers,
+    getTeacherDetails,
+    updateTeacher,
+    deleteTeacher,
     registerTeacher,
     // Student management
     fetchStudents,
+    getStudentDetails,
+    updateStudent,
+    updateStudentAcademicInfo,
+    deleteStudent,
     registerStudent,
     fetchStudentEnrollmentHistory,
     promoteStudents,
@@ -700,7 +918,7 @@ export const AdminProvider = ({ children }) => {
     updateLeaveRequestStatus,
     // System stats
     fetchSystemStats,
-    // Attendance overview (NEW)
+    // Attendance overview
     fetchAttendanceOverview,
     fetchAttendanceTrends,
     fetchClassAttendanceComparison,

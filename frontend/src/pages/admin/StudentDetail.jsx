@@ -16,13 +16,21 @@ import axios from 'axios';
 const StudentDetail = () => {
   const { id } = useParams();
   const navigate = useNavigate();
-  const { students, fetchStudents, updateUserStatus, loading } = useAdmin();
+  const { 
+    students, 
+    fetchStudents, 
+    updateUserStatus, 
+    loading,
+    getStudentDetails,
+    updateStudent,
+    updateStudentAcademicInfo
+  } = useAdmin();
+  
   const [student, setStudent] = useState(null);
   const [studentDetails, setStudentDetails] = useState(null);
   const [activeTab, setActiveTab] = useState('overview');
   const [detailsLoading, setDetailsLoading] = useState(false);
   const [showImageModal, setShowImageModal] = useState(false);
-  const [selectedImage, setSelectedImage] = useState(null);
   const [uploadingImage, setUploadingImage] = useState(false);
   const [showUploadModal, setShowUploadModal] = useState(false);
   const [uploadingDoc, setUploadingDoc] = useState(false);
@@ -31,7 +39,7 @@ const StudentDetail = () => {
   
   // Edit states
   const [isEditing, setIsEditing] = useState(false);
-  const [editMode, setEditMode] = useState(''); // 'personal', 'academic', 'contact', 'guardian', 'medical'
+  const [editMode, setEditMode] = useState('');
   const [editedData, setEditedData] = useState({});
   const [isSaving, setIsSaving] = useState(false);
 
@@ -39,47 +47,101 @@ const StudentDetail = () => {
 
   // Fetch student data
   useEffect(() => {
-    const loadStudentData = async () => {
-      try {
-        setDetailsLoading(true);
-        
-        const foundStudent = students.find(s => 
-          s.id === id || s.user?.id === id || s.userId === id
-        );
-        
-        if (foundStudent) {
-          setStudent(foundStudent);
-        } else if (students.length === 0) {
-          await fetchStudents();
+  // console.log('🔄 [STUDENT DETAILS] useEffect triggered', { id });
+
+  const loadStudentData = async () => {
+    try {
+      // console.log('⏳ Loading student details...');
+      setDetailsLoading(true);
+
+      // Fetch from AdminContext
+      // console.log('📡 Fetching student details from context...');
+      const details = await getStudentDetails(id);
+
+      // console.log('📦 Student details from context:', details);
+
+      // If context returned valid data
+      if (details && (details.student || details.user)) {
+        // console.log('✅ Using student details from context');
+
+        setStudentDetails(details);
+
+        if (details.student) {
+          // console.log('🧩 Setting student backup state from context');
+          setStudent({
+            ...details.student,
+            studentProfile: details
+          });
         }
+      } else {
+        // Fallback to API
+        console.warn('⚠️ Context returned empty data, falling back to API');
 
-        // Fetch detailed student information with documents
         const token = localStorage.getItem('authToken');
-        const response = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
-          headers: { Authorization: `Bearer ${token}` }
-        });
-        
-        console.log('Student details with documents:', response.data);
-        setStudentDetails(response.data);
-      } catch (error) {
-        console.error('Error loading student data:', error);
-        toast.error('Failed to load student details');
-      } finally {
-        setDetailsLoading(false);
-      }
-    };
+        // console.log('🔐 Auth token exists:', Boolean(token));
 
-    loadStudentData();
-  }, [id, students, fetchStudents]);
+        const response = await axios.get(
+          `${API_BASE_URL}/admin/students/${id}/details`,
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+
+        // console.log('📦 Student details from API:', response.data);
+        setStudentDetails(response.data);
+      }
+
+      // Ensure students list is loaded
+      if (students.length === 0) {
+        // console.log('📚 Students list empty, fetching students...');
+        await fetchStudents();
+        console.log('✅ Students list fetched');
+      } else {
+        // console.log('📚 Students list already loaded:', students.length);
+      }
+
+    } catch (error) {
+      console.error('🔥 Error loading student data:', {
+        message: error.message,
+        response: error.response?.data,
+        status: error.response?.status
+      });
+
+      toast.error('Failed to load student details');
+
+      // Try fallback from existing students list
+      // console.log('🔍 Attempting fallback from students list...');
+      const foundStudent = students.find(s =>
+        s.id === id || s.user?.id === id || s.userId === id
+      );
+
+      if (foundStudent) {
+        // console.log('✅ Fallback student found in list:', foundStudent);
+        setStudent(foundStudent);
+      } else {
+        console.warn('❌ No fallback student found');
+      }
+
+    } finally {
+      // console.log('✔️ Student details loading finished');
+      setDetailsLoading(false);
+    }
+  };
+
+  loadStudentData();
+}, [id, students, fetchStudents, getStudentDetails]);
+
 
   // Helper functions
   const normalizeStudentData = (data) => {
     if (!data) return null;
     
+    // Check if data is already in our normalized format
     if (data.student && data.profile && data.academic) {
       return data;
     }
     
+    // Check if data comes from studentProfile structure
     if (data.studentProfile) {
       return {
         student: {
@@ -99,6 +161,29 @@ const StudentDetail = () => {
         },
         progress: data.studentProfile.progress || {},
         parents: data.studentProfile.parents || []
+      };
+    }
+    
+    // If data is a student object from context
+    if (data.user && data.admissionNo) {
+      return {
+        student: data.user,
+        profile: {
+          admissionNo: data.admissionNo,
+          gender: data.gender,
+          dob: data.dob,
+          guardianName: data.guardianName,
+          guardianPhone: data.guardianPhone,
+          address: data.address,
+          city: data.city,
+          province: data.province
+        },
+        academic: {
+          currentEnrollment: data.currentEnrollment || {},
+          attendance: data.attendance || {}
+        },
+        progress: data.progress || {},
+        parents: data.parents || []
       };
     }
     
@@ -153,7 +238,7 @@ const StudentDetail = () => {
           email: currentStudent.student?.email || '',
           phone: currentStudent.student?.phone || '',
           gender: currentStudent.profile?.gender || '',
-          dob: currentStudent.profile?.dob ? new Date(currentStudent.profile.dob).toISOString().split('T')[0] : '',
+          dateOfBirth: currentStudent.profile?.dob ? new Date(currentStudent.profile.dob).toISOString().split('T')[0] : '',
           placeOfBirth: currentStudent.profile?.placeOfBirth || '',
           nationality: currentStudent.profile?.nationality || '',
           religion: currentStudent.profile?.religion || '',
@@ -183,9 +268,9 @@ const StudentDetail = () => {
         
       case 'academic':
         setEditedData({
-          admissionNo: currentStudent.profile?.admissionNo || '',
+          classRoomId: currentStudent.academic?.currentEnrollment?.classRoom?.id || '',
           rollNumber: currentStudent.academic?.currentEnrollment?.rollNumber || '',
-          enrollmentDate: currentStudent.academic?.currentEnrollment?.startDate 
+          startDate: currentStudent.academic?.currentEnrollment?.startDate 
             ? new Date(currentStudent.academic.currentEnrollment.startDate).toISOString().split('T')[0] 
             : '',
         });
@@ -201,86 +286,71 @@ const StudentDetail = () => {
     }
   };
 
-  // Handle save data
+  // Handle save data using AdminContext methods
   const handleSaveData = async () => {
     if (!currentStudent) return;
     
     try {
       setIsSaving(true);
-      const token = localStorage.getItem('authToken');
-      const userId = currentStudent.student?.id || id;
-      
-      let endpoint = '';
-      let payload = {};
+      const studentId = currentStudent.student?.id || id;
       
       switch (editMode) {
         case 'personal':
-          endpoint = `${API_BASE_URL}/admin/students/${userId}/personal`;
-          payload = {
+          await updateStudent(studentId, {
             name: editedData.name,
             email: editedData.email,
             phone: editedData.phone,
             gender: editedData.gender,
-            dob: editedData.dob,
+            dateOfBirth: editedData.dateOfBirth,
             placeOfBirth: editedData.placeOfBirth,
             nationality: editedData.nationality,
             religion: editedData.religion,
             bloodGroup: editedData.bloodGroup,
-          };
+          });
           break;
           
         case 'contact':
-          endpoint = `${API_BASE_URL}/admin/students/${userId}/contact`;
-          payload = {
+          await updateStudent(studentId, {
             address: editedData.address,
             city: editedData.city,
             province: editedData.province,
             postalCode: editedData.postalCode,
-          };
+          });
           break;
           
         case 'guardian':
-          endpoint = `${API_BASE_URL}/admin/students/${userId}/guardian`;
-          payload = {
+          await updateStudent(studentId, {
             guardianName: editedData.guardianName,
             guardianRelation: editedData.guardianRelation,
             guardianPhone: editedData.guardianPhone,
             guardianEmail: editedData.guardianEmail,
             guardianOccupation: editedData.guardianOccupation,
             guardianCNIC: editedData.guardianCNIC,
-          };
+          });
           break;
           
         case 'academic':
-          endpoint = `${API_BASE_URL}/admin/students/${userId}/academic`;
-          payload = {
-            admissionNo: editedData.admissionNo,
+          await updateStudentAcademicInfo(studentId, {
+            classRoomId: editedData.classRoomId,
             rollNumber: editedData.rollNumber,
-            enrollmentDate: editedData.enrollmentDate,
-          };
+            startDate: editedData.startDate,
+          });
           break;
           
         case 'medical':
-          endpoint = `${API_BASE_URL}/admin/students/${userId}/medical`;
-          payload = {
+          await updateStudent(studentId, {
             medicalConditions: editedData.medicalConditions,
             allergies: editedData.allergies,
             medication: editedData.medication,
-          };
+          });
           break;
       }
-      
-      const response = await axios.put(endpoint, payload, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
       
       toast.success('Student data updated successfully');
       
       // Refresh data
-      const updatedResponse = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setStudentDetails(updatedResponse.data);
+      const updatedDetails = await student.studentProfile.id;
+      setStudentDetails(updatedDetails);
       
       // Reset edit state
       setIsEditing(false);
@@ -289,7 +359,7 @@ const StudentDetail = () => {
       
     } catch (error) {
       console.error('Error updating student data:', error);
-      toast.error(error.response?.data?.error || 'Failed to update student data');
+      toast.error(error.response?.data?.error || error.message || 'Failed to update student data');
     } finally {
       setIsSaving(false);
     }
@@ -341,10 +411,8 @@ const StudentDetail = () => {
       
       // Refresh student data
       await fetchStudents();
-      const updatedResponse = await axios.get(`${API_BASE_URL}/admin/students/${id}/details`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setStudentDetails(updatedResponse.data);
+      const updatedDetails = await student.studentProfile.id;
+      setStudentDetails(updatedDetails);
       
     } catch (error) {
       console.error('Error uploading image:', error);
@@ -467,12 +535,64 @@ const StudentDetail = () => {
 
   const handleStatusChange = async (newStatus) => {
     try {
+      if (!currentStudent) {
+        toast.error('Student data not loaded');
+        return;
+      }
+      
       const userId = currentStudent.student?.id || currentStudent.id;
+      if (!userId) {
+        toast.error('Cannot identify student');
+        return;
+      }
+
+      // Add confirmation for sensitive status changes
+      const statusConfig = {
+        'TERMINATED': {
+          title: 'Terminate Student Account',
+          message: `Are you sure you want to terminate ${currentStudent.student?.name || 'this student'}? This action is irreversible and will prevent them from accessing the system.`,
+          buttonText: 'Terminate Account'
+        },
+        'INACTIVE': {
+          title: 'Deactivate Student',
+          message: `Are you sure you want to deactivate ${currentStudent.student?.name || 'this student'}? They will not be able to access the system until reactivated.`,
+          buttonText: 'Deactivate'
+        },
+        'ACTIVE': {
+          title: 'Activate Student',
+          message: `Activate ${currentStudent.student?.name || 'this student'}? They will be able to access the system.`,
+          buttonText: 'Activate'
+        }
+      };
+
+      const config = statusConfig[newStatus];
+      if (config && !window.confirm(`${config.title}\n\n${config.message}`)) {
+        return;
+      }
+      
       await updateUserStatus(userId, newStatus);
-      toast.success(`Student status updated to ${newStatus}`);
-      fetchStudents();
+      
+      // Show specific success messages
+      const successMessages = {
+        'ACTIVE': 'Student activated successfully!',
+        'INACTIVE': 'Student deactivated successfully!',
+        'TERMINATED': 'Student account terminated successfully!'
+      };
+      
+      toast.success(successMessages[newStatus] || `Student status updated to ${newStatus}`);
+      
+      // Refresh the data
+      await Promise.all([
+        fetchStudents(),
+        (async () => {
+          const updatedDetails = await getStudentDetails(id);
+          setStudentDetails(updatedDetails);
+        })()
+      ]);
+      
     } catch (error) {
-      toast.error(error.message || 'Failed to update status');
+      console.error('Status update error:', error);
+      toast.error(error.response?.data?.error || error.message || 'Failed to update status');
     }
   };
 
@@ -622,8 +742,8 @@ const StudentDetail = () => {
                 <label className="block text-sm font-medium text-gray-700 mb-1">Date of Birth</label>
                 <input
                   type="date"
-                  value={editedData.dob || ''}
-                  onChange={(e) => setEditedData({...editedData, dob: e.target.value})}
+                  value={editedData.dateOfBirth || ''}
+                  onChange={(e) => setEditedData({...editedData, dateOfBirth: e.target.value})}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
                 />
               </div>
@@ -902,29 +1022,31 @@ const StudentDetail = () => {
             
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Admission Number</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Class Room ID</label>
                 <input
                   type="text"
-                  value={editedData.admissionNo || ''}
-                  onChange={(e) => setEditedData({...editedData, admissionNo: e.target.value})}
+                  value={editedData.classRoomId || ''}
+                  onChange={(e) => setEditedData({...editedData, classRoomId: e.target.value})}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                  placeholder="Enter class room ID"
                 />
               </div>
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-1">Roll Number</label>
                 <input
-                  type="text"
+                  type="number"
                   value={editedData.rollNumber || ''}
                   onChange={(e) => setEditedData({...editedData, rollNumber: e.target.value})}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                  placeholder="Enter roll number"
                 />
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 mb-1">Enrollment Date</label>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
                 <input
                   type="date"
-                  value={editedData.enrollmentDate || ''}
-                  onChange={(e) => setEditedData({...editedData, enrollmentDate: e.target.value})}
+                  value={editedData.startDate || ''}
+                  onChange={(e) => setEditedData({...editedData, startDate: e.target.value})}
                   className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
                 />
               </div>

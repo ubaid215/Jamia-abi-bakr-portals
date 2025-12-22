@@ -15,7 +15,8 @@ const ACTION_TYPES = {
   ADD_CLASS: 'ADD_CLASS',
   UPDATE_CLASS: 'UPDATE_CLASS',
   DELETE_CLASS: 'DELETE_CLASS',
-  ASSIGN_TEACHER: 'ASSIGN_TEACHER'
+  ASSIGN_TEACHER: 'ASSIGN_TEACHER',
+  UPDATE_CLASS_STUDENTS: 'UPDATE_CLASS_STUDENTS'
 };
 
 // Initial state
@@ -83,6 +84,12 @@ const classReducer = (state, action) => {
           : state.classDetail
       };
     
+    case ACTION_TYPES.UPDATE_CLASS_STUDENTS:
+      return {
+        ...state,
+        classStudents: action.payload
+      };
+    
     default:
       return state;
   }
@@ -99,12 +106,11 @@ export const ClassProvider = ({ children }) => {
     dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
   };
 
-  // Fetch all classes - FIXED
+  // Fetch all classes
   const fetchClasses = useCallback(async () => {
     setLoading(true);
     try {
       const response = await classService.getClasses();
-      // Extract classes array from response
       dispatch({ type: ACTION_TYPES.SET_CLASSES, payload: response.classes || [] });
       return response;
     } catch (error) {
@@ -117,7 +123,7 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Fetch class by ID - FIXED
+  // Fetch class by ID
   const fetchClassById = useCallback(async (id) => {
     setLoading(true);
     try {
@@ -134,7 +140,7 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Create new class - FIXED
+  // Create new class
   const createClass = useCallback(async (classData) => {
     setLoading(true);
     try {
@@ -152,7 +158,7 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Update class - FIXED
+  // Update class
   const updateClass = useCallback(async (id, classData) => {
     setLoading(true);
     try {
@@ -189,34 +195,33 @@ export const ClassProvider = ({ children }) => {
   }, []);
 
   // Assign teacher to class
-const assignTeacherToClass = useCallback(async (classId, teacherId) => {
-  setLoading(true);
-  try {
-    // Use the correct service method
-    const result = await classService.assignTeacher(classId, teacherId);
-    
-    dispatch({ 
-      type: ACTION_TYPES.ASSIGN_TEACHER, 
-      payload: { 
-        classId, 
-        teacherId, 
-        result: result.class || result 
-      } 
-    });
-    
-    toast.success('Teacher assigned to class successfully');
-    return result;
-  } catch (error) {
-    const errorMessage = error.response?.data?.message || 'Failed to assign teacher';
-    setError(errorMessage);
-    toast.error(errorMessage);
-    throw error;
-  } finally {
-    setLoading(false);
-  }
-}, []);
+  const assignTeacherToClass = useCallback(async (classId, teacherId) => {
+    setLoading(true);
+    try {
+      const result = await classService.assignTeacher(classId, teacherId);
+      
+      dispatch({ 
+        type: ACTION_TYPES.ASSIGN_TEACHER, 
+        payload: { 
+          classId, 
+          teacherId, 
+          result: result.class || result 
+        } 
+      });
+      
+      toast.success('Teacher assigned to class successfully');
+      return result;
+    } catch (error) {
+      const errorMessage = error.response?.data?.message || 'Failed to assign teacher';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // Fetch class students - FIXED
+  // Fetch class students
   const fetchClassStudents = useCallback(async (classId) => {
     setLoading(true);
     try {
@@ -250,9 +255,166 @@ const assignTeacherToClass = useCallback(async (classId, teacherId) => {
     }
   }, []);
 
+  // NEW: Generate roll number for a class
+  const generateRollNumber = useCallback(async (classId) => {
+    setLoading(true);
+    try {
+      const response = await classService.generateRollNumber(classId);
+      toast.success(`Generated roll number: ${response.rollNumber}`);
+      return response;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to generate roll number';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // NEW: Get next available roll number for a class
+  const getNextRollNumber = useCallback(async (classId) => {
+    setLoading(true);
+    try {
+      const response = await classService.getNextRollNumber(classId);
+      return response;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to get next roll number';
+      setError(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // NEW: Generate multiple roll numbers for bulk operations
+  const generateMultipleRollNumbers = useCallback(async (classId, count = 1) => {
+    setLoading(true);
+    try {
+      const response = await classService.generateMultipleRollNumbers(classId, count);
+      toast.success(`Generated ${response.totalGenerated} roll number(s)`);
+      return response;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to generate multiple roll numbers';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // NEW: Assign class to student with auto-generated roll number
+  const assignClassToStudent = useCallback(async (studentId, classId, enrollmentData = {}) => {
+    setLoading(true);
+    try {
+      const response = await classService.assignClassToStudent(studentId, classId, enrollmentData);
+      toast.success('Student assigned to class successfully');
+      
+      // Refresh class students if we're viewing this class
+      if (state.classDetail?.id === classId) {
+        fetchClassStudents(classId);
+      }
+      
+      return response;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to assign student to class';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [state.classDetail, fetchClassStudents]);
+
+  // NEW: Bulk assign class to multiple students
+  const bulkAssignClassToStudents = useCallback(async (studentIds, classId, enrollmentData = {}) => {
+    setLoading(true);
+    try {
+      const response = await classService.bulkAssignClassToStudents(
+        studentIds, 
+        classId, 
+        enrollmentData
+      );
+      toast.success(`Successfully enrolled ${studentIds.length} student(s)`);
+      
+      // Refresh class students if we're viewing this class
+      if (state.classDetail?.id === classId) {
+        fetchClassStudents(classId);
+      }
+      
+      return response;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to assign students to class';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [state.classDetail, fetchClassStudents]);
+
+  // NEW: Remove student from class
+  const removeStudentFromClass = useCallback(async (enrollmentId, classId) => {
+    setLoading(true);
+    try {
+      // This endpoint needs to be implemented in your backend
+      const response = await classService.removeStudentFromClass(enrollmentId);
+      toast.success('Student removed from class successfully');
+      
+      // Update local state
+      const updatedStudents = state.classStudents.filter(
+        student => student.id !== enrollmentId
+      );
+      dispatch({ type: ACTION_TYPES.UPDATE_CLASS_STUDENTS, payload: updatedStudents });
+      
+      return response;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to remove student from class';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [state.classStudents]);
+
+  // NEW: Transfer student to another class
+  const transferStudentToClass = useCallback(async (studentId, fromClassId, toClassId, enrollmentData = {}) => {
+    setLoading(true);
+    try {
+      // First remove from old class (this should be done in backend in a transaction)
+      // For now, we'll assign to new class and the backend should handle the transfer
+      const response = await assignClassToStudent(studentId, toClassId, {
+        ...enrollmentData,
+        transferFromClassId: fromClassId
+      });
+      
+      toast.success('Student transferred to new class successfully');
+      return response;
+    } catch (error) {
+      const errorMessage = error.response?.data?.error || 'Failed to transfer student';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [assignClassToStudent]);
+
   // Clear error
   const clearError = useCallback(() => {
     dispatch({ type: ACTION_TYPES.SET_ERROR, payload: null });
+  }, []);
+
+  // Clear class students
+  const clearClassStudents = useCallback(() => {
+    dispatch({ type: ACTION_TYPES.SET_CLASS_STUDENTS, payload: [] });
+  }, []);
+
+  // Clear class detail
+  const clearClassDetail = useCallback(() => {
+    dispatch({ type: ACTION_TYPES.SET_CLASS_DETAIL, payload: null });
   }, []);
 
   const value = {
@@ -266,7 +428,19 @@ const assignTeacherToClass = useCallback(async (classId, teacherId) => {
     assignTeacherToClass,
     fetchClassStudents,
     fetchClassSubjects,
-    clearError
+    // New roll number methods
+    generateRollNumber,
+    getNextRollNumber,
+    generateMultipleRollNumbers,
+    // Class assignment methods
+    assignClassToStudent,
+    bulkAssignClassToStudents,
+    removeStudentFromClass,
+    transferStudentToClass,
+    // Utility methods
+    clearError,
+    clearClassStudents,
+    clearClassDetail
   };
 
   return (

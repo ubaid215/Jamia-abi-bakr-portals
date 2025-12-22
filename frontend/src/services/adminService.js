@@ -44,11 +44,24 @@ const adminService = {
     return response.data;
   },
 
+  // DELETE TEACHER (NEW)
+  deleteTeacher: async (id) => {
+    const response = await api.delete(`/admin/teachers/${id}`);
+    return response.data;
+  },
+
   registerTeacher: async (teacherData) => {
     const response = await api.post('/enrollment/teachers', teacherData);
     return response.data;
   },
 
+   // NEW: Update teacher
+  updateTeacher: async (id, teacherData) => {
+    const response = await api.put(`/admin/teachers/${id}`, teacherData);
+    return response.data;
+  },
+
+  
   // Student Management
   getAllStudents: async (filters = {}) => {
     const response = await api.get('/admin/students', { params: filters });
@@ -60,17 +73,29 @@ const adminService = {
     return response.data;
   },
 
-  // Get student enrollment history (Admin-specific with enhanced data)
-getStudentEnrollmentHistory: async (studentId, filters = {}) => {
-  const response = await api.get(`/admin/students/${studentId}/enrollment-history`, { params: filters });
-  return response.data;
-},
+  // DELETE STUDENT (NEW)
+  deleteStudent: async (id) => {
+    const response = await api.delete(`/admin/students/${id}`);
+    return response.data;
+  },
 
-// Batch promote students
-promoteStudents: async (promotionData) => {
-  const response = await api.post('/admin/students/promote', promotionData);
-  return response.data;
-},
+  // NEW: Update student
+  updateStudent: async (id, studentData) => {
+    const response = await api.put(`/admin/students/${id}`, studentData);
+    return response.data;
+  },
+
+  // Get student enrollment history (Admin-specific with enhanced data)
+  getStudentEnrollmentHistory: async (studentId, filters = {}) => {
+    const response = await api.get(`/admin/students/${studentId}/enrollment-history`, { params: filters });
+    return response.data;
+  },
+
+  // Batch promote students
+  promoteStudents: async (promotionData) => {
+    const response = await api.post('/admin/students/promote', promotionData);
+    return response.data;
+  },
 
   registerStudent: async (studentData) => {
     const response = await api.post('/enrollment/students', studentData);

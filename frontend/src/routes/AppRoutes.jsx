@@ -34,6 +34,7 @@ import AttendanceHistory from "../pages/student/AttendanceHistory";
 import ClassHistory from "../pages/student/ClassHistory";
 import StudentProgress from "../pages/student/StudentProgress";
 import StudentEnrollmentHistory from "../components/StudentEnrollmentHistory";
+import PDFGenerate from "../pages/admin/PDFGenerate";
 
 // Placeholder components for other pages
 const UserManagement = () => <div>User Management</div>;
@@ -68,6 +69,7 @@ const AppRoutes = () => {
         <Route path="subjects" element={<SubjectManagement/>} />
         <Route path="attendance" element={<AttendanceOverview />} />
         <Route path="progress" element={<ProgressTracking />} />
+        <Route path="pdf-reports" element={<PDFGenerate />} />
         <Route path="reports" element={<Reports />} />
         <Route path="reset-password" element={<PasswordReset />} />
         <Route index element={<Navigate to="/admin/dashboard" replace />} />

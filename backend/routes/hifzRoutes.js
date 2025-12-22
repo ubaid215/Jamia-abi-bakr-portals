@@ -4,56 +4,62 @@ const HifzProgressController = require('../controllers/hifzProgressController');
 const HifzPDFController = require('../controllers/HifzPDFController');
 const HifzAnalyticsService = require('../services/HifzAnalyticsService');
 
-// Middleware imports (adjust based on your auth setup)
-// const { authenticate } = require('../middleware/auth');
-// const { checkRole } = require('../middleware/roleCheck');
+// Import middleware
+const { 
+  authenticateToken, 
+  requireTeacherOrAdmin,
+  requireAdmin,
+  requireTeacher,
+  requireStudentTeacherOrAdmin 
+} = require('../middlewares/auth');
 
 // ============= Progress Management Routes =============
 
 // Save daily progress
 router.post(
   '/progress/:studentId',
-  // authenticate,
-  // checkRole(['TEACHER', 'ADMIN']),
+  authenticateToken,
+  requireTeacherOrAdmin,
   HifzProgressController.saveProgress.bind(HifzProgressController)
 );
 
 // Update progress report
 router.put(
   '/progress/:studentId/:progressId',
-  // authenticate,
-  // checkRole(['TEACHER', 'ADMIN']),
+  authenticateToken,
+  requireTeacherOrAdmin,
   HifzProgressController.updateProgress.bind(HifzProgressController)
 );
 
 // Get student progress records
 router.get(
   '/progress/:studentId',
-  // authenticate,
+  authenticateToken,
+  requireStudentTeacherOrAdmin,
   HifzProgressController.getStudentProgress.bind(HifzProgressController)
 );
 
 // Initialize Hifz status (for new students)
 router.post(
   '/status/initialize/:studentId',
-  // authenticate,
-  // checkRole(['ADMIN']),
+  authenticateToken,
+  requireAdmin,
   HifzProgressController.initializeHifzStatus.bind(HifzProgressController)
 );
 
 // Update para completion
 router.put(
   '/status/para-completion/:studentId',
-  // authenticate,
-  // checkRole(['TEACHER', 'ADMIN']),
+  authenticateToken,
+  requireTeacherOrAdmin,
   HifzProgressController.updateParaCompletion.bind(HifzProgressController)
 );
 
 // Get poor performers
 router.get(
   '/poor-performers',
-  // authenticate,
-  // checkRole(['TEACHER', 'ADMIN']),
+  authenticateToken,
+  requireTeacherOrAdmin,
   HifzProgressController.getPoorPerformers.bind(HifzProgressController)
 );
 
@@ -62,14 +68,16 @@ router.get(
 // Get student analytics
 router.get(
   '/analytics/student/:studentId',
-  // authenticate,
+  authenticateToken,
+  requireStudentTeacherOrAdmin,
   HifzProgressController.getStudentAnalytics.bind(HifzProgressController)
 );
 
 // Compare with class average
 router.get(
   '/analytics/compare/:studentId',
-  // authenticate,
+  authenticateToken,
+  requireStudentTeacherOrAdmin,
   async (req, res) => {
     try {
       const { studentId } = req.params;
@@ -89,8 +97,8 @@ router.get(
 // Get class analytics
 router.get(
   '/analytics/class/:classId',
-  // authenticate,
-  // checkRole(['TEACHER', 'ADMIN']),
+  authenticateToken,
+  requireTeacherOrAdmin,
   async (req, res) => {
     try {
       const { classId } = req.params;
@@ -116,7 +124,8 @@ router.get(
 // Generate and download PDF report
 router.get(
   '/report/pdf/:studentId',
-  // authenticate,
+  authenticateToken,
+  requireStudentTeacherOrAdmin,
   async (req, res) => {
     try {
       await HifzPDFController.generateReport(req, res);
@@ -136,8 +145,8 @@ router.get(
 // Save PDF report to server
 router.post(
   '/report/save/:studentId',
-  // authenticate,
-  // checkRole(['ADMIN']),
+  authenticateToken,
+  requireAdmin,
   async (req, res) => {
     try {
       const { studentId } = req.params;
@@ -160,8 +169,8 @@ router.post(
 // Send weekly summary to all students (cron job endpoint)
 router.post(
   '/notifications/weekly-summaries',
-  // authenticate,
-  // checkRole(['ADMIN']),
+  authenticateToken,
+  requireAdmin,
   async (req, res) => {
     try {
       const HifzNotificationService = require('../services/HifzNotificationService');
@@ -199,8 +208,8 @@ router.post(
 // Notify all poor performers (cron job endpoint)
 router.post(
   '/notifications/poor-performers',
-  // authenticate,
-  // checkRole(['ADMIN']),
+  authenticateToken,
+  requireAdmin,
   async (req, res) => {
     try {
       const HifzNotificationService = require('../services/HifzNotificationService');
@@ -225,8 +234,8 @@ router.post(
 // Bulk generate reports for class
 router.post(
   '/report/bulk/class/:classId',
-  // authenticate,
-  // checkRole(['ADMIN']),
+  authenticateToken,
+  requireAdmin,
   async (req, res) => {
     try {
       const { classId } = req.params;

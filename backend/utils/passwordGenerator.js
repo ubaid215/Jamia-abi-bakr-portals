@@ -1,3 +1,4 @@
+// utils/passwordGenerator.js
 const prisma = require('../db/prismaClient');
 // -------------------------------
 // 🔐 Generate Strong Password

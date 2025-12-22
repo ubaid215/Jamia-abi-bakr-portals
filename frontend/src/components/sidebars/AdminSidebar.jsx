@@ -72,6 +72,7 @@ const AdminSidebar = ({ isOpen, onClose, onToggle }) => {
         { icon: Calendar, label: 'Attendance Overview', to: '/admin/attendance' },
         { icon: BarChart3, label: 'Progress Tracking', to: '/admin/progress' },
         { icon: FileText, label: 'Academic Reports', to: '/admin/reports' },
+        { icon: FileText, label: 'PDF Reports', to: '/admin/pdf-reports' },
         { icon: BarChart3, label: 'Performance Analytics', to: '/admin/analytics' }
       ]
     },

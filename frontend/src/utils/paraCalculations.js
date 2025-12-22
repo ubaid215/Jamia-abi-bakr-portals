@@ -1,0 +1,114 @@
+// src/components/hifz/utils/paraCalculations.js
+
+export const calculateParaLogic = {
+  // Get the next para based on completed paras
+  getNextPara: (completedParas = [], alreadyMemorizedParas = [], currentPara = 1) => {
+    const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
+    
+    // Find the first gap in paras
+    for (let i = 1; i <= 30; i++) {
+      if (!allMemorized.includes(i)) {
+        return i;
+      }
+    }
+    
+    // If all paras are completed, return 31 (completed Quran)
+    return 31;
+  },
+
+  // Check if a para can be worked on
+  canWorkOnPara: (para, completedParas = [], alreadyMemorizedParas = []) => {
+    const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
+    
+    // Para must be between 1 and 30
+    if (para < 1 || para > 30) {
+      return { allowed: false, reason: "Para must be between 1 and 30" };
+    }
+    
+    // Cannot work on already memorized para
+    if (allMemorized.includes(para)) {
+      return { allowed: false, reason: `Para ${para} is already memorized` };
+    }
+    
+    return { allowed: true, reason: "" };
+  },
+
+  // Calculate progress percentage
+  calculateProgressPercentage: (completedParas = [], alreadyMemorizedParas = []) => {
+    const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
+    const uniqueMemorized = allMemorized.filter(p => p >= 1 && p <= 30);
+    return (uniqueMemorized.length / 30) * 100;
+  },
+
+  // Get remaining paras
+  getRemainingParas: (completedParas = [], alreadyMemorizedParas = []) => {
+    const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
+    const remaining = [];
+    
+    for (let i = 1; i <= 30; i++) {
+      if (!allMemorized.includes(i)) {
+        remaining.push(i);
+      }
+    }
+    
+    return remaining;
+  },
+
+  // Validate para completion
+  validateParaCompletion: (completedPara, currentPara, completedParas = [], alreadyMemorizedParas = []) => {
+    if (completedPara < 1 || completedPara > 30) {
+      return { valid: false, error: "Para number must be between 1 and 30" };
+    }
+
+    const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
+    
+    if (allMemorized.includes(completedPara)) {
+      return { valid: false, error: `Para ${completedPara} is already memorized` };
+    }
+
+    if (completedPara !== currentPara) {
+      return { valid: false, error: `You must complete Para ${currentPara} before Para ${completedPara}` };
+    }
+
+    return { valid: true, error: "" };
+  },
+
+  // Calculate data flow for analytics
+  calculateProgressStats: (analytics, hifzStatus, calculatedCurrentPara) => {
+    if (!analytics && !hifzStatus) return null;
+
+    return {
+      totalSessions: analytics?.period?.totalDays || 0,
+      totalSabaq: analytics?.lines?.totalSabaqLines || 0,
+      totalSabqi: analytics?.lines?.totalSabqiLines || 0,
+      totalMistakes: analytics?.performance?.totalMistakes || 0,
+      currentPara: analytics?.paraProgress?.currentPara || calculatedCurrentPara,
+      avgLinesPerDay: analytics?.lines?.avgLinesPerDay || 0,
+      completedParas: analytics?.paraProgress?.completedParas || hifzStatus?.completedParas?.length || 0,
+      alreadyMemorized: hifzStatus?.alreadyMemorizedParas?.length || 0,
+      totalMemorized: (hifzStatus?.completedParas?.length || 0) + (hifzStatus?.alreadyMemorizedParas?.length || 0),
+      completionPercentage: calculateParaLogic.calculateProgressPercentage(
+        hifzStatus?.completedParas || [],
+        hifzStatus?.alreadyMemorizedParas || []
+      ),
+    };
+  },
+
+  // Get para visualization data
+  getParaVisualization: (hifzStatus, calculatedCurrentPara) => {
+    const completed = hifzStatus?.completedParas || [];
+    const alreadyMemorized = hifzStatus?.alreadyMemorizedParas || [];
+    const allMemorized = [...new Set([...alreadyMemorized, ...completed])];
+    const remaining = calculateParaLogic.getRemainingParas(completed, alreadyMemorized);
+    
+    return {
+      completed,
+      alreadyMemorized,
+      allMemorized,
+      remaining,
+      currentPara: calculatedCurrentPara,
+      totalMemorized: allMemorized.length,
+      completionPercentage: (allMemorized.length / 30) * 100
+    };
+  }
+};

@@ -1,12 +1,15 @@
 const prisma = require('../db/prismaClient');
+const HifzCalculationHelper = require('./HifzCalculationHelper');
+
 
 class HifzAnalyticsService {
-  static LINES_PER_PAGE = 15;
-  static PAGES_PER_PARA = 20;
-  static TOTAL_PARAS = 30;
-  static TOTAL_LINES_IN_QURAN = 604 * 15;
+   static get LINES_PER_PAGE() { return HifzCalculationHelper.LINES_PER_PAGE; }
+  static get TOTAL_LINES() { return HifzCalculationHelper.TOTAL_LINES; }
+  static get TOTAL_PARAS() { return HifzCalculationHelper.TOTAL_PARAS; }
+  static get AVG_LINES_PER_PARA() { return HifzCalculationHelper.AVG_LINES_PER_PARA; }
   static MISTAKE_THRESHOLD = 3;
   static LOW_PROGRESS_THRESHOLD = 5;
+
 
   // Calculate comprehensive analytics for a student
   static async calculateStudentAnalytics(studentId, days = 30) {
@@ -60,24 +63,25 @@ class HifzAnalyticsService {
       const avgMistakesPerDay = totalDays > 0 ? totalMistakes / totalDays : 0;
       const mistakeRate = totalLines > 0 ? (totalMistakes / totalLines) * 100 : 0;
 
-      // Completion calculations
-      const linesPerPara = this.LINES_PER_PAGE * this.PAGES_PER_PARA;
-      const alreadyMemorizedLines = alreadyMemorizedParas.length * linesPerPara;
-      const completedParasLines = completedParas.length * linesPerPara;
-      const currentParaLines = (linesPerPara * currentParaProgress) / 100;
-      const totalMemorizedLines = alreadyMemorizedLines + completedParasLines + currentParaLines;
+      // ⭐ USE HELPER FOR ACCURATE CALCULATIONS
+      const calculation = HifzCalculationHelper.calculateTotalMemorized(
+        alreadyMemorizedParas,
+        completedParas,
+        currentPara,
+        currentParaProgress
+      );
 
-      const remainingParas = this.TOTAL_PARAS - alreadyMemorizedParas.length - completedParas.length;
-      const currentParaRemainingLines = linesPerPara * (100 - currentParaProgress) / 100;
-      const totalRemainingLines = this.TOTAL_LINES_IN_QURAN - totalMemorizedLines;
+      // Extract calculation results
+      const totalMemorizedLines = calculation.totalMemorizedLines;
+      const totalRemainingLines = calculation.remainingLines;
+      const remainingParas = calculation.remainingParas;
+      const validCompletedParas = calculation.validCompletedParas;
 
-      // Estimate completion
-      const estimatedDaysToComplete = avgLinesPerDay > 0 
-        ? Math.ceil(totalRemainingLines / avgLinesPerDay) 
-        : null;
-      const estimatedCompletionDate = estimatedDaysToComplete
-        ? new Date(Date.now() + estimatedDaysToComplete * 24 * 60 * 60 * 1000)
-        : null;
+      // Estimate completion using helper
+      const estimation = HifzCalculationHelper.estimateCompletion(
+        totalRemainingLines,
+        avgLinesPerDay
+      );
 
       // Performance trends (last 7 days vs overall)
       const last7Days = progressRecords.slice(-7);
@@ -124,6 +128,16 @@ class HifzAnalyticsService {
         progressRecords
       });
 
+      // ⭐ Add overlap warning if detected
+      if (calculation.overlaps.length > 0) {
+        alerts.unshift({
+          type: 'PARA_OVERLAP',
+          severity: 'warning',
+          message: `Para overlap detected: ${calculation.overlaps.join(', ')}`,
+          recommendation: 'These Paras are counted in "Already Memorized" only to avoid double counting.'
+        });
+      }
+
       return {
         period: {
           startDate: startDate.toISOString(),
@@ -146,20 +160,21 @@ class HifzAnalyticsService {
         paraProgress: {
           currentPara,
           currentParaProgress: parseFloat(currentParaProgress.toFixed(1)),
-          completedParas: completedParas.length,
-          completedParasList: completedParas,
-          alreadyMemorizedParas: alreadyMemorizedParas.length,
-          alreadyMemorizedParasList: alreadyMemorizedParas,
-          remainingParas,
-          totalMemorizedLines: Math.round(totalMemorizedLines),
-          totalRemainingLines: Math.round(totalRemainingLines),
-          overallCompletionPercentage: parseFloat(
-            ((totalMemorizedLines / this.TOTAL_LINES_IN_QURAN) * 100).toFixed(1)
-          )
+          completedParas: validCompletedParas.length,
+          completedParasList: validCompletedParas,
+          alreadyMemorizedParas: calculation.breakdown.alreadyMemorized.count,
+          alreadyMemorizedParasList: calculation.breakdown.alreadyMemorized.paras,
+          remainingParas: calculation.remainingParas,
+          totalMemorizedLines: calculation.totalMemorizedLines,
+          totalRemainingLines: calculation.remainingLines,
+          overallCompletionPercentage: calculation.completionPercentage,
+          overlaps: calculation.overlaps.length > 0 ? calculation.overlaps : undefined
         },
         projection: {
-          estimatedDaysToComplete,
-          estimatedCompletionDate: estimatedCompletionDate?.toISOString()
+          estimatedDaysToComplete: estimation.daysRemaining,
+          estimatedCompletionDate: estimation.estimatedDate?.toISOString(),
+          estimatedMonths: estimation.monthsRemaining,
+          timeDescription: estimation.timeDescription
         },
         performance: {
           performanceTrend,
@@ -178,6 +193,7 @@ class HifzAnalyticsService {
       throw error;
     }
   }
+
 
   // Generate alerts based on performance metrics
   static generateAlerts(metrics) {

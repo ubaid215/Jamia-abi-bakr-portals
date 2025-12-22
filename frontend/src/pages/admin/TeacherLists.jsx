@@ -2,15 +2,26 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { 
   Search, Filter, Mail, Phone, MapPin, BookOpen, Clock, 
-  GraduationCap, User
+  GraduationCap, User, MoreVertical, Eye, Edit, 
+  UserCheck, UserX, Trash2, School, TrendingUp, X
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
+import axios from 'axios';
+import { toast } from 'react-hot-toast';
 
 const TeacherLists = () => {
   const { teachers, fetchTeachers, loading } = useAdmin();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
   const [statusFilter, setStatusFilter] = useState('ALL');
+  const [selectedTeachers, setSelectedTeachers] = useState([]);
+  const [dropdownOpen, setDropdownOpen] = useState(null);
+  const [showStatusModal, setShowStatusModal] = useState(false);
+  const [selectedStatus, setSelectedStatus] = useState('');
+  const [updatingStatus, setUpdatingStatus] = useState(false);
+  const [teachersToUpdate, setTeachersToUpdate] = useState([]);
+
+  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   useEffect(() => {
     fetchTeachers();
@@ -35,13 +46,16 @@ const TeacherLists = () => {
   const getTeacherProfileImage = (teacher) => 
     teacher.user?.profileImage || teacher.profileImage || null;
 
-  const getTeacherId = (teacher) => 
-    teacher.user?.id || teacher.id;
+  const getTeacherUserId = (teacher) => 
+    teacher.user?.id || teacher.userId || teacher.id;
+
+  const getTeacherProfileId = (teacher) => 
+    teacher.id || teacher.teacherProfile?.id;
 
   // Generate profile image URL - Using PUBLIC endpoint
   const getProfileImageUrl = useCallback((teacher) => {
     try {
-      const userId = getTeacherId(teacher);
+      const userId = getTeacherUserId(teacher);
       const profileImage = getTeacherProfileImage(teacher);
       
       if (!profileImage) return null;
@@ -57,6 +71,184 @@ const TeacherLists = () => {
       return null;
     }
   }, []);
+
+  // ============================================
+  // Teacher Selection Handlers
+  // ============================================
+  
+  const toggleTeacherSelection = (teacher) => {
+    setSelectedTeachers(prev => {
+      const isSelected = prev.some(t => getTeacherUserId(t) === getTeacherUserId(teacher));
+      return isSelected 
+        ? prev.filter(t => getTeacherUserId(t) !== getTeacherUserId(teacher))
+        : [...prev, teacher];
+    });
+  };
+
+  const selectAllTeachers = () => {
+    setSelectedTeachers(
+      selectedTeachers.length === filteredTeachers.length 
+        ? [] 
+        : [...filteredTeachers]
+    );
+  };
+
+  const isTeacherSelected = (teacher) => 
+    selectedTeachers.some(t => getTeacherUserId(t) === getTeacherUserId(teacher));
+
+  // ============================================
+  // Dropdown Menu Handlers
+  // ============================================
+  
+  const toggleDropdown = (teacherId) => {
+    setDropdownOpen(dropdownOpen === teacherId ? null : teacherId);
+  };
+
+  const handleUpdateStatus = (teacher, status) => {
+    setTeachersToUpdate([teacher]);
+    setSelectedStatus(status);
+    setShowStatusModal(true);
+    setDropdownOpen(null);
+  };
+
+  const handleBulkUpdateStatus = (status) => {
+    if (selectedTeachers.length === 0) {
+      toast.error('Please select at least one teacher');
+      return;
+    }
+    setTeachersToUpdate([...selectedTeachers]);
+    setSelectedStatus(status);
+    setShowStatusModal(true);
+  };
+
+  // ============================================
+  // Delete Functions
+  // ============================================
+  
+  const deleteTeacher = async (teacherId) => {
+    if (!window.confirm('Are you sure you want to delete this teacher? This action cannot be undone and will delete all teacher data including attendance, progress, and documents.')) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem('authToken');
+      const response = await axios.delete(
+        `${API_BASE_URL}/admin/teachers/${teacherId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      );
+      
+      toast.success(response.data.message || 'Teacher deleted successfully');
+      
+      // Remove from selected teachers if present
+      setSelectedTeachers(prev => prev.filter(t => getTeacherUserId(t) !== teacherId));
+      
+      // Refresh the teacher list
+      fetchTeachers();
+      
+    } catch (error) {
+      console.error('Error deleting teacher:', error);
+      toast.error(error.response?.data?.error || 'Failed to delete teacher');
+    }
+  };
+
+  const handleBulkDelete = () => {
+    if (selectedTeachers.length === 0) {
+      toast.error('Please select at least one teacher to delete');
+      return;
+    }
+
+    const teacherNames = selectedTeachers.map(t => getTeacherName(t)).join(', ');
+    
+    if (!window.confirm(`Are you sure you want to delete ${selectedTeachers.length} teacher(s)?\n\nSelected teachers: ${teacherNames}\n\nThis action cannot be undone and will delete all teacher data.`)) {
+      return;
+    }
+
+    // Show loading state
+    const deletePromises = selectedTeachers.map(async (teacher) => {
+      try {
+        const teacherId = getTeacherUserId(teacher);
+        const token = localStorage.getItem('authToken');
+        return axios.delete(
+          `${API_BASE_URL}/admin/teachers/${teacherId}`,
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+      } catch (error) {
+        console.error(`Error deleting teacher ${teacher.id}:`, error);
+        throw error;
+      }
+    });
+
+    Promise.allSettled(deletePromises)
+      .then(results => {
+        const successful = results.filter(r => r.status === 'fulfilled').length;
+        const failed = results.filter(r => r.status === 'rejected').length;
+        
+        if (successful > 0) {
+          toast.success(`Successfully deleted ${successful} teacher(s)`);
+        }
+        if (failed > 0) {
+          toast.error(`Failed to delete ${failed} teacher(s)`);
+        }
+        
+        // Clear selection and refresh list
+        setSelectedTeachers([]);
+        fetchTeachers();
+      })
+      .catch(error => {
+        toast.error('An error occurred during bulk deletion');
+        console.error('Bulk delete error:', error);
+      });
+  };
+
+  // ============================================
+  // Status Update Functions
+  // ============================================
+  
+  const handleStatusUpdate = async () => {
+    if (!selectedStatus) {
+      toast.error('Please select a status');
+      return;
+    }
+
+    if (teachersToUpdate.length === 0) {
+      toast.error('No teachers selected');
+      return;
+    }
+
+    try {
+      setUpdatingStatus(true);
+      const token = localStorage.getItem('authToken');
+      
+      const promises = teachersToUpdate.map(async (teacher) => {
+        const teacherId = getTeacherUserId(teacher);
+        
+        return axios.put(
+          `${API_BASE_URL}/admin/teachers/${teacherId}/status`,
+          { status: selectedStatus },
+          {
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        );
+      });
+
+      await Promise.all(promises);
+      
+      toast.success(`Updated status to ${selectedStatus} for ${teachersToUpdate.length} teacher(s)`);
+      setShowStatusModal(false);
+      setSelectedStatus('');
+      setTeachersToUpdate([]);
+      fetchTeachers(); // Refresh teacher list
+    } catch (error) {
+      console.error('Error updating status:', error);
+      toast.error(error.response?.data?.error || 'Failed to update status');
+    } finally {
+      setUpdatingStatus(false);
+    }
+  };
 
   // ============================================
   // Filtering Logic
@@ -97,8 +289,14 @@ const TeacherLists = () => {
   // Event Handlers
   // ============================================
   
-  const handleTeacherClick = (teacher) => {
-    const teacherId = getTeacherId(teacher);
+  const handleTeacherClick = (teacher, e) => {
+    if (e.target.type === 'checkbox' || 
+        e.target.closest('.selection-checkbox') || 
+        e.target.closest('button') ||
+        e.target.closest('.dropdown-menu')) {
+      return;
+    }
+    const teacherId = getTeacherUserId(teacher);
     navigate(`/admin/teachers/${teacherId}`);
   };
 
@@ -117,41 +315,115 @@ const TeacherLists = () => {
               Manage teachers and view their details
             </p>
           </div>
-          <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A] shadow-sm">
-            📊 Total: {filteredTeachers.length}
+          <div className="flex items-center gap-3">
+            {selectedTeachers.length > 0 && (
+              <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A] shadow-sm">
+                📊 Selected: {selectedTeachers.length}
+              </div>
+            )}
           </div>
         </div>
       </div>
 
       {/* Filters and Search */}
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
-        <div className="flex flex-col sm:flex-row gap-4">
-          {/* Search */}
-          <div className="flex-1 relative">
-            <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-            <input
-              type="text"
-              placeholder="Search teachers by name, email, or specialization..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
-              className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
-            />
+        <div className="flex flex-col gap-4">
+          <div className="flex flex-col sm:flex-row gap-4">
+            {/* Search */}
+            <div className="flex-1 relative">
+              <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
+              <input
+                type="text"
+                placeholder="Search teachers by name, email, or specialization..."
+                value={searchTerm}
+                onChange={(e) => setSearchTerm(e.target.value)}
+                className="w-full pl-10 pr-4 py-2 sm:py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
+              />
+            </div>
+
+            {/* Status Filter */}
+            <div className="flex items-center gap-2">
+              <Filter className="h-4 w-4 text-gray-400" />
+              <select
+                value={statusFilter}
+                onChange={(e) => setStatusFilter(e.target.value)}
+                className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
+              >
+                <option value="ALL">All Status</option>
+                <option value="ACTIVE">Active</option>
+                <option value="INACTIVE">Inactive</option>
+                <option value="TERMINATED">Terminated</option>
+              </select>
+            </div>
           </div>
 
-          {/* Status Filter */}
-          <div className="flex items-center gap-2">
-            <Filter className="h-4 w-4 text-gray-400" />
-            <select
-              value={statusFilter}
-              onChange={(e) => setStatusFilter(e.target.value)}
-              className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
-            >
-              <option value="ALL">All Status</option>
-              <option value="ACTIVE">Active</option>
-              <option value="INACTIVE">Inactive</option>
-              <option value="TERMINATED">Terminated</option>
-            </select>
-          </div>
+          {/* Selection Controls */}
+          {filteredTeachers.length > 0 && (
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between pt-4 border-t border-gray-200 gap-3">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={selectAllTeachers}
+                  className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors duration-200"
+                >
+                  <span className="font-medium">
+                    {selectedTeachers.length === filteredTeachers.length ? 'Deselect All' : 'Select All'}
+                  </span>
+                </button>
+                
+                {/* Bulk Actions for Selected Teachers */}
+                {selectedTeachers.length > 0 && (
+                  <div className="flex items-center gap-2">
+                    <div className="h-6 border-l border-gray-300"></div>
+                    <span className="text-sm font-medium text-gray-600">
+                      Bulk Actions:
+                    </span>
+                    <button
+                      onClick={() => handleBulkUpdateStatus('ACTIVE')}
+                      className="flex items-center gap-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-50 px-2 py-1 rounded transition-colors duration-200"
+                    >
+                      <UserCheck className="h-3 w-3" />
+                      <span>Activate</span>
+                    </button>
+                    <button
+                      onClick={() => handleBulkUpdateStatus('INACTIVE')}
+                      className="flex items-center gap-1 text-xs text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 px-2 py-1 rounded transition-colors duration-200"
+                    >
+                      <UserX className="h-3 w-3" />
+                      <span>Deactivate</span>
+                    </button>
+                    <button
+                      onClick={() => handleBulkUpdateStatus('TERMINATED')}
+                      className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors duration-200"
+                    >
+                      <UserX className="h-3 w-3" />
+                      <span>Terminate</span>
+                    </button>
+                    <button
+                      onClick={handleBulkDelete}
+                      className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors duration-200 border border-red-200"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Delete</span>
+                    </button>
+                  </div>
+                )}
+              </div>
+              
+              {selectedTeachers.length > 0 && (
+                <div className="flex items-center gap-2">
+                  <span className="text-sm font-medium text-gray-600">
+                    📋 {selectedTeachers.length} teacher{selectedTeachers.length > 1 ? 's' : ''} selected
+                  </span>
+                  <button
+                    onClick={() => setSelectedTeachers([])}
+                    className="text-xs text-red-600 hover:text-red-800 px-2 py-1 hover:bg-red-50 rounded transition-colors duration-200"
+                  >
+                    Clear
+                  </button>
+                </div>
+              )}
+            </div>
+          )}
         </div>
       </div>
 
@@ -166,19 +438,158 @@ const TeacherLists = () => {
         ) : (
           filteredTeachers.map((teacher) => (
             <TeacherCard
-              key={getTeacherId(teacher)}
+              key={getTeacherUserId(teacher)}
               teacher={teacher}
               teacherName={getTeacherName(teacher)}
               teacherEmail={getTeacherEmail(teacher)}
               teacherStatus={getTeacherStatus(teacher)}
               teacherPhone={getTeacherPhone(teacher)}
               profileImageUrl={getProfileImageUrl(teacher)}
-              onClick={() => handleTeacherClick(teacher)}
+              selected={isTeacherSelected(teacher)}
+              dropdownOpen={dropdownOpen === getTeacherUserId(teacher)}
+              onToggleDropdown={() => toggleDropdown(getTeacherUserId(teacher))}
+              onUpdateStatus={(status) => handleUpdateStatus(teacher, status)}
+              onDelete={() => deleteTeacher(getTeacherUserId(teacher))}
+              onToggleSelection={() => toggleTeacherSelection(teacher)}
+              onClick={(e) => handleTeacherClick(teacher, e)}
               getStatusColor={getStatusColor}
             />
           ))
         )}
       </div>
+
+      {/* Selection Summary */}
+      {selectedTeachers.length > 0 && (
+        <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-50 min-w-[300px]">
+          <div className="flex items-center justify-between gap-3 mb-3">
+            <div className="flex items-center gap-3">
+              <div className="w-8 h-8 bg-[#F59E0B] rounded-full flex items-center justify-center">
+                <span className="text-white font-bold text-sm">{selectedTeachers.length}</span>
+              </div>
+              <div>
+                <p className="text-sm font-medium text-gray-900">
+                  {selectedTeachers.length} teacher{selectedTeachers.length > 1 ? 's' : ''} selected
+                </p>
+                <p className="text-xs text-gray-500">Ready for actions</p>
+              </div>
+            </div>
+            <button
+              onClick={() => setSelectedTeachers([])}
+              className="text-gray-400 hover:text-gray-600"
+            >
+              <X className="h-4 w-4" />
+            </button>
+          </div>
+          <div className="flex gap-2">
+            <button
+              onClick={() => handleBulkUpdateStatus('ACTIVE')}
+              className="flex-1 flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 bg-green-50 text-green-600 hover:bg-green-100 rounded-lg transition-colors"
+            >
+              <UserCheck className="h-4 w-4" />
+              Activate
+            </button>
+            <button
+              onClick={() => handleBulkUpdateStatus('INACTIVE')}
+              className="flex-1 flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 bg-yellow-50 text-yellow-600 hover:bg-yellow-100 rounded-lg transition-colors"
+            >
+              <UserX className="h-4 w-4" />
+              Deactivate
+            </button>
+            <button
+              onClick={handleBulkDelete}
+              className="flex-1 flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Update Status Modal */}
+      {showStatusModal && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50 p-4">
+          <div className="bg-white rounded-2xl p-6 w-full max-w-md">
+            <div className="flex items-center justify-between mb-4">
+              <h3 className="text-xl font-bold text-gray-900">
+                Update Status for {teachersToUpdate.length} Teacher{teachersToUpdate.length > 1 ? 's' : ''}
+              </h3>
+              <button
+                onClick={() => {
+                  setShowStatusModal(false);
+                  setSelectedStatus('');
+                  setTeachersToUpdate([]);
+                }}
+                className="text-gray-400 hover:text-gray-600"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-2">
+                  Select Status
+                </label>
+                <select
+                  value={selectedStatus}
+                  onChange={(e) => setSelectedStatus(e.target.value)}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                >
+                  <option value="">Select status</option>
+                  <option value="ACTIVE">Active</option>
+                  <option value="INACTIVE">Inactive</option>
+                  <option value="TERMINATED">Terminated</option>
+                </select>
+              </div>
+
+              <div className="bg-gray-50 rounded-lg p-4 max-h-40 overflow-y-auto">
+                <h4 className="text-sm font-medium text-gray-700 mb-2">
+                  Selected Teachers ({teachersToUpdate.length})
+                </h4>
+                <div className="space-y-1">
+                  {teachersToUpdate.map((teacher, index) => (
+                    <div key={index} className="flex items-center justify-between text-sm py-1">
+                      <span className="text-gray-600">{getTeacherName(teacher)}</span>
+                      <span className={`text-xs font-medium ${getStatusColor(getTeacherStatus(teacher))}`}>
+                        {getTeacherStatus(teacher)}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
+              <div className="flex space-x-3 pt-4">
+                <button
+                  onClick={() => {
+                    setShowStatusModal(false);
+                    setSelectedStatus('');
+                    setTeachersToUpdate([]);
+                  }}
+                  className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
+                  disabled={updatingStatus}
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={handleStatusUpdate}
+                  disabled={!selectedStatus || updatingStatus}
+                  className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
+                >
+                  {updatingStatus ? (
+                    <>
+                      <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
+                      Updating...
+                    </>
+                  ) : (
+                    'Update Status'
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -225,6 +636,12 @@ const TeacherCard = ({
   teacherStatus, 
   teacherPhone,
   profileImageUrl,
+  selected,
+  dropdownOpen,
+  onToggleDropdown,
+  onUpdateStatus,
+  onDelete,
+  onToggleSelection,
   onClick, 
   getStatusColor 
 }) => {
@@ -246,11 +663,31 @@ const TeacherCard = ({
   return (
     <div
       onClick={onClick}
-      className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100 hover:border-[#F59E0B] hover:shadow-xl transition-all duration-300 cursor-pointer group bg-gradient-to-br from-white to-gray-50"
+      className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl relative ${
+        selected 
+          ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white' 
+          : 'border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50'
+      }`}
     >
       {/* Teacher Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">
+          {/* Selection Checkbox */}
+          <div 
+            className="selection-checkbox"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleSelection();
+            }}
+          >
+            <input
+              type="checkbox"
+              checked={selected}
+              onChange={() => {}}
+              className="w-5 h-5 text-[#F59E0B] border-gray-300 rounded focus:ring-[#F59E0B] cursor-pointer hover:border-[#F59E0B] transition-colors"
+            />
+          </div>
+          
           {/* Profile Image */}
           <div className="relative flex-shrink-0">
             {profileImageUrl && !imgError ? (
@@ -289,10 +726,101 @@ const TeacherCard = ({
           </div>
         </div>
 
-        {/* Status Badge */}
-        <span className={`shrink-0 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(teacherStatus)}`}>
-          {teacherStatus}
-        </span>
+        {/* Three-dot dropdown menu and Status Badge */}
+        <div className="flex items-center gap-2">
+          {/* Status Badge */}
+          <span className={`shrink-0 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(teacherStatus)}`}>
+            {teacherStatus}
+          </span>
+          
+          {/* Three-dot dropdown menu */}
+          <div className="relative">
+            <button
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleDropdown();
+              }}
+              className="p-1 hover:bg-gray-100 rounded-full transition-colors"
+            >
+              <MoreVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
+            </button>
+            
+            {dropdownOpen && (
+              <div 
+                className="dropdown-menu absolute right-0 top-8 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10"
+                onClick={(e) => e.stopPropagation()}
+              >
+                <div className="py-1">
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onClick(e);
+                      onToggleDropdown();
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <Eye className="h-4 w-4" />
+                    View Details
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      // Edit functionality can be added here
+                      onToggleDropdown();
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
+                  >
+                    <Edit className="h-4 w-4" />
+                    Edit Teacher
+                  </button>
+                  <div className="border-t border-gray-200 my-1"></div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateStatus('ACTIVE');
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-green-600 hover:bg-green-50"
+                  >
+                    <UserCheck className="h-4 w-4" />
+                    Activate
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateStatus('INACTIVE');
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
+                  >
+                    <UserX className="h-4 w-4" />
+                    Deactivate
+                  </button>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onUpdateStatus('TERMINATED');
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <UserX className="h-4 w-4" />
+                    Terminate
+                  </button>
+                  <div className="border-t border-gray-200 my-1"></div>
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      onDelete();
+                      onToggleDropdown();
+                    }}
+                    className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+                  >
+                    <Trash2 className="h-4 w-4" />
+                    Delete Teacher
+                  </button>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
       </div>
 
       {/* Contact Info */}
@@ -368,7 +896,13 @@ const TeacherCard = ({
 
       {/* View Details CTA */}
       <div className="mt-4 pt-3 border-t border-gray-100">
-        <button className="w-full text-center text-[#F59E0B] hover:text-[#D97706] text-xs sm:text-sm font-medium transition-colors duration-200 flex items-center justify-center gap-1">
+        <button 
+          onClick={(e) => {
+            e.stopPropagation();
+            onClick(e);
+          }}
+          className="w-full text-center text-[#F59E0B] hover:text-[#D97706] text-xs sm:text-sm font-medium transition-colors duration-200 flex items-center justify-center gap-1"
+        >
           <span>View Full Details</span>
           <span className="transform group-hover:translate-x-1 transition-transform">→</span>
         </button>

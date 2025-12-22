@@ -4,325 +4,159 @@ const path = require('path');
 const prisma = require('../db/prismaClient');
 
 class PDFController {
-  // Generate student list PDF
-  async generateStudentListPDF(req, res) {
-    try {
-      const { classRoomId, classType } = req.query;
+  
+  // ============================================
+  // STUDENT PROGRESS REPORT PDF
+  // ============================================
+  async generateStudentProgressReport(req, res) {
+  try {
+    const { studentId } = req.params;
+    const { startDate, endDate } = req.query;
 
-      console.log(`📋 [PDF Student List] ClassRoomId: ${classRoomId}, ClassType: ${classType}`);
+    console.log('📄 Generating student progress report for:', studentId);
+    console.log('⏱ Date Range:', startDate, 'to', endDate);
 
-      // Build where clause for students
-      const studentWhere = {
-        role: 'STUDENT',
-        status: 'ACTIVE'
-      };
-
-      // Get students with their details
-      const students = await prisma.user.findMany({
-        where: studentWhere,
-        include: {
-          studentProfile: {
-            include: {
-              currentEnrollment: {
-                include: {
-                  classRoom: {
-                    include: {
-                      subjects: {
-                        include: {
-                          teacher: {
-                            include: {
-                              user: {
-                                select: {
-                                  name: true
-                                }
-                              }
-                            }
-                          }
-                        }
-                      },
-                      teacher: {
-                        include: {
-                          user: {
-                            select: {
-                              name: true
-                            }
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
+    // Find student
+    let student = await prisma.student.findFirst({
+      where: { userId: studentId },
+      include: {
+        user: { select: { id: true, name: true, email: true, phone: true, profileImage: true } },
+        currentEnrollment: {
+          include: {
+            classRoom: {
+              include: {
+                teacher: { include: { user: { select: { name: true, phone: true } } } },
+                subjects: { include: { teacher: { include: { user: { select: { name: true } } } } } }
               }
             }
           }
         },
-        orderBy: { name: 'asc' }
-      });
-
-      // Filter students
-      let filteredStudents = students.filter(student => 
-        student.studentProfile?.currentEnrollment
-      );
-
-      if (classRoomId) {
-        filteredStudents = filteredStudents.filter(student =>
-          student.studentProfile?.currentEnrollment?.classRoomId === classRoomId
-        );
+        parents: { include: { user: { select: { name: true, email: true, phone: true } } } }
       }
+    });
 
-      if (classType) {
-        filteredStudents = filteredStudents.filter(student =>
-          student.studentProfile?.currentEnrollment?.classRoom?.type === classType
-        );
-      }
+    console.log('🔍 Student found (by userId)?', !!student);
 
-      if (filteredStudents.length === 0) {
-        return res.status(404).json({ 
-          error: 'No active students found with the specified criteria' 
-        });
-      }
-
-      // Group students by class
-      const studentsByClass = {};
-      filteredStudents.forEach(student => {
-        const classRoom = student.studentProfile.currentEnrollment.classRoom;
-        const className = `${classRoom.name} - ${classRoom.type}`;
-        
-        if (!studentsByClass[className]) {
-          studentsByClass[className] = {
-            classRoom: classRoom,
-            students: []
-          };
-        }
-        
-        studentsByClass[className].students.push({
-          rollNumber: student.studentProfile.currentEnrollment.rollNumber,
-          name: student.name,
-          fatherName: student.studentProfile.guardianName || 'N/A',
-          subjects: classRoom.subjects.map(subject => ({
-            name: subject.name,
-            teacher: subject.teacher?.user?.name || 'N/A'
-          }))
-        });
-      });
-
-      // Create PDF document
-      const doc = new PDFDocument({
-        size: 'A4',
-        margin: 50,
-        bufferPages: true
-      });
-
-      // Set response headers
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="student-list-${Date.now()}.pdf"`);
-
-      // Pipe PDF to response
-      doc.pipe(res);
-
-      // Add header with institute name
-      this.addHeader(doc, "Jamia Abi Bakar (R.A)", "Student List Report");
-
-      // Add generation date
-      const currentDate = new Date().toLocaleDateString('en-US', {
-        weekday: 'long',
-        year: 'numeric',
-        month: 'long',
-        day: 'numeric'
-      });
-      
-      doc.fontSize(10)
-         .fillColor('#666666')
-         .text(`Generated on: ${currentDate}`, {
-           align: 'right'
-         })
-         .moveDown(0.5);
-
-      // Add summary
-      doc.fontSize(11)
-         .fillColor('#333333')
-         .text('Report Summary:', {
-           underline: true
-         })
-         .moveDown(0.3);
-
-      doc.fontSize(10)
-         .text(`• Total Classes: ${Object.keys(studentsByClass).length}`)
-         .text(`• Total Students: ${filteredStudents.length}`);
-      
-      if (classRoomId) {
-        const classRoom = filteredStudents[0]?.studentProfile?.currentEnrollment?.classRoom;
-        if (classRoom) {
-          doc.text(`• Class: ${classRoom.name} (${classRoom.type})`);
-        }
-      }
-      
-      if (classType) {
-        doc.text(`• Class Type: ${classType}`);
-      }
-
-      doc.moveDown(1);
-
-      // Create table for each class
-      Object.keys(studentsByClass).forEach((className, classIndex) => {
-        const classData = studentsByClass[className];
-        
-        if (classIndex > 0) {
-          doc.addPage();
-        }
-
-        // Class header
-        doc.fontSize(14)
-           .fillColor('#2c3e50')
-           .text(className, {
-             align: 'center',
-             underline: true
-           })
-           .moveDown(0.5);
-
-        // Class teacher
-        if (classData.classRoom.teacher) {
-          doc.fontSize(10)
-             .fillColor('#34495e')
-             .text(`Class Teacher: ${classData.classRoom.teacher.user.name}`)
-             .moveDown(0.5);
-        }
-
-        // Create table
-        const tableTop = doc.y;
-        const tableLeft = 50;
-        const columnWidths = [60, 200, 150, 150]; // Adjust based on your needs
-        
-        // Table headers
-        doc.fontSize(10)
-           .fillColor('#ffffff')
-           .rect(tableLeft, tableTop, columnWidths.reduce((a, b) => a + b, 0), 20)
-           .fill('#2c3e50');
-        
-        let currentX = tableLeft;
-        ['Roll No', 'Student Name', "Father's Name", "Subjects"].forEach((header, i) => {
-          doc.text(header, currentX + 5, tableTop + 5, {
-            width: columnWidths[i] - 10,
-            align: 'left'
-          });
-          currentX += columnWidths[i];
-        });
-
-        // Table rows
-        let yPosition = tableTop + 20;
-        classData.students.forEach((student, index) => {
-          // Alternate row colors
-          if (index % 2 === 0) {
-            doc.fillColor('#f8f9fa')
-               .rect(tableLeft, yPosition, columnWidths.reduce((a, b) => a + b, 0), 40)
-               .fill();
-          }
-
-          // Reset text color
-          doc.fillColor('#333333');
-
-          // Roll Number
-          doc.text(student.rollNumber.toString(), tableLeft + 5, yPosition + 10, {
-            width: columnWidths[0] - 10,
-            align: 'center'
-          });
-
-          // Student Name
-          doc.text(student.name, tableLeft + columnWidths[0] + 5, yPosition + 10, {
-            width: columnWidths[1] - 10
-          });
-
-          // Father's Name
-          doc.text(student.fatherName, tableLeft + columnWidths[0] + columnWidths[1] + 5, yPosition + 10, {
-            width: columnWidths[2] - 10
-          });
-
-          // Subjects
-          let subjectY = yPosition + 10;
-          student.subjects.forEach(subject => {
-            doc.fontSize(9)
-               .text(`${subject.name}`, tableLeft + columnWidths[0] + columnWidths[1] + columnWidths[2] + 5, subjectY, {
-                 width: columnWidths[3] - 10
-               });
-            doc.fontSize(8)
-               .fillColor('#666666')
-               .text(`(${subject.teacher})`, tableLeft + columnWidths[0] + columnWidths[1] + columnWidths[2] + 5, subjectY + 12, {
-                 width: columnWidths[3] - 10
-               });
-            subjectY += 20;
-            doc.fillColor('#333333');
-          });
-
-          yPosition += 40;
-        });
-
-        // Add class summary at bottom
-        doc.moveDown(2);
-        doc.fontSize(10)
-           .fillColor('#27ae60')
-           .text(`Total Students in ${className}: ${classData.students.length}`, {
-             align: 'right'
-           });
-      });
-
-      // Add footer on last page
-      this.addFooter(doc);
-
-      // Finalize PDF
-      doc.end();
-
-    } catch (error) {
-      console.error('❌ Generate PDF error:', error);
-      res.status(500).json({ 
-        error: 'Failed to generate PDF',
-        details: error.message 
-      });
-    }
-  }
-
-  // Generate attendance report PDF
-  async generateAttendanceReportPDF(req, res) {
-    try {
-      const { startDate, endDate, classRoomId } = req.query;
-
-      // Default to last 30 days
-      const defaultEndDate = new Date();
-      const defaultStartDate = new Date();
-      defaultStartDate.setDate(defaultStartDate.getDate() - 30);
-
-      const start = startDate ? new Date(startDate) : defaultStartDate;
-      const end = endDate ? new Date(endDate) : defaultEndDate;
-
-      // Get attendance data
-      const where = {
-        date: {
-          gte: start,
-          lte: end
-        }
-      };
-
-      if (classRoomId) {
-        where.classRoomId = classRoomId;
-      }
-
-      const attendanceRecords = await prisma.attendance.findMany({
-        where,
+    if (!student) {
+      student = await prisma.student.findUnique({
+        where: { id: studentId },
         include: {
-          student: {
+          user: { select: { id: true, name: true, email: true, phone: true, profileImage: true } },
+          currentEnrollment: {
             include: {
-              user: {
-                select: {
-                  name: true
+              classRoom: {
+                include: {
+                  teacher: { include: { user: { select: { name: true, phone: true } } } },
+                  subjects: { include: { teacher: { include: { user: { select: { name: true } } } } } }
                 }
               }
             }
           },
-          classRoom: {
-            select: {
-              name: true,
-              type: true
-            }
-          },
+          parents: { include: { user: { select: { name: true, email: true, phone: true } } } }
+        }
+      });
+      console.log('🔍 Student found (by id)?', !!student);
+    }
+
+    if (!student) {
+      console.warn('⚠️ Student not found:', studentId);
+      return res.status(404).json({ error: 'Student not found' });
+    }
+
+    // Get attendance data
+    const attendanceWhere = { studentId: student.id };
+    if (startDate && endDate) {
+      attendanceWhere.date = { gte: new Date(startDate), lte: new Date(endDate) };
+    }
+
+    console.log('📊 Fetching attendances with filter:', attendanceWhere);
+    const attendances = await prisma.attendance.findMany({
+      where: attendanceWhere,
+      include: { subject: { select: { name: true } } },
+      orderBy: { date: 'desc' }
+    });
+    console.log(`📊 Total attendance records found: ${attendances.length}`);
+
+    // Calculate attendance statistics
+    const totalAttendance = attendances.length;
+    const presentCount = attendances.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+    const attendancePercentage = totalAttendance > 0 ? ((presentCount / totalAttendance) * 100).toFixed(2) : 0;
+    console.log(`✅ Attendance - Total: ${totalAttendance}, Present: ${presentCount}, Percentage: ${attendancePercentage}%`);
+
+    // Get progress based on class type
+    let progressData = null;
+    if (student.currentEnrollment) {
+      const classType = student.currentEnrollment.classRoom.type;
+      console.log('📚 Student class type:', classType);
+
+      if (classType === 'HIFZ') {
+        const hifzProgress = await prisma.hifzProgress.findMany({ where: { studentId: student.id }, orderBy: { date: 'desc' }, take: 10 });
+        console.log('📄 HIFZ progress records found:', hifzProgress.length);
+        const totalLines = hifzProgress.reduce((sum, p) => sum + p.sabaqLines, 0);
+        progressData = {
+          type: 'HIFZ',
+          records: hifzProgress,
+          summary: { totalLines, currentPara: hifzProgress[0]?.currentPara || 1, completionPercentage: ((totalLines / 540) * 100).toFixed(2) }
+        };
+      } else if (classType === 'NAZRA') {
+        const nazraProgress = await prisma.nazraProgress.findMany({ where: { studentId: student.id }, orderBy: { date: 'desc' }, take: 10 });
+        console.log('📄 NAZRA progress records found:', nazraProgress.length);
+        const totalLines = nazraProgress.reduce((sum, p) => sum + p.recitedLines, 0);
+        progressData = { type: 'NAZRA', records: nazraProgress, summary: { totalLines, completionPercentage: ((totalLines / 540) * 100).toFixed(2) } };
+      } else if (classType === 'REGULAR') {
+        const subjectProgress = await prisma.subjectProgress.findMany({
+          where: { studentId: student.id },
+          include: { subject: { select: { name: true } } },
+          orderBy: { date: 'desc' },
+          take: 20
+        });
+        console.log('📄 REGULAR subject progress records found:', subjectProgress.length);
+        const avgResult = await prisma.subjectProgress.aggregate({ where: { studentId: student.id }, _avg: { percentage: true } });
+        progressData = { type: 'REGULAR', records: subjectProgress, summary: { averagePercentage: (avgResult._avg.percentage || 0).toFixed(2), totalAssessments: subjectProgress.length } };
+      }
+    }
+
+    console.log('📝 Progress data prepared:', progressData ? progressData.type : 'No progress data');
+
+    // PDF generation logs
+    console.log('📄 Generating PDF...');
+    
+    const doc = new PDFDocument({ margin: 50, size: 'A4' });
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename=student-report-${student.admissionNo}.pdf`);
+    doc.pipe(res);
+
+    this.addHeader(doc, 'STUDENT PROGRESS REPORT');
+    console.log('📄 PDF header added');
+
+    // Footer log
+    doc.on('end', () => console.log('✅ PDF generation completed and sent to client'));
+
+    doc.end();
+
+  } catch (error) {
+    console.error('❌ Generate student progress report error:', error);
+    if (!res.headersSent) {
+      res.status(500).json({ error: 'Failed to generate report', details: error.message });
+    }
+  }
+}
+
+
+  // ============================================
+  // EXAM MARK SHEET PDF
+  // ============================================
+  async generateExamMarkSheet(req, res) {
+    try {
+      const { classRoomId } = req.params;
+      const { examName, examDate, subjectName, totalMarks } = req.query;
+
+      console.log('📄 Generating exam mark sheet for class:', classRoomId);
+
+      // Get class details with enrolled students
+      const classRoom = await prisma.classRoom.findUnique({
+        where: { id: classRoomId },
+        include: {
           teacher: {
             include: {
               user: {
@@ -331,559 +165,831 @@ class PDFController {
                 }
               }
             }
+          },
+          enrollments: {
+            where: { isCurrent: true },
+            include: {
+              student: {
+                include: {
+                  user: {
+                    select: {
+                      name: true
+                    }
+                  }
+                }
+              }
+            },
+            orderBy: {
+              rollNumber: 'asc'
+            }
           }
-        },
-        orderBy: {
-          date: 'desc'
         }
       });
 
-      if (attendanceRecords.length === 0) {
-        return res.status(404).json({ 
-          error: 'No attendance records found for the specified period' 
-        });
+      if (!classRoom) {
+        return res.status(404).json({ error: 'Class not found' });
       }
 
-      // Calculate statistics
-      const totalRecords = attendanceRecords.length;
-      const presentCount = attendanceRecords.filter(a => a.status === 'PRESENT').length;
-      const absentCount = attendanceRecords.filter(a => a.status === 'ABSENT').length;
-      const lateCount = attendanceRecords.filter(a => a.status === 'LATE').length;
-      const excusedCount = attendanceRecords.filter(a => a.status === 'EXCUSED').length;
-      const attendancePercentage = totalRecords > 0 ? 
-        ((presentCount + lateCount) / totalRecords * 100).toFixed(2) : 0;
-
-      // Create PDF
-      const doc = new PDFDocument({
+      // Create PDF in landscape for more space
+      const doc = new PDFDocument({ 
+        margin: 30, 
         size: 'A4',
-        margin: 50,
-        bufferPages: true
+        layout: 'landscape'
       });
 
+      // Set response headers
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="attendance-report-${Date.now()}.pdf"`);
-
+      res.setHeader('Content-Disposition', `attachment; filename=exam-marksheet-${classRoom.name.replace(/\s+/g, '-')}.pdf`);
+      
       doc.pipe(res);
 
-      // Add header
-      this.addHeader(doc, "Jamia Abi Bakar (R.A)", "Attendance Report");
+      // Header
+      doc.fontSize(20).fillColor('#1e3a8a').text('EXAMINATION MARK SHEET', { align: 'center' });
+      doc.moveDown(0.5);
+      doc.fontSize(12).fillColor('#000000');
+      doc.text(`Class: ${classRoom.name}  |  Grade: ${classRoom.grade}  |  Type: ${classRoom.type}`, { align: 'center' });
+      doc.text(`Class Teacher: ${classRoom.teacher?.user?.name || 'Not Assigned'}`, { align: 'center' });
+      
+      if (examName) {
+        doc.text(`Exam: ${examName}`, { align: 'center' });
+      }
+      if (examDate) {
+        doc.text(`Date: ${new Date(examDate).toLocaleDateString()}`, { align: 'center' });
+      }
+      if (subjectName) {
+        doc.text(`Subject: ${subjectName}`, { align: 'center' });
+      }
+      if (totalMarks) {
+        doc.text(`Total Marks: ${totalMarks}`, { align: 'center' });
+      }
 
-      // Report period
-      doc.fontSize(10)
-         .fillColor('#666666')
-         .text(`Period: ${start.toLocaleDateString()} to ${end.toLocaleDateString()}`, {
-           align: 'right'
-         })
-         .moveDown(1);
+      doc.moveDown(1);
+
+      // Draw line
+      doc.moveTo(30, doc.y).lineTo(812 - 30, doc.y).stroke();
+      doc.moveDown(0.5);
+
+      // Use advanced table for mark sheet
+      this.drawAdvancedTable(doc, {
+        headers: ['Roll No', 'Student Name', 'Father Name', 'Marks Obtained', 'Grade', 'Remarks'],
+        rows: classRoom.enrollments.map(e => [
+          e.rollNumber.toString(),
+          e.student.user.name,
+          e.student.guardianName || 'N/A',
+          '_____',
+          '_____',
+          '__________'
+        ]),
+        columnWidths: [50, 200, 150, 120, 120, 120],
+        headerColor: '#1e3a8a',
+        headerBgColor: '#e0e7ff',
+        rowColors: ['#ffffff', '#f9fafb'],
+        borderColor: '#d1d5db',
+        fontSize: 9,
+        rowHeight: 30
+      });
 
       // Summary section
-      doc.fontSize(12)
-         .fillColor('#333333')
-         .text('Attendance Summary:', {
-           underline: true
-         })
-         .moveDown(0.5);
+      doc.moveDown(2);
+      const currentY = doc.y;
+      doc.fontSize(10).fillColor('#000000');
+      doc.text(`Total Students: ${classRoom.enrollments.length}`, 30, currentY);
+      doc.text('_______________________', 500, currentY + 40);
+      doc.text("Teacher's Signature", 500, currentY + 60, { align: 'center', width: 200 });
 
-      doc.fontSize(10)
-         .text(`• Total Records: ${totalRecords}`)
-         .text(`• Present: ${presentCount} (${(presentCount/totalRecords*100).toFixed(1)}%)`)
-         .text(`• Absent: ${absentCount} (${(absentCount/totalRecords*100).toFixed(1)}%)`)
-         .text(`• Late: ${lateCount} (${(lateCount/totalRecords*100).toFixed(1)}%)`)
-         .text(`• Excused: ${excusedCount} (${(excusedCount/totalRecords*100).toFixed(1)}%)`)
-         .text(`• Overall Attendance: ${attendancePercentage}%`)
-         .moveDown(1);
-
-      // Table for attendance records
-      const tableTop = doc.y;
-      const tableLeft = 50;
-      const columnWidths = [80, 150, 100, 80, 100];
-
-      // Table header
-      doc.fontSize(10)
-         .fillColor('#ffffff')
-         .rect(tableLeft, tableTop, columnWidths.reduce((a, b) => a + b, 0), 20)
-         .fill('#2c3e50');
-
-      let currentX = tableLeft;
-      ['Date', 'Student', 'Class', 'Status', 'Marked By'].forEach((header, i) => {
-        doc.text(header, currentX + 5, tableTop + 5, {
-          width: columnWidths[i] - 10,
-          align: 'left'
-        });
-        currentX += columnWidths[i];
-      });
-
-      // Table rows
-      let yPosition = tableTop + 20;
-      attendanceRecords.forEach((record, index) => {
-        if (index % 2 === 0) {
-          doc.fillColor('#f8f9fa')
-             .rect(tableLeft, yPosition, columnWidths.reduce((a, b) => a + b, 0), 20)
-             .fill();
-        }
-
-        doc.fillColor('#333333');
-
-        // Date
-        doc.text(record.date.toLocaleDateString(), tableLeft + 5, yPosition + 5, {
-          width: columnWidths[0] - 10
-        });
-
-        // Student Name
-        doc.text(record.student.user.name, tableLeft + columnWidths[0] + 5, yPosition + 5, {
-          width: columnWidths[1] - 10
-        });
-
-        // Class
-        doc.text(record.classRoom.name, tableLeft + columnWidths[0] + columnWidths[1] + 5, yPosition + 5, {
-          width: columnWidths[2] - 10
-        });
-
-        // Status with color coding
-        let statusColor = '#333333';
-        switch(record.status) {
-          case 'PRESENT': statusColor = '#27ae60'; break;
-          case 'ABSENT': statusColor = '#e74c3c'; break;
-          case 'LATE': statusColor = '#f39c12'; break;
-          case 'EXCUSED': statusColor = '#3498db'; break;
-        }
-        
-        doc.fillColor(statusColor)
-           .text(record.status, tableLeft + columnWidths[0] + columnWidths[1] + columnWidths[2] + 5, yPosition + 5, {
-             width: columnWidths[3] - 10
-           });
-
-        // Marked By
-        doc.fillColor('#333333')
-           .text(record.teacher.user.name, tableLeft + columnWidths[0] + columnWidths[1] + columnWidths[2] + columnWidths[3] + 5, yPosition + 5, {
-             width: columnWidths[4] - 10
-           });
-
-        yPosition += 20;
-
-        // Add new page if needed
-        if (yPosition > 700) {
-          doc.addPage();
-          yPosition = 50;
-        }
-      });
-
-      // Add footer
-      this.addFooter(doc);
+      // Footer
+      doc.fontSize(8).fillColor('#6b7280');
+      doc.text(`Generated on: ${new Date().toLocaleString()}`, 30, 570, { align: 'center', width: 752 });
 
       doc.end();
 
     } catch (error) {
-      console.error('❌ Generate attendance PDF error:', error);
-      res.status(500).json({ 
-        error: 'Failed to generate attendance report',
-        details: error.message 
-      });
+      console.error('Generate exam mark sheet error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to generate mark sheet', details: error.message });
+      }
     }
   }
 
-  // Generate teacher report PDF
-  async generateTeacherReportPDF(req, res) {
+  // ============================================
+  // ENHANCED CUSTOM PDF GENERATOR
+  // ============================================
+ generateCustomPDF = async (req, res) => {
+  let doc;
+
+  try {
+    const { 
+      title, 
+      subtitle,
+      content, 
+      tables, 
+      includeDate,
+      orientation,
+      includeHeader,
+      includeFooter,
+      headerText,
+      footerText,
+      pageMargins,
+      defaultFontSize,
+      theme
+    } = req.body;
+
+    console.log('📄 Generating custom PDF:', title);
+    console.log('📥 Incoming tables:', JSON.stringify(tables, null, 2));
+
+    if (!title) {
+      console.error('❌ Title missing');
+      return res.status(400).json({ error: 'Title is required' });
+    }
+
+    const themeColors = theme || {
+      primary: '#1e3a8a',
+      secondary: '#6b7280',
+      accent: '#3b82f6',
+      headerBg: '#e0e7ff',
+      border: '#d1d5db',
+      rowAlt: '#f9fafb'
+    };
+
+    doc = new PDFDocument({ 
+      margin: pageMargins || 50, 
+      size: 'A4',
+      layout: orientation || 'portrait'
+    });
+
+    console.log('📐 PDF created:', {
+      margin: pageMargins || 50,
+      orientation: orientation || 'portrait'
+    });
+
+    const filename = `custom-${title.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+
+    doc.pipe(res);
+
+    /* ================= CONTENT ================= */
+    if (Array.isArray(content)) {
+      console.log(`🧱 Rendering ${content.length} content blocks`);
+    }
+
+    /* ================= TABLES ================= */
+    if (Array.isArray(tables)) {
+      console.log(`📊 Rendering ${tables.length} tables`);
+
+      tables.forEach((table, tableIndex) => {
+        console.log(`➡️ Table #${tableIndex + 1}`, table);
+
+        if (!table?.headers || !table?.rows) {
+          console.warn(`⚠️ Table #${tableIndex + 1} missing headers or rows`);
+          return;
+        }
+
+        console.log(`🧾 Headers count: ${table.headers.length}`);
+        console.log(`📐 Column widths:`, table.columnWidths);
+
+        if (
+          table.columnWidths &&
+          table.columnWidths.length !== table.headers.length
+        ) {
+          console.error(
+            `❌ Column width mismatch in table #${tableIndex + 1}`,
+            `headers=${table.headers.length}`,
+            `widths=${table.columnWidths.length}`
+          );
+        }
+
+        console.log(`📦 Rows count: ${table.rows.length}`);
+
+        table.rows.forEach((row, rowIndex) => {
+          if (!Array.isArray(row)) {
+            console.error(
+              `❌ Invalid row format in table #${tableIndex + 1}, row #${rowIndex + 1}`,
+              row
+            );
+            return;
+          }
+
+          if (row.length !== table.headers.length) {
+            console.error(
+              `❌ Cell count mismatch in table #${tableIndex + 1}, row #${rowIndex + 1}`,
+              `cells=${row.length}`,
+              `headers=${table.headers.length}`
+            );
+          }
+        });
+
+        doc.moveDown(1);
+
+        if (table.title) {
+          doc.fontSize(12)
+            .fillColor(themeColors.primary)
+            .text(table.title, { underline: true });
+          doc.moveDown(0.5);
+        }
+
+        console.log(`🛠 Drawing table #${tableIndex + 1}`);
+
+        this.drawAdvancedTable(doc, {
+          headers: table.headers,
+          rows: table.rows,
+          columnWidths: table.columnWidths,
+          headerColor: table.headerColor || themeColors.primary,
+          headerBgColor: table.headerBgColor || themeColors.headerBg,
+          rowColors: table.rowColors || ['#fff', themeColors.rowAlt],
+          borderColor: table.borderColor || themeColors.border,
+          fontSize: table.fontSize || 9,
+          columnSettings: table.columnSettings || {}
+        });
+      });
+    }
+
+    doc.end();
+    console.log('✅ PDF generation completed successfully');
+
+  } catch (error) {
+    console.error('🔥 Generate custom PDF error:', error);
+
+    if (doc && !doc.ended) {
+      try { doc.end(); } catch {}
+    }
+
+    if (!res.headersSent) {
+      res.status(500).json({
+        error: 'Failed to generate PDF',
+        message: error.message
+      });
+    }
+  }
+};
+
+
+
+  // ============================================
+  // ENHANCED DATA FETCHING METHODS
+  // ============================================
+
+  async getAllStudentsForPDF(req, res) {
     try {
-      const { status } = req.query;
+      console.log('📋 Fetching students for PDF dropdown');
+      
+      const { 
+        classId, 
+        type, 
+        search,
+        page = 1,
+        limit = 50
+      } = req.query;
 
-      const where = {
-        role: 'TEACHER'
-      };
+      const skip = (parseInt(page) - 1) * parseInt(limit);
 
-      if (status) {
-        where.status = status;
+      // Build where clause similar to ClassController
+      const where = {};
+      
+      if (search) {
+        where.user = {
+          name: { contains: search, mode: 'insensitive' }
+        };
       }
 
-      const teachers = await prisma.user.findMany({
-        where,
-        include: {
-          teacherProfile: {
-            include: {
-              classes: {
-                select: {
-                  name: true,
-                  type: true
-                }
-              },
-              subjects: {
-                select: {
-                  name: true
+      // Filter by class if provided
+      if (classId) {
+        where.currentEnrollment = {
+          classRoomId: classId,
+          isCurrent: true
+        };
+      }
+
+      const [students, total] = await Promise.all([
+        prisma.student.findMany({
+          where,
+          skip,
+          take: parseInt(limit),
+          include: {
+            user: {
+              select: {
+                id: true,
+                name: true,
+                email: true,
+                phone: true,
+                profileImage: true
+              }
+            },
+            currentEnrollment: {
+              include: {
+                classRoom: {
+                  select: {
+                    id: true,
+                    name: true,
+                    grade: true,
+                    section: true,
+                    type: true
+                  }
                 }
               }
             }
+          },
+          orderBy: {
+            user: {
+              name: 'asc'
+            }
+          }
+        }),
+        prisma.student.count({ where })
+      ]);
+
+      // Format the data for frontend
+      const formattedStudents = students.map(student => ({
+        id: student.id,
+        userId: student.userId,
+        admissionNo: student.admissionNo || 'N/A',
+        user: {
+          id: student.user.id,
+          name: student.user.name || 'Unknown Student',
+          email: student.user.email || '',
+          phone: student.user.phone || '',
+          profileImage: student.user.profileImage || ''
+        },
+        guardianName: student.guardianName || '',
+        guardianPhone: student.guardianPhone || '',
+        currentEnrollment: student.currentEnrollment ? {
+          id: student.currentEnrollment.id,
+          rollNumber: student.currentEnrollment.rollNumber,
+          classRoom: student.currentEnrollment.classRoom
+        } : null
+      }));
+
+      res.json({
+        success: true,
+        data: formattedStudents,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get students for PDF error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: 'Failed to fetch students',
+        details: error.message 
+      });
+    }
+  }
+
+  async getAllClassroomsForPDF(req, res) {
+    try {
+      console.log('📋 Fetching classrooms for PDF dropdown');
+      
+      const { 
+        type,
+        teacherId,
+        page = 1,
+        limit = 20,
+        search
+      } = req.query;
+
+      const skip = (parseInt(page) - 1) * parseInt(limit);
+
+      // Build where clause (similar to ClassController.getClasses)
+      const where = {};
+      if (type) where.type = type;
+      if (teacherId) where.teacherId = teacherId;
+      if (search) {
+        where.OR = [
+          { name: { contains: search, mode: 'insensitive' } },
+          { grade: { contains: search, mode: 'insensitive' } },
+          { section: { contains: search, mode: 'insensitive' } }
+        ];
+      }
+
+      const [classrooms, total] = await Promise.all([
+        prisma.classRoom.findMany({
+          where,
+          skip,
+          take: parseInt(limit),
+          include: {
+            teacher: {
+              include: {
+                user: {
+                  select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true
+                  }
+                }
+              }
+            },
+            _count: {
+              select: {
+                enrollments: {
+                  where: { isCurrent: true }
+                },
+                subjects: true
+              }
+            }
+          },
+          orderBy: [
+            { grade: 'asc' },
+            { name: 'asc' }
+          ]
+        }),
+        prisma.classRoom.count({ where })
+      ]);
+
+      // Format the data for frontend
+      const formattedClassrooms = classrooms.map(classroom => ({
+        id: classroom.id,
+        name: classroom.name || 'Unknown Class',
+        grade: classroom.grade || 'N/A',
+        section: classroom.section || '',
+        type: classroom.type || 'REGULAR',
+        description: classroom.description || '',
+        teacher: classroom.teacher ? {
+          id: classroom.teacher.id,
+          user: classroom.teacher.user
+        } : null,
+        totalStudents: classroom._count.enrollments,
+        totalSubjects: classroom._count.subjects,
+        createdAt: classroom.createdAt,
+        lastRollNumber: classroom.lastRollNumber || 0
+      }));
+
+      res.json({
+        success: true,
+        data: formattedClassrooms,
+        pagination: {
+          page: parseInt(page),
+          limit: parseInt(limit),
+          total,
+          pages: Math.ceil(total / parseInt(limit))
+        }
+      });
+
+    } catch (error) {
+      console.error('❌ Get classrooms for PDF error:', error);
+      res.status(500).json({ 
+        success: false, 
+        error: 'Failed to fetch classrooms',
+        details: error.message 
+      });
+    }
+  }
+
+  async getPDFStats(req, res) {
+    try {
+      console.log('📊 Fetching PDF generation stats');
+      
+      const [
+        totalStudents,
+        totalTeachers,
+        totalClassRooms,
+        totalActiveEnrollments
+      ] = await Promise.all([
+        prisma.student.count(),
+        prisma.teacher.count(),
+        prisma.classRoom.count(),
+        prisma.enrollment.count({ where: { isCurrent: true } })
+      ]);
+
+      // Get class type distribution
+      const classTypeDistribution = await prisma.classRoom.groupBy({
+        by: ['type'],
+        _count: {
+          id: true
+        }
+      });
+
+      // Get recent activity from audit logs
+      const recentActivities = await prisma.auditLog.findMany({
+        where: {
+          action: {
+            contains: 'PDF'
+          },
+          createdAt: {
+            gte: new Date(new Date().setDate(new Date().getDate() - 30))
           }
         },
-        orderBy: { name: 'asc' }
-      });
-
-      if (teachers.length === 0) {
-        return res.status(404).json({ 
-          error: 'No teachers found' 
-        });
-      }
-
-      const doc = new PDFDocument({
-        size: 'A4',
-        margin: 50,
-        bufferPages: true
-      });
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="teacher-report-${Date.now()}.pdf"`);
-
-      doc.pipe(res);
-
-      // Add header
-      this.addHeader(doc, "Jamia Abi Bakar (R.A)", "Teacher Report");
-
-      // Summary
-      doc.fontSize(10)
-         .fillColor('#666666')
-         .text(`Total Teachers: ${teachers.length}`, {
-           align: 'right'
-         })
-         .moveDown(1);
-
-      // Teacher details
-      const tableTop = doc.y;
-      const tableLeft = 50;
-      const columnWidths = [50, 150, 120, 150, 80];
-
-      // Table header
-      doc.fontSize(10)
-         .fillColor('#ffffff')
-         .rect(tableLeft, tableTop, columnWidths.reduce((a, b) => a + b, 0), 20)
-         .fill('#2c3e50');
-
-      let currentX = tableLeft;
-      ['No.', 'Name', 'Contact', 'Specialization', 'Status'].forEach((header, i) => {
-        doc.text(header, currentX + 5, tableTop + 5, {
-          width: columnWidths[i] - 10,
-          align: 'left'
-        });
-        currentX += columnWidths[i];
-      });
-
-      // Table rows
-      let yPosition = tableTop + 20;
-      teachers.forEach((teacher, index) => {
-        if (index % 2 === 0) {
-          doc.fillColor('#f8f9fa')
-             .rect(tableLeft, yPosition, columnWidths.reduce((a, b) => a + b, 0), 30)
-             .fill();
+        take: 10,
+        orderBy: { createdAt: 'desc' },
+        include: {
+          user: {
+            select: {
+              name: true
+            }
+          }
         }
+      }).catch(() => []); // Gracefully handle if auditLog doesn't exist
 
-        doc.fillColor('#333333');
-
-        // Serial Number
-        doc.text((index + 1).toString(), tableLeft + 5, yPosition + 10, {
-          width: columnWidths[0] - 10,
-          align: 'center'
-        });
-
-        // Name
-        doc.text(teacher.name, tableLeft + columnWidths[0] + 5, yPosition + 10, {
-          width: columnWidths[1] - 10
-        });
-
-        // Contact
-        doc.text(teacher.phone || 'N/A', tableLeft + columnWidths[0] + columnWidths[1] + 5, yPosition + 10, {
-          width: columnWidths[2] - 10
-        });
-
-        // Specialization
-        const specialization = teacher.teacherProfile?.specialization || 'N/A';
-        doc.text(specialization, tableLeft + columnWidths[0] + columnWidths[1] + columnWidths[2] + 5, yPosition + 10, {
-          width: columnWidths[3] - 10
-        });
-
-        // Status with color
-        let statusColor = teacher.status === 'ACTIVE' ? '#27ae60' : 
-                         teacher.status === 'INACTIVE' ? '#f39c12' : 
-                         '#e74c3c';
-        doc.fillColor(statusColor)
-           .text(teacher.status, tableLeft + columnWidths[0] + columnWidths[1] + columnWidths[2] + columnWidths[3] + 5, yPosition + 10, {
-             width: columnWidths[4] - 10,
-             align: 'center'
-           });
-
-        // Subjects and classes (smaller text below)
-        if (teacher.teacherProfile) {
-          const subjects = teacher.teacherProfile.subjects.map(s => s.name).join(', ');
-          const classes = teacher.teacherProfile.classes.map(c => c.name).join(', ');
-          
-          doc.fontSize(8)
-             .fillColor('#666666')
-             .text(`Subjects: ${subjects || 'N/A'}`, tableLeft + columnWidths[0] + 5, yPosition + 25, {
-               width: columnWidths[1] + columnWidths[2] + columnWidths[3] - 15
-             });
-             
-          doc.text(`Classes: ${classes || 'N/A'}`, tableLeft + columnWidths[0] + columnWidths[1] + columnWidths[2] + 5, yPosition + 25, {
-            width: columnWidths[3] + columnWidths[4] - 15
-          });
-        }
-
-        yPosition += 40;
-
-        if (yPosition > 700) {
-          doc.addPage();
-          yPosition = 50;
+      res.json({
+        success: true,
+        data: {
+          totalStudents,
+          totalTeachers,
+          totalClassRooms,
+          totalActiveEnrollments,
+          classTypeDistribution: classTypeDistribution.map(ct => ({
+            type: ct.type,
+            count: ct._count.id
+          })),
+          recentActivities: recentActivities.map(activity => ({
+            action: activity.action,
+            user: activity.user?.name || 'System',
+            timestamp: activity.createdAt
+          }))
         }
       });
-
-      // Add footer
-      this.addFooter(doc);
-
-      doc.end();
 
     } catch (error) {
-      console.error('❌ Generate teacher PDF error:', error);
+      console.error('❌ Get PDF stats error:', error);
       res.status(500).json({ 
-        error: 'Failed to generate teacher report',
+        success: false, 
+        error: 'Failed to fetch PDF stats',
         details: error.message 
       });
     }
   }
 
-  // Generate financial report PDF (if you have fee data)
-  async generateFinancialReportPDF(req, res) {
+  // ============================================
+  // CLASS ATTENDANCE SHEET (for manual marking)
+  // ============================================
+  async generateClassAttendanceSheet(req, res) {
     try {
-      const { month, year } = req.query;
+      const { classRoomId } = req.params;
+      const { date, month } = req.query;
+
+      const classRoom = await prisma.classRoom.findUnique({
+        where: { id: classRoomId },
+        include: {
+          teacher: {
+            include: {
+              user: { select: { name: true } }
+            }
+          },
+          enrollments: {
+            where: { isCurrent: true },
+            include: {
+              student: {
+                include: {
+                  user: { select: { name: true } }
+                }
+              }
+            },
+            orderBy: { rollNumber: 'asc' }
+          }
+        }
+      });
+
+      if (!classRoom) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+
+      const doc = new PDFDocument({ margin: 30, size: 'A4', layout: 'landscape' });
       
-      // This is a template - you'll need to implement based on your fee structure
-      const currentDate = new Date();
-      const reportMonth = month || currentDate.getMonth() + 1;
-      const reportYear = year || currentDate.getFullYear();
-
-      const doc = new PDFDocument({
-        size: 'A4',
-        margin: 50,
-        bufferPages: true
-      });
-
       res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="financial-report-${reportMonth}-${reportYear}.pdf"`);
-
+      res.setHeader('Content-Disposition', `attachment; filename=attendance-${classRoom.name.replace(/\s+/g, '-')}.pdf`);
+      
       doc.pipe(res);
 
-      // Add header
-      this.addHeader(doc, "Jamia Abi Bakar (R.A)", "Financial Report");
+      // Header
+      doc.fontSize(18).fillColor('#1e3a8a').text('CLASS ATTENDANCE SHEET', { align: 'center' });
+      doc.moveDown(0.3);
+      doc.fontSize(12).fillColor('#000000');
+      doc.text(`Class: ${classRoom.name}  |  Date: ${date || new Date().toLocaleDateString()}`, { align: 'center' });
+      doc.text(`Teacher: ${classRoom.teacher?.user?.name || 'Not Assigned'}`, { align: 'center' });
+      doc.moveDown(1);
 
-      // Report period
-      doc.fontSize(10)
-         .fillColor('#666666')
-         .text(`Month: ${reportMonth}/${reportYear}`, {
-           align: 'right'
-         })
-         .moveDown(1);
-
-      // Financial summary placeholder
-      doc.fontSize(12)
-         .fillColor('#333333')
-         .text('Financial Summary:', {
-           underline: true
-         })
-         .moveDown(0.5);
-
-      doc.fontSize(10)
-         .text('• Total Fees Collected: [Amount]')
-         .text('• Pending Fees: [Amount]')
-         .text('• Total Expenses: [Amount]')
-         .text('• Net Balance: [Amount]')
-         .moveDown(1);
-
-      // Note for implementation
-      doc.fontSize(9)
-         .fillColor('#e74c3c')
-         .text('Note: This report requires implementation of fee collection system.', {
-           align: 'center'
-         });
-
-      // Add footer
-      this.addFooter(doc);
+      // Use advanced table for attendance
+      this.drawAdvancedTable(doc, {
+        headers: ['Roll', 'Student Name', 'Father Name', 'Present', 'Absent', 'Late', 'Excused', 'Remarks'],
+        rows: classRoom.enrollments.map(e => [
+          e.rollNumber.toString(),
+          e.student.user.name,
+          e.student.guardianName || 'N/A',
+          '☐',
+          '☐',
+          '☐',
+          '☐',
+          '_______'
+        ]),
+        columnWidths: [40, 180, 120, 60, 60, 60, 60, 120],
+        headerColor: '#1e3a8a',
+        headerBgColor: '#e0e7ff',
+        rowColors: ['#ffffff', '#f9fafb'],
+        borderColor: '#d1d5db',
+        fontSize: 8,
+        rowHeight: 25
+      });
 
       doc.end();
 
     } catch (error) {
-      console.error('❌ Generate financial PDF error:', error);
-      res.status(500).json({ 
-        error: 'Failed to generate financial report',
-        details: error.message 
-      });
+      console.error('Generate attendance sheet error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ error: 'Failed to generate attendance sheet' });
+      }
     }
   }
 
-  // Generate custom report PDF
-  async generateCustomReportPDF(req, res) {
-    try {
-      const { title, data, columns } = req.body;
+  // ============================================
+  // HELPER METHODS
+  // ============================================
 
-      if (!title || !data || !Array.isArray(data)) {
-        return res.status(400).json({
-          error: 'Title and data array are required'
-        });
-      }
-
-      const doc = new PDFDocument({
-        size: 'A4',
-        margin: 50,
-        bufferPages: true
-      });
-
-      res.setHeader('Content-Type', 'application/pdf');
-      res.setHeader('Content-Disposition', `attachment; filename="custom-report-${Date.now()}.pdf"`);
-
-      doc.pipe(res);
-
-      // Add header
-      this.addHeader(doc, "Jamia Abi Bakar (R.A)", title);
-
-      // Report details
-      const currentDate = new Date().toLocaleDateString();
-      doc.fontSize(10)
-         .fillColor('#666666')
-         .text(`Generated on: ${currentDate}`, {
-           align: 'right'
-         })
-         .moveDown(1);
-
-      // Calculate column widths
-      const tableLeft = 50;
-      const pageWidth = 595.28; // A4 width in points
-      const availableWidth = pageWidth - (tableLeft * 2);
-      const columnCount = columns ? columns.length : Object.keys(data[0] || {}).length;
-      const columnWidth = availableWidth / columnCount;
-
-      // Create table
-      const tableTop = doc.y;
-
-      // Table header
-      if (columns && Array.isArray(columns)) {
-        doc.fontSize(10)
-           .fillColor('#ffffff')
-           .rect(tableLeft, tableTop, availableWidth, 20)
-           .fill('#2c3e50');
-
-        let currentX = tableLeft;
-        columns.forEach((column, i) => {
-          doc.text(column.header || column, currentX + 5, tableTop + 5, {
-            width: columnWidth - 10,
-            align: 'left'
-          });
-          currentX += columnWidth;
-        });
-      }
-
-      // Table rows
-      let yPosition = tableTop + 20;
-      data.forEach((row, index) => {
-        if (index % 2 === 0) {
-          doc.fillColor('#f8f9fa')
-             .rect(tableLeft, yPosition, availableWidth, 20)
-             .fill();
-        }
-
-        doc.fillColor('#333333');
-
-        let currentX = tableLeft;
-        
-        if (columns && Array.isArray(columns)) {
-          columns.forEach((column, i) => {
-            const value = row[column.field] || row[i] || '';
-            doc.text(value.toString(), currentX + 5, yPosition + 5, {
-              width: columnWidth - 10
-            });
-            currentX += columnWidth;
-          });
-        } else {
-          // Use object keys
-          Object.values(row).forEach((value, i) => {
-            doc.text(value.toString(), currentX + 5, yPosition + 5, {
-              width: columnWidth - 10
-            });
-            currentX += columnWidth;
-          });
-        }
-
-        yPosition += 20;
-
-        if (yPosition > 700) {
-          doc.addPage();
-          yPosition = 50;
-        }
-      });
-
-      // Add footer
-      this.addFooter(doc);
-
-      doc.end();
-
-    } catch (error) {
-      console.error('❌ Generate custom PDF error:', error);
-      res.status(500).json({ 
-        error: 'Failed to generate custom report',
-        details: error.message 
-      });
-    }
+  addHeader(doc, title) {
+    doc.fontSize(22).fillColor('#1e3a8a').text(title, { align: 'center' });
+    doc.fontSize(12).fillColor('#6b7280').text('Jamia Abi Bakar(R.A)', { align: 'center' });
+    doc.moveDown(0.5);
+    doc.moveTo(50, doc.y).lineTo(doc.page.width - 50, doc.y).stroke('#d1d5db');
   }
 
-  // Helper method to add header to PDF
-  addHeader(doc, instituteName, reportTitle) {
-    // Institute Logo/Header
-    doc.fontSize(24)
-       .fillColor('#2c3e50')
-       .font('Helvetica-Bold')
-       .text(instituteName, {
-         align: 'center'
-       })
-       .moveDown(0.5);
-
-    // Report Title
-    doc.fontSize(18)
-       .fillColor('#34495e')
-       .text(reportTitle, {
-         align: 'center'
-       })
-       .moveDown(1);
-
-    // Separator line
-    doc.strokeColor('#3498db')
-       .lineWidth(2)
-       .moveTo(50, doc.y)
-       .lineTo(545.28, doc.y)
-       .stroke()
-       .moveDown(1.5);
-  }
-
-  // Helper method to add footer to PDF
-  addFooter(doc) {
-    const pageCount = doc.bufferedPageRange().count;
+  addFooter(doc, customText) {
+    const bottomY = doc.page.height - 80;
+    doc.fontSize(8).fillColor('#6b7280');
     
-    for (let i = 0; i < pageCount; i++) {
-      doc.switchToPage(i);
-      
-      // Footer line
-      doc.strokeColor('#bdc3c7')
-         .lineWidth(0.5)
-         .moveTo(50, 780)
-         .lineTo(545.28, 780)
-         .stroke();
-      
-      // Page number
-      doc.fontSize(8)
-         .fillColor('#7f8c8d')
-         .text(`Page ${i + 1} of ${pageCount}`, 50, 785, {
-           align: 'center',
-           width: 495.28
-         });
-      
-      // Copyright/institute info
-      doc.text('© Jamia Abi Bakar (R.A) - Generated by School Management System', 50, 795, {
-         align: 'center',
-         width: 495.28
-       });
+    if (customText) {
+      doc.text(customText, 50, bottomY, { align: 'center', width: doc.page.width - 100 });
     }
+    
+    doc.text(`Generated on: ${new Date().toLocaleString()}`, 50, bottomY + 15, { 
+      align: 'center', 
+      width: doc.page.width - 100 
+    });
+  }
+
+  /**
+   * ENHANCED TABLE DRAWING METHOD
+   * Supports full customization of colors, borders, fonts, and column-specific settings
+   */
+  drawAdvancedTable(doc, options) {
+  try {
+    console.log('🧱 drawAdvancedTable called');
+
+    const {
+      headers,
+      rows,
+      columnWidths,
+      headerColor = '#1e3a8a',
+      headerBgColor = '#e0e7ff',
+      headerFontSize = 10,
+      rowColors = ['#ffffff', '#f9fafb'],
+      borderColor = '#d1d5db',
+      fontSize = 9,
+      rowHeight = 25,
+      textAlign = 'left',
+      headerTextAlign = 'left',
+      cellPadding = 5,
+      borderWidth = 1,
+      columnSettings = {}
+    } = options;
+
+    console.log('📊 Headers:', headers);
+    console.log('📦 Rows count:', rows?.length || 0);
+    console.log('📐 Incoming columnWidths:', columnWidths);
+
+    const startX = 50;
+    let startY = doc.y;
+
+    /* ===============================
+       ✅ SAFE COLUMN WIDTH HANDLING
+    =============================== */
+
+    let colWidths;
+    const isValidColumnWidths =
+      Array.isArray(columnWidths) &&
+      columnWidths.length === headers.length &&
+      columnWidths.every(w => Number.isFinite(w) && w > 0);
+
+    if (isValidColumnWidths) {
+      colWidths = columnWidths;
+      console.log('✅ Using provided columnWidths:', colWidths);
+    } else {
+      const totalWidth = doc.page.width - 100;
+      colWidths = headers.map(() => totalWidth / headers.length);
+      console.warn('⚠️ Invalid/empty columnWidths. Auto-calculated:', colWidths);
+    }
+
+    const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+    console.log('📐 Table width:', tableWidth);
+
+    const colPositions = [startX];
+    for (let i = 0; i < colWidths.length - 1; i++) {
+      colPositions.push(colPositions[i] + colWidths[i]);
+    }
+
+    console.log('📍 Column positions:', colPositions);
+
+    /* ===============================
+       🧾 HEADER ROW
+    =============================== */
+
+    doc.fontSize(headerFontSize).fillColor(headerColor);
+    doc.rect(startX, startY, tableWidth, rowHeight)
+      .fillAndStroke(headerBgColor, borderColor);
+
+    headers.forEach((header, i) => {
+      const colSettings = columnSettings[i] || {};
+      const align = colSettings.headerAlign || headerTextAlign;
+      const color = colSettings.headerColor || headerColor;
+
+      const safeWidth = Number.isFinite(colWidths[i])
+        ? colWidths[i] - (cellPadding * 2)
+        : 50;
+
+      doc.fillColor(color).text(
+        header || '',
+        colPositions[i] + cellPadding,
+        startY + (rowHeight - headerFontSize) / 2,
+        { width: safeWidth, align, ellipsis: true }
+      );
+    });
+
+    /* ===============================
+       📄 DATA ROWS
+    =============================== */
+
+    let currentY = startY + rowHeight;
+    doc.fontSize(fontSize);
+
+    rows.forEach((row, rowIndex) => {
+      if (currentY > doc.page.height - 100) {
+        console.log('📄 New page added');
+        doc.addPage();
+        currentY = 50;
+
+        // Redraw header
+        doc.fontSize(headerFontSize).fillColor(headerColor);
+        doc.rect(startX, currentY, tableWidth, rowHeight)
+          .fillAndStroke(headerBgColor, borderColor);
+
+        headers.forEach((header, i) => {
+          const safeWidth = Number.isFinite(colWidths[i])
+            ? colWidths[i] - (cellPadding * 2)
+            : 50;
+
+          doc.text(
+            header || '',
+            colPositions[i] + cellPadding,
+            currentY + (rowHeight - headerFontSize) / 2,
+            { width: safeWidth, align: headerTextAlign, ellipsis: true }
+          );
+        });
+
+        currentY += rowHeight;
+        doc.fontSize(fontSize);
+      }
+
+      const rowBgColor = rowColors[rowIndex % rowColors.length] || rowColors[0];
+      doc.rect(startX, currentY, tableWidth, rowHeight).fill(rowBgColor);
+
+      if (Array.isArray(row)) {
+        row.forEach((cell, i) => {
+          const colSettings = columnSettings[i] || {};
+          const align = colSettings.align || textAlign;
+          const color = colSettings.color || '#000000';
+          const bold = colSettings.bold || false;
+
+          const safeWidth = Number.isFinite(colWidths[i])
+            ? colWidths[i] - (cellPadding * 2)
+            : 50;
+
+          if (bold) doc.font('Helvetica-Bold');
+
+          doc.fillColor(color).text(
+            cell?.toString() || '',
+            colPositions[i] + cellPadding,
+            currentY + (rowHeight - fontSize) / 2,
+            { width: safeWidth, align, ellipsis: true }
+          );
+
+          if (bold) doc.font('Helvetica');
+        });
+      }
+
+      doc.lineWidth(borderWidth);
+      doc.rect(startX, currentY, tableWidth, rowHeight).stroke(borderColor);
+
+      currentY += rowHeight;
+    });
+
+    doc.y = currentY + 10;
+    console.log('✅ Table rendered successfully');
+  } catch (err) {
+    console.error('🔥 drawAdvancedTable failed:', err);
+    throw err; // important: let controller handle response properly
+  }
+}
+
+
+  // Legacy table method for backward compatibility
+  drawTable(doc, headers, rows) {
+    this.drawAdvancedTable(doc, {
+      headers,
+      rows
+    });
   }
 }
 

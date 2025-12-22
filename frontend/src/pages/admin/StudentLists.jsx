@@ -1,98 +1,128 @@
-import React, { useState, useEffect, useCallback } from 'react';
-import { useNavigate } from 'react-router-dom';
-import { 
-  Search, Filter, Mail, Phone, MapPin, BookOpen, Calendar, 
-  GraduationCap, Users, TrendingUp, History, CheckSquare, Square, Eye,
-  MoreVertical, Edit, UserCheck, UserX, Trash2, MoveVertical, School,
-  Plus, Check, X
-} from 'lucide-react';
-import { useAdmin } from '../../contexts/AdminContext';
-import BatchPromotionModal from '../../components/BatchPromotionModal';
-import { toast } from 'react-hot-toast';
-import axios from 'axios';
+import React, { useState, useEffect, useCallback } from "react";
+import { useNavigate } from "react-router-dom";
+import {
+  Search,
+  Filter,
+  Mail,
+  Phone,
+  MapPin,
+  BookOpen,
+  Calendar,
+  GraduationCap,
+  Users,
+  TrendingUp,
+  History,
+  CheckSquare,
+  Square,
+  Eye,
+  MoreVertical,
+  Edit,
+  UserCheck,
+  UserX,
+  Trash2,
+  MoveVertical,
+  School,
+  Plus,
+  Check,
+  X,
+  Trash2Icon,
+} from "lucide-react";
+import { useAdmin } from "../../contexts/AdminContext";
+import { useClass } from "../../contexts/ClassContext"; // Import ClassContext
+import BatchPromotionModal from "../../components/BatchPromotionModal";
+import { toast } from "react-hot-toast";
+import axios from "axios";
 
 const StudentLists = () => {
   const { students, fetchStudents, loading } = useAdmin();
+  const { 
+    classes: availableClasses, 
+    fetchClasses, 
+    loading: classesLoading,
+    bulkAssignClassToStudents // Get the new method from context
+  } = useClass(); // Use ClassContext
   const navigate = useNavigate();
-  const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
-  const [classFilter, setClassFilter] = useState('ALL');
+  const [searchTerm, setSearchTerm] = useState("");
+  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [classFilter, setClassFilter] = useState("ALL");
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
-  
+
   // New states for dropdown and class assignment
   const [dropdownOpen, setDropdownOpen] = useState(null);
   const [showAssignClassModal, setShowAssignClassModal] = useState(false);
-  const [availableClasses, setAvailableClasses] = useState([]);
-  const [selectedClass, setSelectedClass] = useState('');
+  const [selectedClass, setSelectedClass] = useState("");
   const [assigningClass, setAssigningClass] = useState(false);
   const [studentsToAssign, setStudentsToAssign] = useState([]);
   const [showStatusModal, setShowStatusModal] = useState(false);
-  const [selectedStatus, setSelectedStatus] = useState('');
+  const [selectedStatus, setSelectedStatus] = useState("");
   const [updatingStatus, setUpdatingStatus] = useState(false);
 
-  const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
+  const API_BASE_URL =
+    import.meta.env.VITE_API_URL || "http://localhost:5000/api";
 
   useEffect(() => {
     fetchStudents();
-    fetchAvailableClasses();
-  }, [fetchStudents]);
+    fetchClasses(); // Use context method to fetch classes
+  }, [fetchStudents, fetchClasses]);
 
   // ============================================
   // Helper Functions for Safe Data Access
   // ============================================
-  
-  const getStudentName = (student) => 
-    student.user?.name || student.name || 'Unknown Student';
 
-  const getStudentEmail = (student) => 
-    student.user?.email || student.email || 'No email';
+  const getStudentName = (student) =>
+    student.user?.name || student.name || "Unknown Student";
 
-  const getStudentStatus = (student) => 
-    student.user?.status || student.status || 'UNKNOWN';
+  const getStudentEmail = (student) =>
+    student.user?.email || student.email || "No email";
 
-  const getStudentProfileImage = (student) => 
-    student.user?.profileImage || 
-    student.profileImage || 
-    student.studentProfile?.profileImage || 
+  const getStudentStatus = (student) =>
+    student.user?.status || student.status || "UNKNOWN";
+
+  const getStudentProfileImage = (student) =>
+    student.user?.profileImage ||
+    student.profileImage ||
+    student.studentProfile?.profileImage ||
     null;
 
-  const getStudentUserId = (student) => 
+  const getStudentUserId = (student) =>
     student.user?.id || student.userId || student.id;
 
-  const getCurrentClass = (student) => 
-    student.currentEnrollment?.classRoom || 
-    student.currentClass || 
-    student.classRoom || 
-    student.studentProfile?.currentEnrollment?.classRoom || 
+  const getCurrentClass = (student) =>
+    student.currentEnrollment?.classRoom ||
+    student.currentClass ||
+    student.classRoom ||
+    student.studentProfile?.currentEnrollment?.classRoom ||
     null;
 
-  const getAdmissionNo = (student) => 
-    student.admissionNo || student.studentProfile?.admissionNo || 'N/A';
+  const getAdmissionNo = (student) =>
+    student.admissionNo || student.studentProfile?.admissionNo || "N/A";
 
   // ============================================
   // Profile Image URL Generation
   // ============================================
-  
+
   const getProfileImageUrl = useCallback((student) => {
     try {
       const userId = getStudentUserId(student);
       const profileImage = getStudentProfileImage(student);
-      
+
       if (!profileImage) {
         return null;
       }
 
-      if (profileImage.startsWith('http') || profileImage.startsWith('data:')) {
+      if (profileImage.startsWith("http") || profileImage.startsWith("data:")) {
         return profileImage;
       }
 
-      const baseUrl = (import.meta.env.VITE_API_URL || 'http://localhost:5000/api').replace(/\/$/, '');
+      const baseUrl = (
+        import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+      ).replace(/\/$/, "");
       const imageUrl = `${baseUrl}/admin/public/profile-image/${userId}`;
-      
+
       return imageUrl;
     } catch (error) {
-      console.error('Error generating profile image URL:', error);
+      console.error("Error generating profile image URL:", error);
       return null;
     }
   }, []);
@@ -100,31 +130,31 @@ const StudentLists = () => {
   // ============================================
   // Student Selection Handlers
   // ============================================
-  
+
   const toggleStudentSelection = (student) => {
-    setSelectedStudents(prev => {
-      const isSelected = prev.some(s => s.id === student.id);
-      return isSelected 
-        ? prev.filter(s => s.id !== student.id)
+    setSelectedStudents((prev) => {
+      const isSelected = prev.some((s) => s.id === student.id);
+      return isSelected
+        ? prev.filter((s) => s.id !== student.id)
         : [...prev, student];
     });
   };
 
   const selectAllStudents = () => {
     setSelectedStudents(
-      selectedStudents.length === filteredStudents.length 
-        ? [] 
+      selectedStudents.length === filteredStudents.length
+        ? []
         : [...filteredStudents]
     );
   };
 
-  const isStudentSelected = (studentId) => 
-    selectedStudents.some(s => s.id === studentId);
+  const isStudentSelected = (studentId) =>
+    selectedStudents.some((s) => s.id === studentId);
 
   // ============================================
   // Dropdown Menu Handlers
   // ============================================
-  
+
   const toggleDropdown = (studentId) => {
     setDropdownOpen(dropdownOpen === studentId ? null : studentId);
   };
@@ -137,7 +167,7 @@ const StudentLists = () => {
 
   const handleBulkAssignClass = () => {
     if (selectedStudents.length === 0) {
-      toast.error('Please select at least one student');
+      toast.error("Please select at least one student");
       return;
     }
     setStudentsToAssign([...selectedStudents]);
@@ -153,7 +183,7 @@ const StudentLists = () => {
 
   const handleBulkUpdateStatus = (status) => {
     if (selectedStudents.length === 0) {
-      toast.error('Please select at least one student');
+      toast.error("Please select at least one student");
       return;
     }
     setStudentsToAssign([...selectedStudents]);
@@ -162,129 +192,191 @@ const StudentLists = () => {
   };
 
   // ============================================
-  // Class Assignment Functions
+  // Class Assignment Functions - UPDATED
   // ============================================
-  
-  const fetchAvailableClasses = async () => {
-    try {
-      const token = localStorage.getItem('authToken');
-      const response = await axios.get(`${API_BASE_URL}/admin/classes`, {
-        headers: { Authorization: `Bearer ${token}` }
-      });
-      setAvailableClasses(response.data || []);
-    } catch (error) {
-      console.error('Error fetching classes:', error);
-      toast.error('Failed to load classes');
-    }
-  };
 
   const handleClassAssignment = async () => {
     if (!selectedClass) {
-      toast.error('Please select a class');
+      toast.error("Please select a class");
       return;
     }
 
     if (studentsToAssign.length === 0) {
-      toast.error('No students selected');
+      toast.error("No students selected");
       return;
     }
 
     try {
       setAssigningClass(true);
-      const token = localStorage.getItem('authToken');
       
-      // Get the selected class details
-      const classDetails = availableClasses.find(c => c.id === selectedClass);
+      // Get the selected class details from context
+      const classDetails = availableClasses.find((c) => c.id === selectedClass);
       if (!classDetails) {
-        throw new Error('Class not found');
+        throw new Error("Class not found");
       }
 
-      // Assign class to each student
-      const promises = studentsToAssign.map(async (student) => {
-        const studentId = getStudentUserId(student);
-        
-        const payload = {
-          classId: selectedClass,
-          classRoom: {
-            id: classDetails.id,
-            name: classDetails.name,
-            type: classDetails.type,
-            grade: classDetails.grade,
-            section: classDetails.section
-          },
+      // Use the new context method for bulk assignment
+      await bulkAssignClassToStudents(
+        studentsToAssign.map(s => getStudentUserId(s)),
+        selectedClass,
+        {
           startDate: new Date().toISOString(),
-          rollNumber: generateRollNumber()
-        };
+          isCurrent: true
+        }
+      );
 
-        return axios.post(
-          `${API_BASE_URL}/admin/students/${studentId}/assign-class`,
-          payload,
-          {
-            headers: { Authorization: `Bearer ${token}` }
-          }
-        );
-      });
-
-      await Promise.all(promises);
+      // Note: bulkAssignClassToStudents already shows toast success message
       
-      toast.success(`Successfully assigned ${classDetails.name} to ${studentsToAssign.length} student(s)`);
       setShowAssignClassModal(false);
-      setSelectedClass('');
+      setSelectedClass("");
       setStudentsToAssign([]);
+      setSelectedStudents([]); // Clear selection
       fetchStudents(); // Refresh student list
     } catch (error) {
-      console.error('Error assigning class:', error);
-      toast.error(error.response?.data?.error || 'Failed to assign class');
+      console.error("Error assigning class:", error);
+      // Error is already handled by the context
     } finally {
       setAssigningClass(false);
     }
   };
 
-  const generateRollNumber = () => {
-    return Math.floor(1000 + Math.random() * 9000).toString();
+  // ============================================
+  // Student Deletion Functions
+  // ============================================
+
+  const deleteStudent = async (studentId) => {
+    if (
+      !window.confirm(
+        "Are you sure you want to delete this student? This action cannot be undone and will delete all student data including attendance, progress, and documents."
+      )
+    ) {
+      return;
+    }
+
+    try {
+      const token = localStorage.getItem("authToken");
+      const response = await axios.delete(
+        `${API_BASE_URL}/admin/students/${studentId}`,
+        {
+          headers: { Authorization: `Bearer ${token}` },
+        }
+      );
+
+      toast.success(response.data.message || "Student deleted successfully");
+
+      // Remove from selected students if present
+      setSelectedStudents((prev) =>
+        prev.filter((s) => getStudentUserId(s) !== studentId)
+      );
+
+      // Refresh the student list
+      fetchStudents();
+    } catch (error) {
+      console.error("Error deleting student:", error);
+      toast.error(error.response?.data?.error || "Failed to delete student");
+    }
+  };
+
+  // Bulk delete function
+  const handleBulkDelete = () => {
+    if (selectedStudents.length === 0) {
+      toast.error("Please select at least one student to delete");
+      return;
+    }
+
+    const studentNames = selectedStudents
+      .map((s) => getStudentName(s))
+      .join(", ");
+
+    if (
+      !window.confirm(
+        `Are you sure you want to delete ${selectedStudents.length} student(s)?\n\nSelected students: ${studentNames}\n\nThis action cannot be undone and will delete all student data.`
+      )
+    ) {
+      return;
+    }
+
+    // Show loading state
+    const deletePromises = selectedStudents.map(async (student) => {
+      try {
+        const studentId = getStudentUserId(student);
+        const token = localStorage.getItem("authToken");
+        return axios.delete(`${API_BASE_URL}/admin/students/${studentId}`, {
+          headers: { Authorization: `Bearer ${token}` },
+        });
+      } catch (error) {
+        console.error(`Error deleting student ${student.id}:`, error);
+        throw error;
+      }
+    });
+
+    Promise.allSettled(deletePromises)
+      .then((results) => {
+        const successful = results.filter(
+          (r) => r.status === "fulfilled"
+        ).length;
+        const failed = results.filter((r) => r.status === "rejected").length;
+
+        if (successful > 0) {
+          toast.success(`Successfully deleted ${successful} student(s)`);
+        }
+        if (failed > 0) {
+          toast.error(`Failed to delete ${failed} student(s)`);
+        }
+
+        // Clear selection and refresh list
+        setSelectedStudents([]);
+        fetchStudents();
+      })
+      .catch((error) => {
+        toast.error("An error occurred during bulk deletion");
+        console.error("Bulk delete error:", error);
+      });
   };
 
   // ============================================
   // Status Update Functions
   // ============================================
-  
+
   const handleStatusUpdate = async () => {
     if (!selectedStatus) {
-      toast.error('Please select a status');
+      toast.error("Please select a status");
       return;
     }
 
     if (studentsToAssign.length === 0) {
-      toast.error('No students selected');
+      toast.error("No students selected");
       return;
     }
 
     try {
       setUpdatingStatus(true);
-      const token = localStorage.getItem('authToken');
-      
+      const token = localStorage.getItem("authToken");
+
       const promises = studentsToAssign.map(async (student) => {
         const studentId = getStudentUserId(student);
-        
+
         return axios.put(
           `${API_BASE_URL}/admin/students/${studentId}/status`,
           { status: selectedStatus },
           {
-            headers: { Authorization: `Bearer ${token}` }
+            headers: { Authorization: `Bearer ${token}` },
           }
         );
       });
 
       await Promise.all(promises);
-      
-      toast.success(`Updated status to ${selectedStatus} for ${studentsToAssign.length} student(s)`);
+
+      toast.success(
+        `Updated status to ${selectedStatus} for ${studentsToAssign.length} student(s)`
+      );
       setShowStatusModal(false);
-      setSelectedStatus('');
+      setSelectedStatus("");
       setStudentsToAssign([]);
       fetchStudents(); // Refresh student list
     } catch (error) {
-      console.error('Error updating status:', error);
-      toast.error(error.response?.data?.error || 'Failed to update status');
+      console.error("Error updating status:", error);
+      toast.error(error.response?.data?.error || "Failed to update status");
     } finally {
       setUpdatingStatus(false);
     }
@@ -293,66 +385,72 @@ const StudentLists = () => {
   // ============================================
   // Filtering Logic
   // ============================================
-  
-  const filteredStudents = Array.isArray(students) 
-    ? students.filter(student => {
+
+  const filteredStudents = Array.isArray(students)
+    ? students.filter((student) => {
         const studentName = getStudentName(student).toLowerCase();
         const studentEmail = getStudentEmail(student).toLowerCase();
         const admissionNo = getAdmissionNo(student).toLowerCase();
         const studentStatus = getStudentStatus(student);
         const currentClass = getCurrentClass(student);
-        const className = currentClass?.name || '';
+        const className = currentClass?.name || "";
 
-        const matchesSearch = 
+        const matchesSearch =
           studentName.includes(searchTerm.toLowerCase()) ||
           studentEmail.includes(searchTerm.toLowerCase()) ||
           admissionNo.includes(searchTerm.toLowerCase());
 
-        const matchesStatus = statusFilter === 'ALL' || studentStatus === statusFilter;
-        const matchesClass = classFilter === 'ALL' || className === classFilter;
+        const matchesStatus =
+          statusFilter === "ALL" || studentStatus === statusFilter;
+        const matchesClass = classFilter === "ALL" || className === classFilter;
 
         return matchesSearch && matchesStatus && matchesClass;
       })
     : [];
 
-  const uniqueClasses = Array.isArray(students) 
-    ? [...new Set(students
-        .map(student => getCurrentClass(student)?.name)
-        .filter(Boolean)
-      )]
+  const uniqueClasses = Array.isArray(students)
+    ? [
+        ...new Set(
+          students
+            .map((student) => getCurrentClass(student)?.name)
+            .filter(Boolean)
+        ),
+      ]
     : [];
 
   // ============================================
   // Style Helpers
   // ============================================
-  
+
   const getStatusColor = (status) => {
     const colors = {
-      ACTIVE: 'text-green-600',
-      INACTIVE: 'text-yellow-600',
-      TERMINATED: 'text-red-600'
+      ACTIVE: "text-green-600",
+      INACTIVE: "text-yellow-600",
+      TERMINATED: "text-red-600",
     };
-    return colors[status] || 'text-gray-600';
+    return colors[status] || "text-gray-600";
   };
 
   const getClassTypeColor = (type) => {
     const colors = {
-      REGULAR: 'text-blue-600',
-      HIFZ: 'text-purple-600',
-      NAZRA: 'text-orange-600'
+      REGULAR: "text-blue-600",
+      HIFZ: "text-purple-600",
+      NAZRA: "text-orange-600",
     };
-    return colors[type] || 'text-gray-600';
+    return colors[type] || "text-gray-600";
   };
 
   // ============================================
   // Event Handlers
   // ============================================
-  
+
   const handleStudentClick = (student, e) => {
-    if (e.target.type === 'checkbox' || 
-        e.target.closest('.selection-checkbox') || 
-        e.target.closest('button') ||
-        e.target.closest('.dropdown-menu')) {
+    if (
+      e.target.type === "checkbox" ||
+      e.target.closest(".selection-checkbox") ||
+      e.target.closest("button") ||
+      e.target.closest(".dropdown-menu")
+    ) {
       return;
     }
     navigate(`/admin/students/${getStudentUserId(student)}`);
@@ -361,7 +459,7 @@ const StudentLists = () => {
   const handlePromotionSuccess = () => {
     setSelectedStudents([]);
     fetchStudents();
-    toast.success('Students promoted successfully');
+    toast.success("Students promoted successfully");
   };
 
   // Mock attendance - replace with real API data
@@ -370,14 +468,16 @@ const StudentLists = () => {
   // ============================================
   // Render
   // ============================================
-  
+
   return (
     <div className="space-y-6">
       {/* Header */}
       <div className="bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
-            <h1 className="text-2xl sm:text-3xl font-bold text-[#92400E]">Student Management</h1>
+            <h1 className="text-2xl sm:text-3xl font-bold text-[#92400E]">
+              Student Management
+            </h1>
             <p className="text-[#B45309] text-sm sm:text-base mt-1">
               Manage students and track their progress
             </p>
@@ -448,8 +548,10 @@ const StudentLists = () => {
                 className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
               >
                 <option value="ALL">All Classes</option>
-                {uniqueClasses.map(className => (
-                  <option key={className} value={className}>{className}</option>
+                {uniqueClasses.map((className) => (
+                  <option key={className} value={className}>
+                    {className}
+                  </option>
                 ))}
               </select>
             </div>
@@ -469,10 +571,12 @@ const StudentLists = () => {
                     <Square className="h-5 w-5" />
                   )}
                   <span className="font-medium">
-                    {selectedStudents.length === filteredStudents.length ? 'Deselect All' : 'Select All'}
+                    {selectedStudents.length === filteredStudents.length
+                      ? "Deselect All"
+                      : "Select All"}
                   </span>
                 </button>
-                
+
                 {/* Bulk Actions for Selected Students */}
                 {selectedStudents.length > 0 && (
                   <div className="flex items-center gap-2">
@@ -481,34 +585,43 @@ const StudentLists = () => {
                       Bulk Actions:
                     </span>
                     <button
-                      onClick={() => handleBulkUpdateStatus('ACTIVE')}
+                      onClick={() => handleBulkUpdateStatus("ACTIVE")}
                       className="flex items-center gap-1 text-xs text-green-600 hover:text-green-800 hover:bg-green-50 px-2 py-1 rounded transition-colors duration-200"
                     >
                       <UserCheck className="h-3 w-3" />
                       <span>Activate</span>
                     </button>
                     <button
-                      onClick={() => handleBulkUpdateStatus('INACTIVE')}
+                      onClick={() => handleBulkUpdateStatus("INACTIVE")}
                       className="flex items-center gap-1 text-xs text-yellow-600 hover:text-yellow-800 hover:bg-yellow-50 px-2 py-1 rounded transition-colors duration-200"
                     >
                       <UserX className="h-3 w-3" />
                       <span>Deactivate</span>
                     </button>
                     <button
-                      onClick={() => handleBulkUpdateStatus('TERMINATED')}
+                      onClick={() => handleBulkUpdateStatus("TERMINATED")}
                       className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors duration-200"
                     >
                       <UserX className="h-3 w-3" />
                       <span>Terminate</span>
                     </button>
+                    {/* Add Bulk Delete button */}
+                    <button
+                      onClick={handleBulkDelete}
+                      className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors duration-200 border border-red-200"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>Delete</span>
+                    </button>
                   </div>
                 )}
               </div>
-              
+
               {selectedStudents.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-gray-600">
-                    📋 {selectedStudents.length} student{selectedStudents.length > 1 ? 's' : ''} selected
+                    📋 {selectedStudents.length} student
+                    {selectedStudents.length > 1 ? "s" : ""} selected
                   </span>
                   <button
                     onClick={() => setSelectedStudents([])}
@@ -551,8 +664,17 @@ const StudentLists = () => {
               onUpdateStatus={(status) => handleUpdateStatus(student, status)}
               onToggleSelection={() => toggleStudentSelection(student)}
               onClick={(e) => handleStudentClick(student, e)}
-              onViewHistory={() => navigate(`/admin/students/${getStudentUserId(student)}/history`)}
-              onViewDetails={() => navigate(`/admin/students/${getStudentUserId(student)}`)}
+              onViewHistory={() =>
+                navigate(`/admin/students/${getStudentUserId(student)}/history`)
+              }
+              onViewDetails={() =>
+                navigate(`/admin/students/${getStudentUserId(student)}`)
+              }
+              // Add delete functionality
+              onDelete={() => {
+                const studentId = getStudentUserId(student);
+                deleteStudent(studentId);
+              }}
               getStatusColor={getStatusColor}
               getClassTypeColor={getClassTypeColor}
             />
@@ -566,11 +688,14 @@ const StudentLists = () => {
           <div className="flex items-center justify-between gap-3 mb-3">
             <div className="flex items-center gap-3">
               <div className="w-8 h-8 bg-[#F59E0B] rounded-full flex items-center justify-center">
-                <span className="text-white font-bold text-sm">{selectedStudents.length}</span>
+                <span className="text-white font-bold text-sm">
+                  {selectedStudents.length}
+                </span>
               </div>
               <div>
                 <p className="text-sm font-medium text-gray-900">
-                  {selectedStudents.length} student{selectedStudents.length > 1 ? 's' : ''} selected
+                  {selectedStudents.length} student
+                  {selectedStudents.length > 1 ? "s" : ""} selected
                 </p>
                 <p className="text-xs text-gray-500">Ready for actions</p>
               </div>
@@ -597,6 +722,14 @@ const StudentLists = () => {
               <TrendingUp className="h-4 w-4" />
               Promote
             </button>
+            {/* Add Delete button to selection summary */}
+            <button
+              onClick={handleBulkDelete}
+              className="flex-1 flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
+            >
+              <Trash2 className="h-4 w-4" />
+              Delete
+            </button>
           </div>
         </div>
       )}
@@ -607,12 +740,13 @@ const StudentLists = () => {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900">
-                Assign Class to {studentsToAssign.length} Student{studentsToAssign.length > 1 ? 's' : ''}
+                Assign Class to {studentsToAssign.length} Student
+                {studentsToAssign.length > 1 ? "s" : ""}
               </h3>
               <button
                 onClick={() => {
                   setShowAssignClassModal(false);
-                  setSelectedClass('');
+                  setSelectedClass("");
                   setStudentsToAssign([]);
                 }}
                 className="text-gray-400 hover:text-gray-600"
@@ -620,7 +754,7 @@ const StudentLists = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -629,15 +763,32 @@ const StudentLists = () => {
                 <select
                   value={selectedClass}
                   onChange={(e) => setSelectedClass(e.target.value)}
-                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B]"
+                  disabled={classesLoading}
+                  className="w-full border border-gray-300 rounded-lg px-3 py-2 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] disabled:opacity-50 disabled:cursor-not-allowed"
                 >
                   <option value="">Select a class</option>
-                  {availableClasses.map((classItem) => (
-                    <option key={classItem.id} value={classItem.id}>
-                      {classItem.name} - {classItem.type} (Grade {classItem.grade})
+                  {classesLoading ? (
+                    <option value="" disabled>
+                      Loading classes...
                     </option>
-                  ))}
+                  ) : availableClasses.length === 0 ? (
+                    <option value="" disabled>
+                      No classes available
+                    </option>
+                  ) : (
+                    availableClasses.map((classItem) => (
+                      <option key={classItem.id} value={classItem.id}>
+                        {classItem.name} - {classItem.type} (Grade{" "}
+                        {classItem.grade})
+                      </option>
+                    ))
+                  )}
                 </select>
+                {classesLoading && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Loading classes from server...
+                  </p>
+                )}
               </div>
 
               <div className="bg-gray-50 rounded-lg p-4 max-h-40 overflow-y-auto">
@@ -646,9 +797,16 @@ const StudentLists = () => {
                 </h4>
                 <div className="space-y-1">
                   {studentsToAssign.map((student, index) => (
-                    <div key={index} className="flex items-center justify-between text-sm py-1">
-                      <span className="text-gray-600">{getStudentName(student)}</span>
-                      <span className="text-xs text-gray-500">{getCurrentClass(student)?.name || 'No class'}</span>
+                    <div
+                      key={index}
+                      className="flex items-center justify-between text-sm py-1"
+                    >
+                      <span className="text-gray-600">
+                        {getStudentName(student)}
+                      </span>
+                      <span className="text-xs text-gray-500">
+                        {getCurrentClass(student)?.name || "No class"}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -658,7 +816,7 @@ const StudentLists = () => {
                 <button
                   onClick={() => {
                     setShowAssignClassModal(false);
-                    setSelectedClass('');
+                    setSelectedClass("");
                     setStudentsToAssign([]);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
@@ -668,7 +826,7 @@ const StudentLists = () => {
                 </button>
                 <button
                   onClick={handleClassAssignment}
-                  disabled={!selectedClass || assigningClass}
+                  disabled={!selectedClass || assigningClass || classesLoading}
                   className="flex-1 px-4 py-2 bg-[#F59E0B] text-white rounded-lg hover:bg-[#D97706] disabled:opacity-50 disabled:cursor-not-allowed transition-colors flex items-center justify-center"
                 >
                   {assigningClass ? (
@@ -677,7 +835,7 @@ const StudentLists = () => {
                       Assigning...
                     </>
                   ) : (
-                    'Assign Class'
+                    "Assign Class"
                   )}
                 </button>
               </div>
@@ -692,12 +850,13 @@ const StudentLists = () => {
           <div className="bg-white rounded-2xl p-6 w-full max-w-md">
             <div className="flex items-center justify-between mb-4">
               <h3 className="text-xl font-bold text-gray-900">
-                Update Status for {studentsToAssign.length} Student{studentsToAssign.length > 1 ? 's' : ''}
+                Update Status for {studentsToAssign.length} Student
+                {studentsToAssign.length > 1 ? "s" : ""}
               </h3>
               <button
                 onClick={() => {
                   setShowStatusModal(false);
-                  setSelectedStatus('');
+                  setSelectedStatus("");
                   setStudentsToAssign([]);
                 }}
                 className="text-gray-400 hover:text-gray-600"
@@ -705,7 +864,7 @@ const StudentLists = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -729,9 +888,18 @@ const StudentLists = () => {
                 </h4>
                 <div className="space-y-1">
                   {studentsToAssign.map((student, index) => (
-                    <div key={index} className="flex items-center justify-between text-sm py-1">
-                      <span className="text-gray-600">{getStudentName(student)}</span>
-                      <span className={`text-xs font-medium ${getStatusColor(getStudentStatus(student))}`}>
+                    <div
+                      key={index}
+                      className="flex items-center justify-between text-sm py-1"
+                    >
+                      <span className="text-gray-600">
+                        {getStudentName(student)}
+                      </span>
+                      <span
+                        className={`text-xs font-medium ${getStatusColor(
+                          getStudentStatus(student)
+                        )}`}
+                      >
                         {getStudentStatus(student)}
                       </span>
                     </div>
@@ -743,7 +911,7 @@ const StudentLists = () => {
                 <button
                   onClick={() => {
                     setShowStatusModal(false);
-                    setSelectedStatus('');
+                    setSelectedStatus("");
                     setStudentsToAssign([]);
                   }}
                   className="flex-1 px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 transition-colors"
@@ -762,7 +930,7 @@ const StudentLists = () => {
                       Updating...
                     </>
                   ) : (
-                    'Update Status'
+                    "Update Status"
                   )}
                 </button>
               </div>
@@ -806,35 +974,50 @@ const EmptyState = ({ studentsCount }) => (
   <div className="col-span-full text-center py-12 bg-gradient-to-br from-gray-50 to-white rounded-2xl border border-gray-200">
     <GraduationCap className="h-16 w-16 mx-auto text-gray-300 mb-4" />
     <h3 className="text-lg font-semibold text-gray-900 mb-2">
-      {studentsCount === 0 ? 'No students enrolled yet' : 'No students found'}
+      {studentsCount === 0 ? "No students enrolled yet" : "No students found"}
     </h3>
     <p className="text-gray-500 text-sm">
-      {studentsCount === 0 
-        ? 'Use the enrollment page to register new students' 
-        : 'Try adjusting your search criteria'
-      }
+      {studentsCount === 0
+        ? "Use the enrollment page to register new students"
+        : "Try adjusting your search criteria"}
     </p>
   </div>
 );
 
-const StudentCard = ({ 
-  student, studentName, studentEmail, studentStatus, admissionNo, 
-  currentClass, attendance, selected, profileImageUrl, dropdownOpen,
-  onToggleDropdown, onAssignClass, onUpdateStatus, onToggleSelection, 
-  onClick, onViewHistory, onViewDetails, getStatusColor, getClassTypeColor
+const StudentCard = ({
+  student,
+  studentName,
+  studentEmail,
+  studentStatus,
+  admissionNo,
+  currentClass,
+  attendance,
+  selected,
+  profileImageUrl,
+  dropdownOpen,
+  onToggleDropdown,
+  onAssignClass,
+  onUpdateStatus,
+  onToggleSelection,
+  onClick,
+  onDelete,
+  onViewHistory,
+  onViewDetails,
+  getStatusColor,
+  getClassTypeColor,
 }) => (
   <div
     onClick={onClick}
     className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl relative ${
-      selected 
-        ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white' 
-        : 'border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50'
+      selected
+        ? "border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white"
+        : "border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50"
     }`}
   >
     {/* Student Header */}
     <div className="flex items-start justify-between mb-4">
       <div className="flex items-center gap-3 flex-1">
-        <div 
+        <div
           className="selection-checkbox"
           onClick={(e) => {
             e.stopPropagation();
@@ -848,13 +1031,13 @@ const StudentCard = ({
             className="w-5 h-5 text-[#F59E0B] border-gray-300 rounded focus:ring-[#F59E0B] cursor-pointer hover:border-[#F59E0B] transition-colors"
           />
         </div>
-        
-        <ProfileImage 
+
+        <ProfileImage
           profileImageUrl={profileImageUrl}
           studentName={studentName}
           studentStatus={studentStatus}
         />
-        
+
         <div className="flex-1 min-w-0">
           <h3 className="font-bold text-gray-900 text-sm sm:text-base group-hover:text-[#92400E] truncate">
             {studentName}
@@ -868,18 +1051,24 @@ const StudentCard = ({
                 🏫 {currentClass.name}
               </p>
             )}
-            <span className={`text-xs font-medium ${getStatusColor(studentStatus)}`}>
+            <span
+              className={`text-xs font-medium ${getStatusColor(studentStatus)}`}
+            >
               • {studentStatus}
             </span>
             {currentClass?.type && (
-              <span className={`text-xs font-medium ${getClassTypeColor(currentClass.type)}`}>
+              <span
+                className={`text-xs font-medium ${getClassTypeColor(
+                  currentClass.type
+                )}`}
+              >
                 • {currentClass.type}
               </span>
             )}
           </div>
         </div>
       </div>
-      
+
       {/* Three-dot dropdown menu */}
       <div className="relative">
         <button
@@ -891,9 +1080,9 @@ const StudentCard = ({
         >
           <MoreVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
         </button>
-        
+
         {dropdownOpen && (
-          <div 
+          <div
             className="dropdown-menu absolute right-0 top-8 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10"
             onClick={(e) => e.stopPropagation()}
           >
@@ -927,25 +1116,37 @@ const StudentCard = ({
               </button>
               <div className="border-t border-gray-200 my-1"></div>
               <button
-                onClick={() => onUpdateStatus('ACTIVE')}
+                onClick={() => onUpdateStatus("ACTIVE")}
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-green-600 hover:bg-green-50"
               >
                 <UserCheck className="h-4 w-4" />
                 Activate
               </button>
               <button
-                onClick={() => onUpdateStatus('INACTIVE')}
+                onClick={() => onUpdateStatus("INACTIVE")}
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-yellow-600 hover:bg-yellow-50"
               >
                 <UserX className="h-4 w-4" />
                 Deactivate
               </button>
               <button
-                onClick={() => onUpdateStatus('TERMINATED')}
+                onClick={() => onUpdateStatus("TERMINATED")}
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
               >
                 <UserX className="h-4 w-4" />
                 Terminate
+              </button>
+              {/* Add Delete option */}
+              <div className="border-t border-gray-200 my-1"></div>
+              <button
+                onClick={() => {
+                  onDelete();
+                  onToggleDropdown();
+                }}
+                className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
+              >
+                <Trash2Icon className="h-4 w-4" />
+                Delete Student
               </button>
             </div>
           </div>
@@ -980,7 +1181,9 @@ const StudentCard = ({
           <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Class</p>
-            <p className="text-sm font-medium text-gray-900 truncate">{currentClass.name}</p>
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {currentClass.name}
+            </p>
           </div>
         </div>
       ) : (
@@ -988,7 +1191,9 @@ const StudentCard = ({
           <School className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Class</p>
-            <p className="text-sm font-medium text-gray-900 truncate">Not Assigned</p>
+            <p className="text-sm font-medium text-gray-900 truncate">
+              Not Assigned
+            </p>
           </div>
         </div>
       )}
@@ -997,7 +1202,9 @@ const StudentCard = ({
           <Users className="h-3 w-3 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Guardian</p>
-            <p className="text-sm font-medium text-gray-900 truncate">{student.guardianName}</p>
+            <p className="text-sm font-medium text-gray-900 truncate">
+              {student.guardianName}
+            </p>
           </div>
         </div>
       ) : (
@@ -1005,7 +1212,9 @@ const StudentCard = ({
           <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Guardian</p>
-            <p className="text-sm font-medium text-gray-900 truncate">Not Provided</p>
+            <p className="text-sm font-medium text-gray-900 truncate">
+              Not Provided
+            </p>
           </div>
         </div>
       )}
@@ -1023,21 +1232,33 @@ const StudentCard = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-gray-900">{attendance.present}</span>
-            <span className="text-sm text-gray-500">/ {attendance.total} days</span>
+            <span className="text-lg font-bold text-gray-900">
+              {attendance.present}
+            </span>
+            <span className="text-sm text-gray-500">
+              / {attendance.total} days
+            </span>
           </div>
-          <span className={`text-sm font-bold ${
-            attendance.percentage > 80 ? 'text-green-600' : 
-            attendance.percentage > 60 ? 'text-yellow-600' : 'text-red-600'
-          }`}>
+          <span
+            className={`text-sm font-bold ${
+              attendance.percentage > 80
+                ? "text-green-600"
+                : attendance.percentage > 60
+                ? "text-yellow-600"
+                : "text-red-600"
+            }`}
+          >
             {attendance.percentage}%
           </span>
         </div>
         <div className="w-full bg-gray-200 rounded-full h-2">
-          <div 
+          <div
             className={`h-2 rounded-full transition-all duration-500 ${
-              attendance.percentage > 80 ? 'bg-green-500' : 
-              attendance.percentage > 60 ? 'bg-yellow-500' : 'bg-red-500'
+              attendance.percentage > 80
+                ? "bg-green-500"
+                : attendance.percentage > 60
+                ? "bg-yellow-500"
+                : "bg-red-500"
             }`}
             style={{ width: `${Math.min(attendance.percentage, 100)}%` }}
           />
@@ -1047,7 +1268,7 @@ const StudentCard = ({
 
     {/* Action Buttons */}
     <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
-      <button 
+      <button
         onClick={(e) => {
           e.stopPropagation();
           onViewHistory();
@@ -1057,7 +1278,7 @@ const StudentCard = ({
         <History className="h-3 w-3" />
         <span>History</span>
       </button>
-      <button 
+      <button
         onClick={(e) => {
           e.stopPropagation();
           onViewDetails();
@@ -1076,9 +1297,9 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
   const [imgError, setImgError] = useState(false);
 
   const initials = studentName
-    .split(' ')
-    .map(n => n[0])
-    .join('')
+    .split(" ")
+    .map((n) => n[0])
+    .join("")
     .toUpperCase()
     .substring(0, 2);
 
@@ -1096,12 +1317,12 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
           {!imgLoaded && (
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-200 rounded-full animate-pulse" />
           )}
-          
+
           <img
             src={profileImageUrl}
             alt={studentName}
             className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-white shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:border-[#F59E0B] ${
-              imgLoaded ? 'block' : 'hidden'
+              imgLoaded ? "block" : "hidden"
             }`}
             onLoad={() => {
               setImgLoaded(true);
@@ -1116,8 +1337,8 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
           {initials}
         </div>
       )}
-      
-      {studentStatus === 'ACTIVE' && (
+
+      {studentStatus === "ACTIVE" && (
         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
       )}
     </div>

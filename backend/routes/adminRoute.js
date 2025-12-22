@@ -34,11 +34,20 @@ router.get('/stats', authenticateToken, requireAdmin, adminController.getSystemS
 router.get('/teachers', authenticateToken, requireAdmin, adminController.getAllTeachers);
 router.get('/teachers/:id', authenticateToken, requireAdmin, adminController.getTeacherDetails);
 router.get('/teachers/:id/documents', authenticateToken, requireAdmin, adminController.getTeacherWithDocuments);
+router.put('/teachers/:id', authenticateToken, requireAdmin, adminController.updateTeacher); // NEW: Update teacher
+router.delete('/teachers/:id', authenticateToken, requireAdmin, adminController.deleteTeacher);
 
 // Student management
 router.get('/students', authenticateToken, requireAdmin, adminController.getAllStudents);
-router.get('/students/:id', authenticateToken, requireAdmin, adminController.getStudentDetails);
+router.get(
+  '/students/:id', 
+  authenticateToken, 
+  requireAdmin, 
+  adminController.getStudentDetails.bind(adminController)
+);
 router.get('/students/:id/documents', authenticateToken, requireAdmin, adminController.getStudentWithDocuments);
+router.put('/students/:id', authenticateToken, requireAdmin, adminController.updateStudent); // NEW: Update student
+router.delete('/students/:id', authenticateToken, requireAdmin, adminController.deleteStudent);
 
 // Student profile image upload
 router.put('/students/:id/profile-image', 

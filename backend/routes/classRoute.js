@@ -1,17 +1,22 @@
 const express = require('express');
 const router = express.Router();
 const classController = require('../controllers/classController');
-const { authenticateToken, requireAdmin } = require('../middlewares/auth');
+const { authenticateToken, requireAdmin } = require('../middlewares/auth'); 
+router.use(authenticateToken, requireAdmin); 
 
-// Class management routes (Admin only)
-router.post('/', authenticateToken, requireAdmin, classController.createClass);
-router.get('/', authenticateToken, classController.getClasses);
-router.get('/:id', authenticateToken, classController.getClassById);
-router.put('/:id', authenticateToken, requireAdmin, classController.updateClass);
-router.delete('/:id', authenticateToken, requireAdmin, classController.deleteClass);
+// Existing routes
+router.post('/', classController.createClass);
+router.get('/', classController.getClasses);
+router.get('/:id', classController.getClassById);
+router.put('/:id', classController.updateClass);
+router.delete('/:id', classController.deleteClass);
+router.post('/:id/assign-teacher', classController.assignTeacher);
+router.get('/:id/students', classController.getClassStudents);
+router.post('/enroll', classController.enrollStudent);
 
-// Class assignment routes
-router.post('/:id/assign-teacher', authenticateToken, requireAdmin, classController.assignTeacher);
-router.get('/:id/students', authenticateToken, classController.getClassStudents);
+// NEW ROUTES for roll number generation
+router.get('/:id/generate-roll-number', classController.generateRollNumber);
+router.get('/:id/next-roll-number', classController.getNextRollNumber);
+router.post('/generate-multiple-roll-numbers', classController.generateMultipleRollNumbers);
 
 module.exports = router;

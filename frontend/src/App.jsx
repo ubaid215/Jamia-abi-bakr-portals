@@ -9,10 +9,12 @@ import { AttendanceProvider } from './contexts/AttendanceContext';
 import { ProgressProvider } from './contexts/ProgressContext';
 import { RegularProgressProvider } from './contexts/RegularProgressContext';
 import { HifzReportProvider } from './contexts/HifzReportContext';
+import { HifzProvider } from './contexts/HifzContext';
 import { ClassProvider } from './contexts/ClassContext';
 import { SubjectProvider } from './contexts/SubjectContext';
 import { EnrollmentProvider } from './contexts/EnrollmentContext';
-import { PasswordResetProvider } from './contexts/PasswordResetContext'; // Add this import
+import { PasswordResetProvider } from './contexts/PasswordResetContext';
+import { PDFProvider } from './contexts/PDFContext'; 
 import { Toaster } from 'react-hot-toast';
 import { useAuth } from './contexts/AuthContext';
 import './index.css';
@@ -49,37 +51,41 @@ function App() {
                 <ProgressProvider>
                   <RegularProgressProvider>
                     <HifzReportProvider>
-                      <ClassProvider>
-                        <SubjectProvider>
-                          <PasswordResetProvider> {/* Add PasswordResetProvider here */}
-                            <Router>
-                              <div className="min-h-screen bg-white text-black">
-                                <AppContent />
-                                <Toaster
-                                  position="top-right"
-                                  toastOptions={{
-                                    duration: 4000,
-                                    style: {
-                                      background: '#1f2937',
-                                      color: '#ffffff',
-                                    },
-                                    success: {
-                                      style: {
-                                        background: '#065f46',
-                                      },
-                                    },
-                                    error: {
-                                      style: {
-                                        background: '#dc2626',
-                                      },
-                                    },
-                                  }}
-                                />
-                              </div>
-                            </Router>
-                          </PasswordResetProvider>
-                        </SubjectProvider>
-                      </ClassProvider>
+                      <HifzProvider>
+                        <ClassProvider>
+                          <SubjectProvider>
+                            <PasswordResetProvider>
+                              <PDFProvider>
+                                <Router>
+                                  <div className="min-h-screen bg-white text-black">
+                                    <AppContent />
+                                    <Toaster
+                                      position="top-right"
+                                      toastOptions={{
+                                        duration: 4000,
+                                        style: {
+                                          background: '#1f2937',
+                                          color: '#ffffff',
+                                        },
+                                        success: {
+                                          style: {
+                                            background: '#065f46',
+                                          },
+                                        },
+                                        error: {
+                                          style: {
+                                            background: '#dc2626',
+                                          },
+                                        },
+                                      }}
+                                    />
+                                  </div>
+                                </Router>
+                              </PDFProvider>
+                            </PasswordResetProvider>
+                          </SubjectProvider>
+                        </ClassProvider>
+                      </HifzProvider>
                     </HifzReportProvider>
                   </RegularProgressProvider>
                 </ProgressProvider>
