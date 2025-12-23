@@ -14,7 +14,7 @@ const ParaProgressAnalytics = ({
   handleMarkParaCompleted,
   hifzLoading
 }) => {
-  if (!analytics && !progressStats) {
+  if (!analytics && !progressStats && !hifzStatus) {
     return (
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
         <div className="mx-auto h-12 w-12 text-gray-400">📊</div>
@@ -28,11 +28,30 @@ const ParaProgressAnalytics = ({
     );
   }
 
-  const displayData = analytics || progressStats;
+  // 🔥 FIX: Get current para from the right source
+  const currentPara = hifzStatus?.currentPara || 
+                     analytics?.currentPara || 
+                     progressStats?.currentPara || 
+                     1;
+
+  // Create a complete displayData object
+  const displayData = {
+    totalSessions: progressStats?.totalSessions || 
+                  analytics?.recordCount || 
+                  0,
+    currentPara: currentPara,
+    // Add other stats you need
+  };
+
+  // Also ensure paraVisualization has current para
+  const enhancedParaVisualization = {
+    ...paraVisualization,
+    currentPara: paraVisualization?.currentPara || currentPara
+  };
 
   return (
     <div className="space-y-4 sm:space-y-6">
-      {/* Stats Cards */}
+      {/* Stats Cards - UPDATED */}
       <div className="grid grid-cols-2 gap-3 sm:gap-4 md:gap-6">
         <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-3 sm:p-4">
           <div className="flex items-center justify-between">
@@ -41,7 +60,7 @@ const ParaProgressAnalytics = ({
                 Total Sessions
               </p>
               <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                {displayData.totalSessions || 0}
+                {displayData.totalSessions}
               </p>
             </div>
             <Calendar className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-blue-500 flex-shrink-0" />
@@ -55,7 +74,7 @@ const ParaProgressAnalytics = ({
                 Current Para
               </p>
               <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                Para {displayData.currentPara || 1}
+                Para {currentPara}
               </p>
             </div>
             <BookOpen className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-green-500 flex-shrink-0" />
@@ -69,7 +88,7 @@ const ParaProgressAnalytics = ({
                 Total Memorized
               </p>
               <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                {paraVisualization.totalMemorized}/30
+                {enhancedParaVisualization.totalMemorized || 0}/30
               </p>
             </div>
             <Award className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-purple-500 flex-shrink-0" />
@@ -83,7 +102,7 @@ const ParaProgressAnalytics = ({
                 Completion
               </p>
               <p className="text-xl sm:text-2xl font-bold text-gray-900">
-                {paraVisualization.completionPercentage.toFixed(1)}%
+                {enhancedParaVisualization.completionPercentage?.toFixed(1) || 0}%
               </p>
             </div>
             <Target className="h-6 w-6 sm:h-7 sm:w-7 md:h-8 md:w-8 text-gold flex-shrink-0" />
@@ -91,7 +110,7 @@ const ParaProgressAnalytics = ({
         </div>
       </div>
 
-      {/* Para Progress Visualization */}
+      {/* Para Progress Visualization - UPDATED */}
       <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
         <h3 className="text-base sm:text-lg font-semibold text-gray-900 mb-3 sm:mb-4 flex items-center">
           <Layers className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-gold" />
@@ -100,13 +119,13 @@ const ParaProgressAnalytics = ({
         
         <div className="mb-4">
           <div className="flex justify-between text-sm text-gray-600 mb-1">
-            <span>Progress: {paraVisualization.totalMemorized} of 30 Paras</span>
-            <span>{paraVisualization.completionPercentage.toFixed(1)}%</span>
+            <span>Progress: {enhancedParaVisualization.totalMemorized || 0} of 30 Paras</span>
+            <span>{enhancedParaVisualization.completionPercentage?.toFixed(1) || 0}%</span>
           </div>
           <div className="w-full bg-gray-200 rounded-full h-3">
             <div 
               className="bg-gradient-to-r from-green-400 to-gold h-3 rounded-full transition-all duration-500"
-              style={{ width: `${paraVisualization.completionPercentage}%` }}
+              style={{ width: `${enhancedParaVisualization.completionPercentage || 0}%` }}
             ></div>
           </div>
         </div>
@@ -114,10 +133,10 @@ const ParaProgressAnalytics = ({
         <div className="grid grid-cols-5 sm:grid-cols-10 gap-1 sm:gap-2">
           {Array.from({ length: 30 }, (_, i) => {
             const paraNumber = i + 1;
-            const isCompleted = paraVisualization.completed.includes(paraNumber);
-            const isAlreadyMemorized = paraVisualization.alreadyMemorized.includes(paraNumber);
-            const isCurrent = paraNumber === paraVisualization.currentPara;
-            const isMemorized = paraVisualization.allMemorized.includes(paraNumber);
+            const isCompleted = enhancedParaVisualization.completed?.includes(paraNumber) || false;
+            const isAlreadyMemorized = enhancedParaVisualization.alreadyMemorized?.includes(paraNumber) || false;
+            const isCurrent = paraNumber === (enhancedParaVisualization.currentPara || 1);
+            const isMemorized = enhancedParaVisualization.allMemorized?.includes(paraNumber) || false;
             
             let bgColor = "bg-gray-100";
             let textColor = "text-gray-700";
@@ -185,9 +204,9 @@ const ParaProgressAnalytics = ({
         </div>
       </div>
 
-      {/* Para Completion Manager */}
+      {/* Para Completion Manager - PASS ENHANCED DATA */}
       <ParaCompletionManager 
-        paraVisualization={paraVisualization}
+        paraVisualization={enhancedParaVisualization}
         completionData={completionData}
         handleCompletionChange={handleCompletionChange}
         handleUpdateParaCompletion={handleUpdateParaCompletion}

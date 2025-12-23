@@ -66,26 +66,123 @@ export const HifzProvider = ({ children }) => {
 
   // ============= Progress Management =============
 
-  /**
-   * Save daily progress for selected student
-   */
- const saveProgress = useCallback(async (progressData) => {
-  // Get the actual student ID from the selectedStudent object
-  const studentId = selectedStudent?.student?.id || selectedStudent?.id;
+
+// ============= Analytics Functions (Define First) =============
+
+/**
+ * Fetch analytics for a student
+ */
+const fetchAnalytics = useCallback(async (studentId, days = 30) => {
+  const id = studentId || selectedStudent?.id;
+  if (!id) return;
+
+  setLoadingState('analytics', true);
+  setError(null);
+
+  try {
+    const result = await hifzServices.getStudentAnalytics(id, days);
+    setAnalytics(result.analytics);
+    return { success: true, data: result };
+  } catch (error) {
+    handleError(error, 'Failed to fetch analytics');
+    return { success: false };
+  } finally {
+    setLoadingState('analytics', false);
+  }
+}, [selectedStudent]);
+
+/**
+ * Fetch progress records for a student
+ */
+const fetchStudentProgress = useCallback(async (studentId, params = {}) => {
+  const id = studentId || selectedStudent?.id;
+  if (!id) return;
+
+  setLoadingState('progress', true);
+  setError(null);
+
+  try {
+    const result = await hifzServices.getStudentProgress(id, {
+      page: pagination.page,
+      limit: pagination.limit,
+      ...params
+    });
+
+    setProgressRecords(result.progress || []);
+    setHifzStatus(result.hifzStatus);
+    setPagination(prev => ({
+      ...prev,
+      ...result.pagination
+    }));
+
+    return { success: true, data: result };
+  } catch (error) {
+    handleError(error, 'Failed to fetch progress records');
+    return { success: false };
+  } finally {
+    setLoadingState('progress', false);
+  }
+}, [selectedStudent, pagination.page, pagination.limit]);
+
+// ============= Progress Management Functions (Define After Analytics) =============
+
+const saveProgress = useCallback(async (studentIdOrData, progressData) => {
   
-  if (!studentId) {
+  let actualStudentId;
+  let actualProgressData;
+  
+  // 🔥 FIXED: Handle BOTH calling patterns
+  if (typeof studentIdOrData === 'string') {
+    // Called with: saveProgress(studentId, progressData)
+    actualStudentId = studentIdOrData;
+    actualProgressData = progressData;
+  } else if (typeof studentIdOrData === 'object' && studentIdOrData !== null) {
+    // Called with: saveProgress(progressData) - student already selected
+    const studentIdFromContext = selectedStudent?.student?.id || selectedStudent?.id;
+    if (!studentIdFromContext) {
+      toast.error('No student selected');
+      return { success: false, error: 'No student selected' };
+    }
+    actualStudentId = studentIdFromContext;
+    actualProgressData = studentIdOrData;
+  } else {
+    toast.error('Invalid parameters passed to saveProgress');
+    return { success: false, error: 'Invalid parameters' };
+  }
+  
+  if (!actualStudentId) {
     toast.error('No student selected or invalid student data');
     return { success: false, error: 'No student selected' };
+  }
+  
+  if (!actualProgressData || typeof actualProgressData !== 'object') {
+    toast.error('Invalid progress data');
+    return { success: false, error: 'Invalid progress data' };
   }
 
   setLoadingState('progress', true);
   setError(null);
 
   try {
-    const result = await hifzServices.saveProgress(studentId, progressData);
+    console.log('📤 Context - Saving progress:', {
+      studentId: actualStudentId,
+      progressData: actualProgressData,
+      selectedStudent: selectedStudent
+    });
     
-    // Update local state
-    setProgressRecords(prev => [result.progress, ...prev]);
+    const result = await hifzServices.saveProgress(actualStudentId, actualProgressData);
+    
+    console.log('✅ Context - Save result:', result);
+    
+    // Check if result has success property
+    if (!result.success) {
+      throw new Error(result.error || 'Failed to save progress');
+    }
+    
+    // Update local state if we have progress data
+    if (result.progress) {
+      setProgressRecords(prev => [result.progress, ...prev]);
+    }
     
     // Show weekly performance warning if applicable
     if (result.weeklyPerformance?.hasPoorPerformance) {
@@ -98,18 +195,24 @@ export const HifzProvider = ({ children }) => {
 
     // Refresh analytics and status
     await Promise.all([
-      fetchAnalytics(studentId),
-      fetchStudentProgress(studentId)
+      fetchAnalytics(actualStudentId),
+      fetchStudentProgress(actualStudentId)
     ]);
 
     return { success: true, data: result };
   } catch (error) {
+    console.error('❌ Context - Save error:', error);
     const errorMsg = handleError(error, 'Failed to save progress');
-    return { success: false, error: errorMsg };
+    return { 
+      success: false, 
+      error: errorMsg,
+      details: error 
+    };
   } finally {
     setLoadingState('progress', false);
   }
-}, [selectedStudent]);
+}, [selectedStudent, fetchAnalytics, fetchStudentProgress]);
+
 
 
   /**
@@ -152,38 +255,7 @@ export const HifzProvider = ({ children }) => {
     }
   }, [selectedStudent]);
 
-  /**
-   * Fetch progress records for a student
-   */
-  const fetchStudentProgress = useCallback(async (studentId, params = {}) => {
-    const id = studentId || selectedStudent?.id;
-    if (!id) return;
-
-    setLoadingState('progress', true);
-    setError(null);
-
-    try {
-      const result = await hifzServices.getStudentProgress(id, {
-        page: pagination.page,
-        limit: pagination.limit,
-        ...params
-      });
-
-      setProgressRecords(result.progress || []);
-      setHifzStatus(result.hifzStatus);
-      setPagination(prev => ({
-        ...prev,
-        ...result.pagination
-      }));
-
-      return { success: true, data: result };
-    } catch (error) {
-      handleError(error, 'Failed to fetch progress records');
-      return { success: false };
-    } finally {
-      setLoadingState('progress', false);
-    }
-  }, [selectedStudent, pagination.page, pagination.limit]);
+ 
 
   /**
    * Initialize Hifz status for new student
@@ -249,27 +321,7 @@ export const HifzProvider = ({ children }) => {
 
   // ============= Analytics =============
 
-  /**
-   * Fetch analytics for a student
-   */
-  const fetchAnalytics = useCallback(async (studentId, days = 30) => {
-    const id = studentId || selectedStudent?.id;
-    if (!id) return;
-
-    setLoadingState('analytics', true);
-    setError(null);
-
-    try {
-      const result = await hifzServices.getStudentAnalytics(id, days);
-      setAnalytics(result.analytics);
-      return { success: true, data: result };
-    } catch (error) {
-      handleError(error, 'Failed to fetch analytics');
-      return { success: false };
-    } finally {
-      setLoadingState('analytics', false);
-    }
-  }, [selectedStudent]);
+  
 
   /**
    * Fetch class analytics

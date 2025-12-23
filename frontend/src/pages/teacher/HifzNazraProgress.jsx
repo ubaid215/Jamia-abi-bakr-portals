@@ -90,21 +90,33 @@ const HifzNazraProgress = () => {
   }, [selectedClass]);
 
   // Handle student selection
-  const handleSelectStudent = async (student) => {
-    setSelectedStudent(student);
-    hifzSelectStudent(student);
-    
-    if (student?.student?.id) {
-      try {
-        await Promise.all([
-          fetchStudentProgress(student.student.id),
-          fetchAnalytics(student.student.id, 30)
-        ]);
-      } catch (error) {
-        console.error('Failed to load student data:', error);
-      }
+  // Fix the handleSelectStudent function
+const handleSelectStudent = async (student) => {
+  console.log('👤 Selecting student:', {
+    student,
+    studentId: student.student?.id,
+    name: student.student?.user?.name
+  });
+  
+  setSelectedStudent(student);
+  
+  // Wait for context to update
+  await hifzSelectStudent(student);
+  
+  const studentId = student.student?.id;
+  if (studentId) {
+    try {
+      console.log('🔄 Loading student data for:', studentId);
+      await Promise.all([
+        fetchStudentProgress(studentId),
+        fetchAnalytics(studentId, 30)
+      ]);
+      console.log('✅ Student data loaded');
+    } catch (error) {
+      console.error('❌ Failed to load student data:', error);
     }
-  };
+  }
+};
 
   // Handle report generation
   const handleGenerateReport = async () => {
@@ -223,10 +235,20 @@ const HifzNazraProgress = () => {
     [analytics, hifzStatus, calculatedCurrentPara]
   );
 
-  const paraVisualization = useMemo(() => 
-    calculateParaLogic.getParaVisualization(hifzStatus, calculatedCurrentPara),
-    [hifzStatus, calculatedCurrentPara]
-  );
+  const paraVisualization = useMemo(() => {
+  console.log('🎯 Creating paraVisualization:', {
+    hifzStatus,
+    calculatedCurrentPara
+  });
+  
+  const visualization = calculateParaLogic.getParaVisualization(hifzStatus, calculatedCurrentPara);
+  
+  // Ensure it has currentPara
+  return {
+    ...visualization,
+    currentPara: visualization.currentPara || calculatedCurrentPara || 1
+  };
+}, [hifzStatus, calculatedCurrentPara]);
 
   if (teacherLoading) {
     return (

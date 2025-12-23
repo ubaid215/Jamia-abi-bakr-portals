@@ -567,7 +567,7 @@ model NazraProgress {
 
 // Hifz-specific progress model
 model HifzProgress {
-  id          String   @id @default(uuid())
+  id          String   @id @default(cuid())
   student     Student  @relation(fields: [studentId], references: [id])
   studentId   String
   teacher     Teacher? @relation(fields: [teacherId], references: [id])
@@ -575,17 +575,17 @@ model HifzProgress {
   date        DateTime @default(now())
   
   // Daily progress fields
-  sabaq       String?  // New lesson (e.g., "Surah Al-Baqarah 1-5")
+  sabaq       String?  // New lesson (e.g., "Para 3 lines 1-20")
   sabaqLines  Int      @default(0) // Number of lines in new lesson
   sabaqMistakes Int    @default(0) // Mistakes in Sabaq
   
-  sabqi       String?  // Recent revision
-  sabqiLines  Int      @default(0) // Number of lines in revision
-  sabqiMistakes Int    @default(0) // Mistakes in Sabqi
+  sabqi       String?  // Recent revision (e.g., "Para 2")
+  sabqiLines  Int      @default(0) // Always 0 - sabqi is just a string
+  sabqiMistakes Int    @default(0) // But still track mistakes
   
-  manzil      String?  // Older revision (Manzil/Para reference)
-  manzilLines Int      @default(0) // Number of lines in Manzil
-  manzilMistakes Int   @default(0) // Mistakes in Manzil
+  manzil      String?  // Older revision (e.g., "Para 1")
+  manzilLines Int      @default(0) // Always 0 - manzil is just a string
+  manzilMistakes Int   @default(0) // But still track mistakes
   
   totalMistakes Int    @default(0) // Total mistakes for the day
   
@@ -593,7 +593,7 @@ model HifzProgress {
   attendance  AttendanceStatus @default(PRESENT)
   
   // Performance condition (auto-calculated)
-  condition   String?  // "Excellent", "Good", "Medium", "Below Average", "Need Focus"
+  condition   String?  // "Excellent", "Good", "Medium", "Below Average"
   
   // Para tracking fields
   currentPara     Int?     // Current Para number (1-30)

@@ -6,77 +6,120 @@ import api from './api';
 const hifzServices = {
   // ============= Progress Management =============
 
-  /**
-   * Save daily Hifz progress for a student
-   * @param {string} studentId - Student ID
-   * @param {Object} progressData - Progress data
-   * @returns {Promise} Progress report with weekly performance
-   */
+
+
   saveProgress: async (studentId, progressData) => {
-  try {
-    console.log(`📤 Saving progress for student ${studentId}:`, progressData);
-    
-    const response = await api.post(`/students/${studentId}/hifz/progress`, progressData);
-    
-    console.log('✅ Progress save response:', response.data);
-    
-    // Ensure response has success property
-    if (response.data && response.data.success !== undefined) {
-      return response.data;
-    } else {
-      // If backend doesn't return success property, assume it's successful
-      return { 
-        success: true, 
-        progress: response.data,
-        message: 'Progress saved successfully'
+    try {
+      // Clean studentId
+      const cleanStudentId = studentId.replace(/^"+|"+$/g, '');
+      
+      // ✅ CRITICAL: Validate progressData is an object
+      if (!progressData || typeof progressData !== 'object') {
+        console.error('❌ Invalid progressData:', progressData);
+        throw new Error('Progress data must be an object');
+      }
+      
+      // ✅ Ensure we're not accidentally sending just the studentId
+      if (typeof progressData === 'string') {
+        console.error('❌ progressData is a string, not an object:', progressData);
+        throw new Error('Progress data cannot be a string');
+      }
+      
+      console.log(`📤 Saving progress for student ${cleanStudentId}`);
+      console.log('📋 Progress data:', JSON.stringify(progressData, null, 2));
+      
+      // ✅ Validate required fields - UPDATED: removed sabqiLines and manzilLines
+      const requiredFields = [
+        'date', 
+        'sabaq', 
+        'sabaqLines', 
+        'sabaqMistakes',
+        'sabqi',           // Now just a string, not required to have lines
+        'sabqiMistakes',   // But mistakes are still tracked
+        'manzil',          // Now just a string, not required to have lines
+        'manzilMistakes',  // But mistakes are still tracked
+        'attendance'       // Added attendance as required
+      ];
+      
+      const missingFields = requiredFields.filter(field => 
+        progressData[field] === undefined || progressData[field] === null
+      );
+      
+      if (missingFields.length > 0) {
+        console.error('❌ Missing required fields:', missingFields);
+        throw new Error(`Missing required fields: ${missingFields.join(', ')}`);
+      }
+      
+      // ✅ Ensure sabqiLines and manzilLines are always 0 (if provided)
+      // But they're not required anymore, so only set if they exist
+      const finalData = {
+        ...progressData,
+        sabqiLines: progressData.sabqiLines || 0,  // Default to 0 if not provided
+        manzilLines: progressData.manzilLines || 0 // Default to 0 if not provided
       };
-    }
-  } catch (error) {
-    console.error('❌ Progress save error:', {
-      status: error.response?.status,
-      statusText: error.response?.statusText,
-      data: error.response?.data,
-      url: error.config?.url,
-      method: error.config?.method
-    });
-    
-    // If backend returns an error response with data
-    if (error.response?.data) {
-      // Check if it's an error object
-      if (typeof error.response.data === 'object' && error.response.data !== null) {
-        return {
-          success: false,
-          error: error.response.data.error || error.response.data.message || 'Failed to save progress',
-          ...error.response.data
-        };
-      }
-      // Check if it's a string error
-      if (typeof error.response.data === 'string') {
-        // Check if it's HTML
-        if (error.response.data.includes('<!DOCTYPE') || 
-            error.response.data.includes('<html>') ||
-            error.response.data.includes('Error')) {
-          console.error('⚠️ Server returned HTML error page');
-          return {
-            success: false,
-            error: 'Server error: Please check backend server logs.'
-          };
+      
+      // ✅ Remove any undefined fields
+      Object.keys(finalData).forEach(key => {
+        if (finalData[key] === undefined) {
+          delete finalData[key];
         }
-        // It's a plain text error
-        return {
-          success: false,
-          error: error.response.data
-        };
+      });
+      
+      console.log('📤 Final data to send:', JSON.stringify(finalData, null, 2));
+      
+      // Make the API call
+      const response = await api.post(`/hifz/progress/${cleanStudentId}`, finalData);
+      
+      console.log('✅ Progress saved successfully:', response.data);
+      return response.data;
+      
+    } catch (error) {
+      console.error('❌ Progress save error:', {
+        status: error.response?.status,
+        statusText: error.response?.statusText,
+        data: error.response?.data,
+        url: error.config?.url,
+        method: error.config?.method,
+        studentId: studentId,
+        progressData: progressData,
+        errorMessage: error.message
+      });
+      
+      // Enhanced error handling
+      if (error.response?.data) {
+        let errorMessage = 'Failed to save progress';
+        
+        if (typeof error.response.data === 'string') {
+          // Check if it's an HTML error page
+          if (error.response.data.includes('<!DOCTYPE') || 
+              error.response.data.includes('<html>')) {
+            errorMessage = 'Server error: Please check backend logs';
+          } else {
+            // Try to extract JSON error
+            try {
+              const jsonMatch = error.response.data.match(/\{.*\}/s);
+              if (jsonMatch) {
+                const parsedError = JSON.parse(jsonMatch[0]);
+                errorMessage = parsedError.message || parsedError.error;
+              } else {
+                errorMessage = error.response.data.substring(0, 200);
+              }
+            } catch (parseError) {
+              errorMessage = error.response.data.substring(0, 200);
+            }
+          }
+        } else if (typeof error.response.data === 'object') {
+          errorMessage = error.response.data.message || 
+                        error.response.data.error || 
+                        'Unknown server error';
+        }
+        
+        throw new Error(errorMessage);
       }
+      
+      throw error;
     }
-    
-    // Return generic error
-    return {
-      success: false,
-      error: error.message || 'Failed to save progress'
-    };
-  }
-},
+  },
 
   /**
    * Update existing progress report
@@ -87,9 +130,16 @@ const hifzServices = {
    */
   updateProgress: async (studentId, progressId, updateData) => {
     try {
+      // Ensure sabqiLines and manzilLines are 0 if updating
+      const finalUpdateData = {
+        ...updateData,
+        sabqiLines: updateData.sabqiLines || 0,
+        manzilLines: updateData.manzilLines || 0
+      };
+      
       const response = await api.put(
         `/hifz/progress/${studentId}/${progressId}`,
-        updateData
+        finalUpdateData
       );
       return response.data;
     } catch (error) {

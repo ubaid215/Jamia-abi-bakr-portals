@@ -10,236 +10,237 @@ class HifzProgressController {
   static get TOTAL_PARAS() { return HifzCalculationHelper.TOTAL_PARAS; }
   static get AVG_LINES_PER_PARA() { return HifzCalculationHelper.AVG_LINES_PER_PARA; }
 
-  // Save daily Hifz progress report
- async saveProgress(req, res) {
-  const requestStartTime = Date.now();
+  // Save daily Hifz progress report with improved calculations
+  async saveProgress(req, res) {
+    const requestStartTime = Date.now();
 
-  try {
-    console.log('📄 [HIFZ PROGRESS] ================================');
-    console.log('📄 [HIFZ PROGRESS] Save progress request received');
-    console.log('📄 [HIFZ PROGRESS] Timestamp:', new Date().toISOString());
+    try {
+      console.log('📄 [HIFZ PROGRESS] Save progress request received');
 
-    const { studentId } = req.params;
-    const {
-      date,
-      sabaq,
-      sabaqLines,
-      sabaqMistakes,
-      sabqi,
-      sabqiLines,
-      sabqiMistakes,
-      manzil,
-      manzilLines,
-      manzilMistakes,
-      attendance,
-      currentPara,
-      currentParaProgress,
-      notes,
-      remarks
-    } = req.body;
+      const { studentId } = req.params;
+      const {
+        date,
+        sabaq,
+        sabaqLines,
+        sabaqMistakes,
+        sabqi,           // Now just a string like "Para 2"
+        sabqiMistakes,   // But still track mistakes
+        manzil,          // Now just a string like "Para 1"
+        manzilMistakes,  // But still track mistakes
+        attendance,
+        currentPara,
+        currentParaProgress,
+        notes,
+        remarks
+      } = req.body;
 
-    console.log('➡️ [STEP 1] Params & Body:', {
-      studentId,
-      date,
-      sabaq,
-      sabaqLines,
-      sabaqMistakes,
-      sabqi,
-      sabqiLines,
-      sabqiMistakes,
-      manzil,
-      manzilLines,
-      manzilMistakes,
-      attendance,
-      currentPara,
-      currentParaProgress,
-      notes,
-      remarks
-    });
+      console.log('📋 Request details:', { studentId, date, attendance });
 
-    /* ================= STUDENT FETCH ================= */
-    console.log('🔍 [STEP 2] Fetching student details...');
-    const studentFetchStart = Date.now();
+      /* ================= STUDENT FETCH ================= */
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: {
+          hifzStatus: true,
+          user: { select: { name: true } }
+        }
+      });
 
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
-      include: { hifzStatus: true }
-    });
-
-    console.log(`⏱️ [DB] Student fetch time: ${Date.now() - studentFetchStart}ms`);
-
-    if (!student) {
-      console.warn(`❌ [NOT FOUND] Student ID: ${studentId}`);
-      return res.status(404).json({ success: false, message: 'Student not found' });
-    }
-
-    console.log('✅ [STEP 2 COMPLETE] Student found:', {
-      studentId: student.id,
-      hifzStatus: student.hifzStatus
-    });
-
-    /* ================= VALIDATE ATTENDANCE ================= */
-    console.log('📌 [STEP 3] Validating attendance & required fields...');
-    if (attendance === 'PRESENT') {
-      if (sabaqLines === undefined || sabqiLines === undefined || manzilLines === undefined) {
-        console.warn('⚠️ Validation failed for present attendance: missing lines');
-        return res.status(400).json({
+      if (!student) {
+        return res.status(404).json({
           success: false,
-          message: 'Lines and mistakes are required for Present attendance'
+          message: 'Student not found'
         });
       }
-    }
 
-    /* ================= CALCULATE MISTAKES & CONDITION ================= */
-    console.log('🧮 [STEP 4] Calculating total mistakes and condition...');
-    const totalMistakes = (sabaqMistakes || 0) + (sabqiMistakes || 0) + (manzilMistakes || 0);
-    let condition = 'Excellent';
+      console.log(`✅ Student found: ${student.user.name}`);
 
-    if (attendance === 'PRESENT') {
-      if (sabaqMistakes > 2 || sabqiMistakes > 2 || manzilMistakes > 3) {
-        condition = 'Below Average';
-      } else if (sabaqMistakes > 0 || sabqiMistakes > 1 || manzilMistakes > 1) {
-        condition = 'Medium';
-      } else if (totalMistakes === 0) {
-        condition = 'Excellent';
-      } else {
-        condition = 'Good';
-      }
-    } else {
-      condition = 'N/A';
-    }
-
-    console.log('📊 Computed:', { totalMistakes, condition });
-
-    /* ================= PARSE DATE ================= */
-    const reportDate = date ? new Date(date) : new Date();
-    reportDate.setHours(0, 0, 0, 0);
-    console.log('📅 [STEP 5] Report date normalized:', reportDate);
-
-    /* ================= CHECK EXISTING REPORT ================= */
-    console.log('🔍 [STEP 6] Checking if report already exists...');
-    const existingReport = await prisma.hifzProgress.findFirst({
-      where: {
-        studentId,
-        date: {
-          gte: reportDate,
-          lt: new Date(reportDate.getTime() + 24 * 60 * 60 * 1000)
+      /* ================= VALIDATE ATTENDANCE ================= */
+      if (attendance === 'PRESENT' || attendance === 'Present') {
+        // Only require sabaqLines for present attendance
+        if (sabaqLines === undefined) {
+          return res.status(400).json({
+            success: false,
+            message: 'Sabaq lines are required for Present attendance'
+          });
         }
       }
-    });
 
-    if (existingReport) {
-      console.warn('⚠️ Report already exists for this date:', reportDate);
-      return res.status(400).json({
-        success: false,
-        message: 'A report already exists for this date'
+      /* ================= CALCULATE MISTAKES & CONDITION ================= */
+      // Parse input values
+      const parsedSabaqMistakes = parseInt(sabaqMistakes) || 0;
+      const parsedSabqiMistakes = parseInt(sabqiMistakes) || 0;
+      const parsedManzilMistakes = parseInt(manzilMistakes) || 0;
+
+      const totalMistakes = parsedSabaqMistakes + parsedSabqiMistakes + parsedManzilMistakes;
+
+      // Calculate total lines (only from sabaq now)
+      const totalSabaqLines = attendance === 'PRESENT' || attendance === 'Present' ? (parseInt(sabaqLines) || 0) : 0;
+
+      // Condition calculation based on total mistakes
+      let condition = 'Excellent';
+
+      if (attendance === 'PRESENT' || attendance === 'Present') {
+        if (totalMistakes === 0) {
+          condition = 'Excellent';
+        } else if (totalMistakes <= 2) {
+          condition = 'Good';
+        } else if (totalMistakes <= 5) {
+          condition = 'Medium';
+        } else {
+          condition = 'Below Average';
+        }
+      } else {
+        condition = 'N/A';
+      }
+
+      console.log('📊 Calculated:', { totalSabaqLines, totalMistakes, condition });
+
+      /* ================= PARSE DATE ================= */
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const reportDate = date
+        ? new Date(`${date}T00:00:00`)
+        : today;
+
+      console.log('📅 Report date:', reportDate.toDateString());
+
+      /* ================= CHECK EXISTING REPORT ================= */
+      const existingReport = await prisma.hifzProgress.findFirst({
+        where: {
+          studentId,
+          date: {
+            gte: reportDate,
+            lt: new Date(reportDate.getTime() + 24 * 60 * 60 * 1000)
+          }
+        }
       });
-    }
 
-    /* ================= VALIDATE CURRENT PARA ================= */
-    console.log('📌 [STEP 7] Validating current para...');
-    let completedParas = [];
-    let alreadyMemorizedParas = [];
-    if (student.hifzStatus && currentPara) {
-      const alreadyMemorized = student.hifzStatus.alreadyMemorizedParas || [];
-      const canWork = HifzCalculationHelper.canWorkOnPara(
-        currentPara,
-        alreadyMemorized,
-        student.hifzStatus.currentPara
-      );
-
-      if (!canWork.allowed) {
-        console.warn('⚠️ Cannot work on current para:', canWork.reason);
+      if (existingReport) {
+        console.warn('⚠️ Report already exists for this date');
         return res.status(400).json({
           success: false,
-          message: canWork.reason
+          message: 'A report already exists for this date'
         });
       }
-    }
 
-    /* ================= CREATE PROGRESS REPORT ================= */
-    console.log('🖨️ [STEP 8] Creating new Hifz progress report...');
-    const newProgress = await prisma.hifzProgress.create({
-      data: {
-        studentId,
-        date: reportDate,
-        sabaq: sabaq || '',
-        sabaqLines: attendance === 'PRESENT' ? (sabaqLines || 0) : 0,
-        sabaqMistakes: attendance === 'PRESENT' ? (sabaqMistakes || 0) : 0,
-        sabqi: sabqi || '',
-        sabqiLines: attendance === 'PRESENT' ? (sabqiLines || 0) : 0,
-        sabqiMistakes: attendance === 'PRESENT' ? (sabqiMistakes || 0) : 0,
-        manzil: manzil || '',
-        manzilLines: attendance === 'PRESENT' ? (manzilLines || 0) : 0,
-        manzilMistakes: attendance === 'PRESENT' ? (manzilMistakes || 0) : 0,
-        totalMistakes,
-        attendance: attendance || 'PRESENT',
-        condition,
-        currentPara: currentPara || student.hifzStatus?.currentPara || 1,
-        currentParaProgress: currentParaProgress || student.hifzStatus?.currentParaProgress || 0,
-        completedParas,
-        alreadyMemorizedParas,
-        notes,
-        remarks,
-        teacherId: req.user?.teacherId
+      /* ================= HANDLE PARA COMPLETION ================= */
+      console.log('🎯 Handling para completion logic...');
+
+      let newCurrentPara = currentPara || student.hifzStatus?.currentPara || 1;
+      let newCurrentParaProgress = currentParaProgress || student.hifzStatus?.currentParaProgress || 0;
+      let completedParas = student.hifzStatus?.completedParas || [];
+      let alreadyMemorizedParas = student.hifzStatus?.alreadyMemorizedParas || [];
+
+      // Check if a para was completed (100% progress)
+      const isMarkingComplete = currentParaProgress === 100;
+
+      if (isMarkingComplete && newCurrentPara) {
+        // Add current para to completed list
+        if (!completedParas.includes(newCurrentPara)) {
+          completedParas.push(newCurrentPara);
+          console.log(`✅ Para ${newCurrentPara} marked as completed`);
+
+          // Auto-advance to next para
+          if (newCurrentPara < 30) {
+            newCurrentPara++;
+            newCurrentParaProgress = 0;
+            console.log(`➡️ Auto-advanced to Para ${newCurrentPara}`);
+          } else {
+            console.log('🎉 All 30 paras completed!');
+          }
+
+          // Send completion notification
+          await HifzNotificationService.notifyParaCompletion(student, newCurrentPara - 1);
+        }
       }
-    });
 
-    console.log('✅ Progress report created:', newProgress.id);
+      /* ================= CREATE PROGRESS REPORT ================= */
+      const newProgress = await prisma.hifzProgress.create({
+        data: {
+          studentId,
+          date: reportDate,
 
-    /* ================= UPDATE HIFZ STATUS ================= */
-    console.log('🔄 [STEP 9] Updating student Hifz status...');
-    await this.updateStudentHifzStatus(studentId);
-    console.log('✅ Student Hifz status updated');
+          // Sabaq (new memorization) - has lines
+          sabaq: sabaq || '',
+          sabaqLines: totalSabaqLines,
+          sabaqMistakes: parsedSabaqMistakes,
 
-    /* ================= WEEKLY PERFORMANCE & ALERTS ================= */
-    console.log('📊 [STEP 10] Checking weekly performance...');
-    const weeklyPerformance = await this.checkWeeklyPerformance(studentId);
-    console.log('✅ Weekly performance:', weeklyPerformance);
+          // Sabqi (revision) - just a string, no lines
+          sabqi: sabqi || '', // e.g., "Para 2"
+          sabqiLines: 0, // No lines counted for sabqi
+          sabqiMistakes: parsedSabqiMistakes,
 
-    if (weeklyPerformance.hasPoorPerformance) {
-      console.log('⚠️ Poor performance detected, sending notifications...');
-      await HifzNotificationService.notifyPoorPerformance(student, weeklyPerformance);
-      console.log('✅ Notifications sent');
-    }
+          // Manzil (older revision) - just a string, no lines
+          manzil: manzil || '', // e.g., "Para 1"
+          manzilLines: 0, // No lines counted for manzil
+          manzilMistakes: parsedManzilMistakes,
 
-    /* ================= SOCKET.IO EMIT ================= */
-    if (global.io) {
-      console.log('📡 [STEP 11] Emitting real-time update via Socket.io...');
-      global.io.emit('hifzProgressUpdated', {
-        studentId,
-        progress: newProgress,
-        weeklyPerformance
+          // Total calculations
+          totalMistakes: totalMistakes,
+
+          // Attendance and condition
+          attendance: attendance || 'PRESENT',
+          condition,
+
+          // Para tracking
+          currentPara: newCurrentPara,
+          currentParaProgress: newCurrentParaProgress,
+          completedParas,
+          alreadyMemorizedParas,
+
+          // Notes
+          notes: notes || '',
+          remarks: remarks || '',
+          teacherId: req.user?.teacherId
+        }
       });
-      console.log('✅ Socket.io update emitted');
+
+      console.log(`✅ Progress report created: ${newProgress.id}`);
+
+      /* ================= UPDATE HIFZ STATUS ================= */
+      console.log('🔄 Updating student Hifz status...');
+      await this.updateStudentHifzStatus(studentId);
+      console.log('✅ Student Hifz status updated');
+
+      /* ================= WEEKLY PERFORMANCE CHECK ================= */
+      console.log('📊 Checking weekly performance...');
+      const weeklyPerformance = await this.checkWeeklyPerformance(studentId);
+
+      if (weeklyPerformance.hasPoorPerformance) {
+        console.log('⚠️ Poor performance detected');
+        await HifzNotificationService.notifyPoorPerformance(student, weeklyPerformance);
+      }
+
+      /* ================= SOCKET.IO UPDATE ================= */
+      if (global.io) {
+        global.io.emit('hifzProgressUpdated', {
+          studentId,
+          progress: newProgress,
+          weeklyPerformance
+        });
+        console.log('📡 Real-time update sent');
+      }
+
+      /* ================= RESPONSE ================= */
+      res.status(201).json({
+        success: true,
+        progress: newProgress,
+        weeklyPerformance,
+        message: isMarkingComplete ? `Para ${newCurrentPara - 1} completed! Advanced to Para ${newCurrentPara}` : 'Progress saved successfully'
+      });
+
+      console.log(`🎉 Save progress completed in ${Date.now() - requestStartTime}ms`);
+
+    } catch (error) {
+      console.error('🔥 Error saving progress:', error.message);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: process.env.NODE_ENV === 'development' ? error.message : undefined
+      });
     }
-
-    /* ================= RESPONSE ================= */
-    res.status(201).json({
-      success: true,
-      progress: newProgress,
-      weeklyPerformance
-    });
-
-    console.log(`🎉 [SUCCESS] Save progress completed in ${Date.now() - requestStartTime}ms`);
-    console.log('📄 [HIFZ PROGRESS] ================================');
-
-  } catch (error) {
-    console.error('🔥 [HIFZ PROGRESS ERROR]', {
-      message: error.message,
-      stack: error.stack,
-      params: req.params,
-      body: req.body
-    });
-
-    res.status(500).json({
-      success: false,
-      message: 'Internal server error',
-      error: error.message
-    });
   }
-}
-
 
   // Update existing progress report
   async updateProgress(req, res) {
@@ -262,26 +263,32 @@ class HifzProgressController {
         });
       }
 
-      // Recalculate condition if mistakes are updated
+      // Recalculate condition if needed
       let condition = existingProgress.condition;
+      let totalMistakes = existingProgress.totalMistakes;
+
       if (updateData.sabaqMistakes !== undefined ||
         updateData.sabqiMistakes !== undefined ||
         updateData.manzilMistakes !== undefined) {
 
-        const sabaqMistakes = updateData.sabaqMistakes ?? existingProgress.sabaqMistakes;
-        const sabqiMistakes = updateData.sabqiMistakes ?? existingProgress.sabqiMistakes;
-        const manzilMistakes = updateData.manzilMistakes ?? existingProgress.manzilMistakes;
+        const sabaqMistakes = parseInt(updateData.sabaqMistakes) || existingProgress.sabaqMistakes;
+        const sabqiMistakes = parseInt(updateData.sabqiMistakes) || existingProgress.sabqiMistakes;
+        const manzilMistakes = parseInt(updateData.manzilMistakes) || existingProgress.manzilMistakes;
 
-        if (sabaqMistakes > 2 || sabqiMistakes > 2 || manzilMistakes > 3) {
-          condition = 'Below Average';
-        } else if (sabaqMistakes > 0 || sabqiMistakes > 1 || manzilMistakes > 1) {
+        totalMistakes = sabaqMistakes + sabqiMistakes + manzilMistakes;
+
+        if (totalMistakes === 0) {
+          condition = 'Excellent';
+        } else if (totalMistakes <= 2) {
+          condition = 'Good';
+        } else if (totalMistakes <= 5) {
           condition = 'Medium';
         } else {
-          condition = 'Excellent';
+          condition = 'Below Average';
         }
 
         updateData.condition = condition;
-        updateData.totalMistakes = sabaqMistakes + sabqiMistakes + manzilMistakes;
+        updateData.totalMistakes = totalMistakes;
       }
 
       // Update progress
@@ -293,7 +300,7 @@ class HifzProgressController {
       // Recalculate student's overall status
       await this.updateStudentHifzStatus(studentId);
 
-      // Check weekly performance again
+      // Check weekly performance
       const weeklyPerformance = await this.checkWeeklyPerformance(studentId);
 
       // Emit update
@@ -312,7 +319,7 @@ class HifzProgressController {
       });
 
     } catch (error) {
-      console.error('Update Hifz progress error:', error);
+      console.error('Update progress error:', error);
       res.status(500).json({
         success: false,
         message: 'Internal server error'
@@ -320,11 +327,877 @@ class HifzProgressController {
     }
   }
 
-  // Get progress reports for a student
+  // Calculate student analytics with improved logic
+  async calculateStudentAnalytics(student, days, calculateAttendanceRate = true) {
+    const progressRecords = student.hifzProgress || [];
+    const hifzStatus = student.hifzStatus || {};
+
+    console.log(`📊 Processing ${progressRecords.length} records for ${student.user.name}`);
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - parseInt(days));
+
+    // Basic statistics
+    const totalReports = progressRecords.length;
+
+    // Filter present days
+    const presentRecords = progressRecords.filter(r =>
+      r.attendance === 'PRESENT' || r.attendance === 'Present'
+    );
+    const presentDays = presentRecords.length;
+
+    // Calculate actual attendance rate based on report period
+    let attendanceRate = 0;
+    if (calculateAttendanceRate) {
+      // Total days in the period (including weekends if madrasa operates)
+      const totalDaysInPeriod = days;
+      attendanceRate = totalDaysInPeriod > 0 ? (presentDays / totalDaysInPeriod) * 100 : 0;
+    } else {
+      // Only count days with reports
+      attendanceRate = totalReports > 0 ? (presentDays / totalReports) * 100 : 0;
+    }
+
+    // Lines and mistakes calculations (only sabaq lines now)
+    let totalSabaqLines = 0;
+    let totalSabqiLines = 0;
+    let totalManzilLines = 0;
+    let totalMistakes = 0;
+    let highMistakeDays = 0;
+
+    presentRecords.forEach(report => {
+      totalSabaqLines += parseInt(report.sabaqLines) || 0;
+      totalSabqiLines += parseInt(report.sabqiLines) || 0; // Should be 0 now
+      totalManzilLines += parseInt(report.manzilLines) || 0; // Should be 0 now
+      totalMistakes += parseInt(report.totalMistakes) || 0;
+
+      // Count high mistake days
+      if (parseInt(report.totalMistakes) > 5) {
+        highMistakeDays++;
+      }
+    });
+
+    // Total lines is now only from sabaq
+    const totalLines = totalSabaqLines;
+
+    // Calculate averages based on PRESENT days only (not total period)
+    const avgLinesPerDay = presentDays > 0 ? totalLines / presentDays : 0;
+    const avgSabaqLinesPerDay = presentDays > 0 ? totalSabaqLines / presentDays : 0;
+    const avgMistakesPerDay = presentDays > 0 ? totalMistakes / presentDays : 0;
+
+    const mistakeRate = totalLines > 0 ? (totalMistakes / totalLines) * 100 : 0;
+
+    // Para progress calculations
+    const alreadyMemorizedParas = hifzStatus.alreadyMemorizedParas || [];
+    const completedParas = hifzStatus.completedParas || [];
+
+    // Remove duplicates (paras that appear in both lists)
+    const uniqueAlreadyMemorized = alreadyMemorizedParas.filter(p => !completedParas.includes(p));
+    const uniqueCompleted = completedParas.filter(p => !alreadyMemorizedParas.includes(p));
+
+    const totalUniqueMemorizedParas = uniqueAlreadyMemorized.length + uniqueCompleted.length;
+    const currentPara = hifzStatus.currentPara || 1;
+    const currentParaProgress = hifzStatus.currentParaProgress || 0;
+    const remainingParas = 30 - totalUniqueMemorizedParas;
+    const overallCompletion = (totalUniqueMemorizedParas / 30) * 100;
+
+    // Check for overlaps
+    const overlaps = alreadyMemorizedParas.filter(p => completedParas.includes(p));
+
+    // Condition breakdown
+    const conditionBreakdown = {
+      excellent: progressRecords.filter(r => r.condition === 'Excellent').length,
+      good: progressRecords.filter(r => r.condition === 'Good').length,
+      medium: progressRecords.filter(r => r.condition === 'Medium').length,
+      belowAverage: progressRecords.filter(r => r.condition === 'Below Average').length,
+      na: progressRecords.filter(r => r.condition === 'N/A' || !r.condition).length
+    };
+
+    // Calculate consistency score (weighted average)
+    const consistencyScore = presentDays > 0 ? (
+      (attendanceRate * 0.3) +
+      ((100 - Math.min(mistakeRate, 100)) * 0.3) +
+      (overallCompletion * 0.2) +
+      ((conditionBreakdown.excellent / presentDays) * 100 * 0.2)
+    ) : 0;
+
+    // Projections
+    let estimatedDaysToComplete = null;
+    let estimatedCompletionDate = null;
+    let timeDescription = "Not enough data";
+
+    if (avgSabaqLinesPerDay > 0 && remainingParas > 0) {
+      // Calculate remaining lines (average 20 lines per para)
+      const totalLinesNeeded = remainingParas * 20;
+      estimatedDaysToComplete = Math.ceil(totalLinesNeeded / avgSabaqLinesPerDay);
+
+      // Add buffer for review time (20% additional days)
+      estimatedDaysToComplete = Math.ceil(estimatedDaysToComplete * 1.2);
+
+      estimatedCompletionDate = new Date();
+      estimatedCompletionDate.setDate(estimatedCompletionDate.getDate() + estimatedDaysToComplete);
+
+      // Create human-readable time description
+      const months = Math.floor(estimatedDaysToComplete / 30);
+      const weeks = Math.floor((estimatedDaysToComplete % 30) / 7);
+      const remainingDays = estimatedDaysToComplete % 7;
+
+      if (months > 0) {
+        timeDescription = `About ${months} month${months > 1 ? 's' : ''}`;
+        if (weeks > 0) {
+          timeDescription += ` and ${weeks} week${weeks > 1 ? 's' : ''}`;
+        }
+      } else if (weeks > 0) {
+        timeDescription = `About ${weeks} week${weeks > 1 ? 's' : ''}`;
+        if (remainingDays > 0) {
+          timeDescription += ` and ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+        }
+      } else {
+        timeDescription = `About ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+      }
+    }
+
+    // Alerts and recommendations
+    const alerts = [];
+
+    if (attendanceRate < 70 && days >= 7) {
+      alerts.push({
+        severity: 'warning',
+        message: `Low attendance rate: ${attendanceRate.toFixed(1)}%`,
+        recommendation: 'Improve regular attendance for consistent progress'
+      });
+    }
+
+    if (mistakeRate > 10 && totalLines > 20) {
+      alerts.push({
+        severity: 'warning',
+        message: `High mistake rate: ${mistakeRate.toFixed(1)}%`,
+        recommendation: 'Focus on accuracy, slow down, and revise more frequently'
+      });
+    }
+
+    if (totalUniqueMemorizedParas === 0 && presentDays >= 5) {
+      alerts.push({
+        severity: 'info',
+        message: 'No paras memorized yet',
+        recommendation: 'Start para memorization with achievable targets (e.g., 2-3 lines per day)'
+      });
+    }
+
+    if (avgSabaqLinesPerDay < 5 && presentDays >= 5) {
+      alerts.push({
+        severity: 'info',
+        message: `Low memorization rate: ${avgSabaqLinesPerDay.toFixed(1)} new lines/day`,
+        recommendation: 'Gradually increase daily memorization targets'
+      });
+    }
+
+    if (overlaps.length > 0) {
+      alerts.push({
+        severity: 'info',
+        message: `Para overlap detected: ${overlaps.join(', ')}`,
+        recommendation: 'Ensure paras are not counted twice in already memorized and completed lists'
+      });
+    }
+
+    return {
+      student: {
+        id: student.id,
+        name: student.user.name,
+        admissionNo: student.admissionNo
+      },
+      period: {
+        totalDays: parseInt(days),
+        startDate,
+        endDate,
+        daysWithData: totalReports,
+        presentDays
+      },
+      attendance: {
+        rate: parseFloat(attendanceRate.toFixed(1)),
+        presentDays,
+        calculateAttendanceRate
+      },
+      lines: {
+        totalSabaqLines,
+        totalSabqiLines,
+        totalManzilLines,
+        totalLines,
+        avgLinesPerDay: parseFloat(avgLinesPerDay.toFixed(1)),
+        avgSabaqLinesPerDay: parseFloat(avgSabaqLinesPerDay.toFixed(1))
+      },
+      mistakes: {
+        totalMistakes,
+        avgMistakesPerDay: parseFloat(avgMistakesPerDay.toFixed(1)),
+        mistakeRate: parseFloat(mistakeRate.toFixed(1)),
+        highMistakeDays
+      },
+      paraProgress: {
+        alreadyMemorized: uniqueAlreadyMemorized.length,
+        alreadyMemorizedParas: uniqueAlreadyMemorized,
+        completedDuringTraining: uniqueCompleted.length,
+        completedParas: uniqueCompleted,
+        totalMemorized: totalUniqueMemorizedParas,
+        currentPara,
+        currentParaProgress,
+        remainingParas,
+        overallCompletionPercentage: parseFloat(overallCompletion.toFixed(1)),
+        overlaps
+      },
+      performance: {
+        totalReports,
+        consistencyScore: parseFloat(consistencyScore.toFixed(1)),
+        conditionBreakdown,
+        alerts
+      },
+      projection: {
+        estimatedDaysToComplete,
+        estimatedCompletionDate,
+        timeDescription,
+        dailyPaceRequired: remainingParas > 0 && estimatedDaysToComplete ?
+          ((remainingParas * 20) / estimatedDaysToComplete).toFixed(1) : null
+      },
+      recommendations: alerts.map(alert => ({
+        priority: alert.severity === 'warning' ? 'High' : 'Medium',
+        action: alert.recommendation
+      }))
+    };
+  }
+
+  // Helper: Update student's overall Hifz status with improved logic
+  async updateStudentHifzStatus(studentId) {
+    try {
+      console.log(`🔄 Updating Hifz status for student ${studentId}`);
+
+      // Get all progress records
+      const progressRecords = await prisma.hifzProgress.findMany({
+        where: { studentId },
+        orderBy: { date: 'asc' }
+      });
+
+      if (progressRecords.length === 0) {
+        console.log('No progress records found');
+        return;
+      }
+
+      const latestProgress = progressRecords[progressRecords.length - 1];
+      const currentStatus = await prisma.studentHifzStatus.findUnique({
+        where: { studentId }
+      });
+
+      if (!currentStatus) {
+        console.log('No existing Hifz status found');
+        return;
+      }
+
+      // Calculate present days
+      const presentRecords = progressRecords.filter(r =>
+        r.attendance === 'PRESENT' || r.attendance === 'Present'
+      );
+      const totalDaysActive = presentRecords.length;
+
+      // Calculate totals (only sabaq lines now)
+      const totalSabaqLines = presentRecords.reduce((sum, r) => sum + (parseInt(r.sabaqLines) || 0), 0);
+      const totalMistakes = presentRecords.reduce((sum, r) => sum + (parseInt(r.totalMistakes) || 0), 0);
+      const totalLines = totalSabaqLines; // Only sabaq lines count
+
+      // Calculate averages (based on present days only)
+      const averageLinesPerDay = totalDaysActive > 0 ? totalLines / totalDaysActive : 0;
+      const averageSabaqLinesPerDay = totalDaysActive > 0 ? totalSabaqLines / totalDaysActive : 0;
+      const averageMistakesPerDay = totalDaysActive > 0 ? totalMistakes / totalDaysActive : 0;
+
+      const mistakeRate = totalLines > 0 ? (totalMistakes / totalLines) * 100 : 0;
+
+      // Calculate para progress
+      const alreadyMemorizedParas = currentStatus.alreadyMemorizedParas || [];
+      const completedParas = latestProgress.completedParas || [];
+
+      // Remove duplicates
+      const uniqueAlreadyMemorized = alreadyMemorizedParas.filter(p => !completedParas.includes(p));
+      const uniqueCompleted = completedParas.filter(p => !alreadyMemorizedParas.includes(p));
+
+      const totalMemorizedParas = uniqueAlreadyMemorized.length + uniqueCompleted.length;
+      const totalLinesMemorized = totalMemorizedParas * this.AVG_LINES_PER_PARA;
+
+      // Calculate remaining paras and estimated completion
+      const remainingParas = 30 - totalMemorizedParas;
+      let estimatedDaysToComplete = null;
+      let estimatedCompletionDate = null;
+
+      if (averageSabaqLinesPerDay > 0 && remainingParas > 0) {
+        const linesPerPara = 20; // Average lines per para
+        const totalLinesNeeded = remainingParas * linesPerPara;
+        estimatedDaysToComplete = Math.ceil(totalLinesNeeded / averageSabaqLinesPerDay);
+
+        // Add buffer
+        estimatedDaysToComplete = Math.ceil(estimatedDaysToComplete * 1.2);
+
+        estimatedCompletionDate = new Date();
+        estimatedCompletionDate.setDate(estimatedCompletionDate.getDate() + estimatedDaysToComplete);
+      }
+
+      // Update status
+      await prisma.studentHifzStatus.update({
+        where: { studentId },
+        data: {
+          currentPara: latestProgress.currentPara,
+          currentParaProgress: latestProgress.currentParaProgress,
+          completedParas: uniqueCompleted,
+          totalParasCompleted: uniqueCompleted.length,
+          totalLinesMemorized,
+          totalDaysActive,
+          averageLinesPerDay: parseFloat(averageLinesPerDay.toFixed(2)),
+          averageSabaqLinesPerDay: parseFloat(averageSabaqLinesPerDay.toFixed(2)),
+          averageMistakesPerDay: parseFloat(averageMistakesPerDay.toFixed(2)),
+          mistakeRate: parseFloat(mistakeRate.toFixed(2)),
+          totalMistakes,
+          estimatedDaysToComplete,
+          estimatedCompletionDate,
+          lastUpdated: new Date()
+        }
+      });
+
+      console.log(`✅ Hifz status updated for student ${studentId}`);
+
+    } catch (error) {
+      console.error('Error updating Hifz status:', error);
+    }
+  }
+
+  // Get student analytics with improved calculations
+  async getStudentAnalytics(req, res) {
+    const startTime = Date.now();
+
+    try {
+      const { studentId } = req.params;
+      const { days = 30, calculateAttendanceRate = 'true' } = req.query;
+
+      console.log(`📈 Generating analytics for student ${studentId}, last ${days} days`);
+
+      if (!studentId) {
+        return res.status(400).json({
+          success: false,
+          message: 'Student ID is required'
+        });
+      }
+
+      // Calculate end date (today) and start date
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setDate(endDate.getDate() - parseInt(days));
+
+      // Fetch student with progress records
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: {
+          user: { select: { name: true } },
+          hifzStatus: true,
+          hifzProgress: {
+            where: {
+              date: {
+                gte: startDate,
+                lte: endDate
+              }
+            },
+            orderBy: { date: 'desc' }
+          }
+        }
+      });
+
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          message: 'Student not found'
+        });
+      }
+
+      // Calculate analytics
+      const analytics = await this.calculateStudentAnalytics(
+        student,
+        parseInt(days),
+        calculateAttendanceRate === 'true'
+      );
+
+      console.log(`✅ Analytics calculated in ${Date.now() - startTime}ms`);
+
+      res.status(200).json({
+        success: true,
+        analytics
+      });
+
+    } catch (error) {
+      console.error('Get analytics error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  }
+
+  // Calculate student analytics with improved logic
+  async calculateStudentAnalytics(student, days, calculateAttendanceRate = true) {
+    const progressRecords = student.hifzProgress || [];
+    const hifzStatus = student.hifzStatus || {};
+
+    console.log(`📊 Processing ${progressRecords.length} records for ${student.user.name}`);
+
+    // Calculate date range
+    const endDate = new Date();
+    const startDate = new Date();
+    startDate.setDate(endDate.getDate() - parseInt(days));
+
+    // Basic statistics
+    const totalReports = progressRecords.length;
+
+    // Filter present days
+    const presentRecords = progressRecords.filter(r =>
+      r.attendance === 'PRESENT' || r.attendance === 'Present'
+    );
+    const presentDays = presentRecords.length;
+
+    // Calculate actual attendance rate based on report period
+    let attendanceRate = 0;
+    if (calculateAttendanceRate) {
+      // Total days in the period (including weekends if madrasa operates)
+      const totalDaysInPeriod = days;
+      attendanceRate = totalDaysInPeriod > 0 ? (presentDays / totalDaysInPeriod) * 100 : 0;
+    } else {
+      // Only count days with reports
+      attendanceRate = totalReports > 0 ? (presentDays / totalReports) * 100 : 0;
+    }
+
+    // Lines and mistakes calculations
+    let totalSabaqLines = 0;
+    let totalSabqiLines = 0;
+    let totalManzilLines = 0;
+    let totalMistakes = 0;
+    let highMistakeDays = 0;
+
+    presentRecords.forEach(report => {
+      totalSabaqLines += parseInt(report.sabaqLines) || 0;
+      totalSabqiLines += parseInt(report.sabqiLines) || 0;
+      totalManzilLines += parseInt(report.manzilLines) || 0;
+      totalMistakes += parseInt(report.totalMistakes) || 0;
+
+      // Count high mistake days
+      if (parseInt(report.totalMistakes) > 5) {
+        highMistakeDays++;
+      }
+    });
+
+    const totalLines = totalSabaqLines + totalSabqiLines + totalManzilLines;
+
+    // Calculate averages based on PRESENT days only (not total period)
+    const avgLinesPerDay = presentDays > 0 ? totalLines / presentDays : 0;
+    const avgSabaqLinesPerDay = presentDays > 0 ? totalSabaqLines / presentDays : 0;
+    const avgMistakesPerDay = presentDays > 0 ? totalMistakes / presentDays : 0;
+
+    const mistakeRate = totalLines > 0 ? (totalMistakes / totalLines) * 100 : 0;
+
+    // Para progress calculations
+    const alreadyMemorizedParas = hifzStatus.alreadyMemorizedParas || [];
+    const completedParas = hifzStatus.completedParas || [];
+
+    // Remove duplicates (paras that appear in both lists)
+    const uniqueAlreadyMemorized = alreadyMemorizedParas.filter(p => !completedParas.includes(p));
+    const uniqueCompleted = completedParas.filter(p => !alreadyMemorizedParas.includes(p));
+
+    const totalUniqueMemorizedParas = uniqueAlreadyMemorized.length + uniqueCompleted.length;
+    const currentPara = hifzStatus.currentPara || 1;
+    const currentParaProgress = hifzStatus.currentParaProgress || 0;
+    const remainingParas = 30 - totalUniqueMemorizedParas;
+    const overallCompletion = (totalUniqueMemorizedParas / 30) * 100;
+
+    // Check for overlaps
+    const overlaps = alreadyMemorizedParas.filter(p => completedParas.includes(p));
+
+    // Condition breakdown
+    const conditionBreakdown = {
+      excellent: progressRecords.filter(r => r.condition === 'Excellent').length,
+      good: progressRecords.filter(r => r.condition === 'Good').length,
+      medium: progressRecords.filter(r => r.condition === 'Medium').length,
+      belowAverage: progressRecords.filter(r => r.condition === 'Below Average').length,
+      na: progressRecords.filter(r => r.condition === 'N/A' || !r.condition).length
+    };
+
+    // Calculate consistency score (weighted average)
+    const consistencyScore = presentDays > 0 ? (
+      (attendanceRate * 0.3) +
+      ((100 - Math.min(mistakeRate, 100)) * 0.3) +
+      (overallCompletion * 0.2) +
+      ((conditionBreakdown.excellent / presentDays) * 100 * 0.2)
+    ) : 0;
+
+    // Projections
+    let estimatedDaysToComplete = null;
+    let estimatedCompletionDate = null;
+    let timeDescription = "Not enough data";
+
+    if (avgSabaqLinesPerDay > 0 && remainingParas > 0) {
+      // Calculate remaining lines (average 20 lines per para)
+      const totalLinesNeeded = remainingParas * 20;
+      estimatedDaysToComplete = Math.ceil(totalLinesNeeded / avgSabaqLinesPerDay);
+
+      // Add buffer for review time (20% additional days)
+      estimatedDaysToComplete = Math.ceil(estimatedDaysToComplete * 1.2);
+
+      estimatedCompletionDate = new Date();
+      estimatedCompletionDate.setDate(estimatedCompletionDate.getDate() + estimatedDaysToComplete);
+
+      // Create human-readable time description
+      const months = Math.floor(estimatedDaysToComplete / 30);
+      const weeks = Math.floor((estimatedDaysToComplete % 30) / 7);
+      const remainingDays = estimatedDaysToComplete % 7;
+
+      if (months > 0) {
+        timeDescription = `About ${months} month${months > 1 ? 's' : ''}`;
+        if (weeks > 0) {
+          timeDescription += ` and ${weeks} week${weeks > 1 ? 's' : ''}`;
+        }
+      } else if (weeks > 0) {
+        timeDescription = `About ${weeks} week${weeks > 1 ? 's' : ''}`;
+        if (remainingDays > 0) {
+          timeDescription += ` and ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+        }
+      } else {
+        timeDescription = `About ${remainingDays} day${remainingDays > 1 ? 's' : ''}`;
+      }
+    }
+
+    // Alerts and recommendations
+    const alerts = [];
+
+    if (attendanceRate < 70 && days >= 7) {
+      alerts.push({
+        severity: 'warning',
+        message: `Low attendance rate: ${attendanceRate.toFixed(1)}%`,
+        recommendation: 'Improve regular attendance for consistent progress'
+      });
+    }
+
+    if (mistakeRate > 10 && totalLines > 20) {
+      alerts.push({
+        severity: 'warning',
+        message: `High mistake rate: ${mistakeRate.toFixed(1)}%`,
+        recommendation: 'Focus on accuracy, slow down, and revise more frequently'
+      });
+    }
+
+    if (totalUniqueMemorizedParas === 0 && presentDays >= 5) {
+      alerts.push({
+        severity: 'info',
+        message: 'No paras memorized yet',
+        recommendation: 'Start para memorization with achievable targets (e.g., 2-3 lines per day)'
+      });
+    }
+
+    if (avgSabaqLinesPerDay < 5 && presentDays >= 5) {
+      alerts.push({
+        severity: 'info',
+        message: `Low memorization rate: ${avgSabaqLinesPerDay.toFixed(1)} new lines/day`,
+        recommendation: 'Gradually increase daily memorization targets'
+      });
+    }
+
+    if (overlaps.length > 0) {
+      alerts.push({
+        severity: 'info',
+        message: `Para overlap detected: ${overlaps.join(', ')}`,
+        recommendation: 'Ensure paras are not counted twice in already memorized and completed lists'
+      });
+    }
+
+    return {
+      student: {
+        id: student.id,
+        name: student.user.name,
+        admissionNo: student.admissionNo
+      },
+      period: {
+        totalDays: parseInt(days),
+        startDate,
+        endDate,
+        daysWithData: totalReports,
+        presentDays
+      },
+      attendance: {
+        rate: parseFloat(attendanceRate.toFixed(1)),
+        presentDays,
+        calculateAttendanceRate
+      },
+      lines: {
+        totalSabaqLines,
+        totalSabqiLines,
+        totalManzilLines,
+        totalLines,
+        avgLinesPerDay: parseFloat(avgLinesPerDay.toFixed(1)),
+        avgSabaqLinesPerDay: parseFloat(avgSabaqLinesPerDay.toFixed(1))
+      },
+      mistakes: {
+        totalMistakes,
+        avgMistakesPerDay: parseFloat(avgMistakesPerDay.toFixed(1)),
+        mistakeRate: parseFloat(mistakeRate.toFixed(1)),
+        highMistakeDays
+      },
+      paraProgress: {
+        alreadyMemorized: uniqueAlreadyMemorized.length,
+        alreadyMemorizedParas: uniqueAlreadyMemorized,
+        completedDuringTraining: uniqueCompleted.length,
+        completedParas: uniqueCompleted,
+        totalMemorized: totalUniqueMemorizedParas,
+        currentPara,
+        currentParaProgress,
+        remainingParas,
+        overallCompletionPercentage: parseFloat(overallCompletion.toFixed(1)),
+        overlaps
+      },
+      performance: {
+        totalReports,
+        consistencyScore: parseFloat(consistencyScore.toFixed(1)),
+        conditionBreakdown,
+        alerts
+      },
+      projection: {
+        estimatedDaysToComplete,
+        estimatedCompletionDate,
+        timeDescription,
+        dailyPaceRequired: remainingParas > 0 && estimatedDaysToComplete ?
+          ((remainingParas * 20) / estimatedDaysToComplete).toFixed(1) : null
+      },
+      recommendations: alerts.map(alert => ({
+        priority: alert.severity === 'warning' ? 'High' : 'Medium',
+        action: alert.recommendation
+      }))
+    };
+  }
+
+  // Helper: Update student's overall Hifz status with improved logic
+  async updateStudentHifzStatus(studentId) {
+    try {
+      console.log(`🔄 Updating Hifz status for student ${studentId}`);
+
+      // Get all progress records
+      const progressRecords = await prisma.hifzProgress.findMany({
+        where: { studentId },
+        orderBy: { date: 'asc' }
+      });
+
+      if (progressRecords.length === 0) {
+        console.log('No progress records found');
+        return;
+      }
+
+      const latestProgress = progressRecords[progressRecords.length - 1];
+      const currentStatus = await prisma.studentHifzStatus.findUnique({
+        where: { studentId }
+      });
+
+      if (!currentStatus) {
+        console.log('No existing Hifz status found');
+        return;
+      }
+
+      // Calculate present days
+      const presentRecords = progressRecords.filter(r =>
+        r.attendance === 'PRESENT' || r.attendance === 'Present'
+      );
+      const totalDaysActive = presentRecords.length;
+
+      // Calculate totals
+      const totalSabaqLines = presentRecords.reduce((sum, r) => sum + (parseInt(r.sabaqLines) || 0), 0);
+      const totalSabqiLines = presentRecords.reduce((sum, r) => sum + (parseInt(r.sabqiLines) || 0), 0);
+      const totalManzilLines = presentRecords.reduce((sum, r) => sum + (parseInt(r.manzilLines) || 0), 0);
+      const totalMistakes = presentRecords.reduce((sum, r) => sum + (parseInt(r.totalMistakes) || 0), 0);
+      const totalLines = totalSabaqLines + totalSabqiLines + totalManzilLines;
+
+      // Calculate averages (based on present days only)
+      const averageLinesPerDay = totalDaysActive > 0 ? totalLines / totalDaysActive : 0;
+      const averageSabaqLinesPerDay = totalDaysActive > 0 ? totalSabaqLines / totalDaysActive : 0;
+      const averageMistakesPerDay = totalDaysActive > 0 ? totalMistakes / totalDaysActive : 0;
+
+      const mistakeRate = totalLines > 0 ? (totalMistakes / totalLines) * 100 : 0;
+
+      // Calculate para progress
+      const alreadyMemorizedParas = currentStatus.alreadyMemorizedParas || [];
+      const completedParas = latestProgress.completedParas || [];
+
+      // Remove duplicates
+      const uniqueAlreadyMemorized = alreadyMemorizedParas.filter(p => !completedParas.includes(p));
+      const uniqueCompleted = completedParas.filter(p => !alreadyMemorizedParas.includes(p));
+
+      const totalMemorizedParas = uniqueAlreadyMemorized.length + uniqueCompleted.length;
+      const totalLinesMemorized = totalMemorizedParas * this.AVG_LINES_PER_PARA;
+
+      // Calculate remaining paras and estimated completion
+      const remainingParas = 30 - totalMemorizedParas;
+      let estimatedDaysToComplete = null;
+      let estimatedCompletionDate = null;
+
+      if (averageSabaqLinesPerDay > 0 && remainingParas > 0) {
+        const linesPerPara = 20; // Average lines per para
+        const totalLinesNeeded = remainingParas * linesPerPara;
+        estimatedDaysToComplete = Math.ceil(totalLinesNeeded / averageSabaqLinesPerDay);
+
+        // Add buffer
+        estimatedDaysToComplete = Math.ceil(estimatedDaysToComplete * 1.2);
+
+        estimatedCompletionDate = new Date();
+        estimatedCompletionDate.setDate(estimatedCompletionDate.getDate() + estimatedDaysToComplete);
+      }
+
+      // Update status
+      await prisma.studentHifzStatus.update({
+        where: { studentId },
+        data: {
+          currentPara: latestProgress.currentPara,
+          currentParaProgress: latestProgress.currentParaProgress,
+          completedParas: uniqueCompleted,
+          totalParasCompleted: uniqueCompleted.length,
+          totalLinesMemorized,
+          totalDaysActive,
+          averageLinesPerDay: parseFloat(averageLinesPerDay.toFixed(2)),
+          averageSabaqLinesPerDay: parseFloat(averageSabaqLinesPerDay.toFixed(2)),
+          averageMistakesPerDay: parseFloat(averageMistakesPerDay.toFixed(2)),
+          mistakeRate: parseFloat(mistakeRate.toFixed(2)),
+          totalMistakes,
+          estimatedDaysToComplete,
+          estimatedCompletionDate,
+          lastUpdated: new Date()
+        }
+      });
+
+      console.log(`✅ Hifz status updated for student ${studentId}`);
+
+    } catch (error) {
+      console.error('Error updating Hifz status:', error);
+    }
+  }
+
+  // Update para completion with improved logic
+  async updateParaCompletion(req, res) {
+    console.log('updateParaCompletion called:', req.params);
+
+    try {
+      const { studentId } = req.params;
+      const {
+        completedPara,
+        currentPara,
+        currentParaProgress,
+        markAsComplete = false
+      } = req.body;
+
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: { hifzStatus: true }
+      });
+
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          message: 'Student not found'
+        });
+      }
+
+      let hifzStatus = student.hifzStatus;
+
+      // Create status if doesn't exist
+      if (!hifzStatus) {
+        hifzStatus = await prisma.studentHifzStatus.create({
+          data: {
+            studentId,
+            currentPara: currentPara || 1,
+            currentParaProgress: currentParaProgress || 0,
+            completedParas: [],
+            alreadyMemorizedParas: [],
+            joiningDate: new Date(),
+            totalParasCompleted: 0,
+            totalLinesMemorized: 0
+          }
+        });
+      }
+
+      const updateData = {};
+      let completionMessage = '';
+
+      // Handle para completion
+      if (completedPara || markAsComplete) {
+        const paraToComplete = completedPara || hifzStatus.currentPara;
+
+        if (paraToComplete < 1 || paraToComplete > 30) {
+          return res.status(400).json({
+            success: false,
+            message: 'Para number must be between 1 and 30'
+          });
+        }
+
+        const completedParas = [...(hifzStatus.completedParas || [])];
+
+        if (!completedParas.includes(paraToComplete)) {
+          completedParas.push(paraToComplete);
+          updateData.completedParas = completedParas;
+          updateData.totalParasCompleted = completedParas.length;
+
+          completionMessage = `Para ${paraToComplete} marked as completed. `;
+
+          // Auto-advance to next para if current para was completed
+          if (!currentPara && paraToComplete === hifzStatus.currentPara && paraToComplete < 30) {
+            updateData.currentPara = paraToComplete + 1;
+            updateData.currentParaProgress = 0;
+            completionMessage += `Auto-advanced to Para ${paraToComplete + 1}.`;
+          }
+
+          // Send notification
+          await HifzNotificationService.notifyParaCompletion(student, paraToComplete);
+        }
+      }
+
+      // Update current para and progress
+      if (currentPara !== undefined) {
+        updateData.currentPara = currentPara;
+      }
+      if (currentParaProgress !== undefined) {
+        updateData.currentParaProgress = currentParaProgress;
+      }
+
+      // Check if there's anything to update
+      if (Object.keys(updateData).length === 0) {
+        return res.status(400).json({
+          success: false,
+          message: 'No data to update'
+        });
+      }
+
+      // Update status
+      const updatedStatus = await prisma.studentHifzStatus.update({
+        where: { studentId },
+        data: updateData
+      });
+
+      // Recalculate overall status
+      await this.updateStudentHifzStatus(studentId);
+
+      return res.status(200).json({
+        success: true,
+        hifzStatus: updatedStatus,
+        message: completionMessage || 'Para status updated successfully'
+      });
+
+    } catch (error) {
+      console.error('Update para completion error:', error);
+      return res.status(500).json({
+        success: false,
+        message: 'Internal server error',
+        error: error.message
+      });
+    }
+  }
+
+  // Get progress reports with improved calculations
   async getStudentProgress(req, res) {
     try {
       const { studentId } = req.params;
-      const { startDate, endDate, limit = 100, page = 1 } = req.query;
+      const { startDate, endDate, limit = 100, page = 1, includeAnalytics = 'false' } = req.query;
 
       const skip = (parseInt(page) - 1) * parseInt(limit);
 
@@ -345,9 +1218,7 @@ class HifzProgressController {
             teacher: {
               include: {
                 user: {
-                  select: {
-                    name: true
-                  }
+                  select: { name: true }
                 }
               }
             }
@@ -364,10 +1235,34 @@ class HifzProgressController {
         where: { studentId }
       });
 
+      // Calculate simple analytics if requested
+      let analytics = null;
+      if (includeAnalytics === 'true') {
+        const student = await prisma.student.findUnique({
+          where: { id: studentId },
+          include: { user: { select: { name: true } } }
+        });
+
+        if (student) {
+          // Calculate days difference
+          const days = startDate && endDate ?
+            Math.ceil((new Date(endDate) - new Date(startDate)) / (1000 * 60 * 60 * 24)) : 30;
+
+          const tempStudent = {
+            ...student,
+            hifzProgress: progressRecords,
+            hifzStatus
+          };
+
+          analytics = await this.calculateStudentAnalytics(tempStudent, days, false);
+        }
+      }
+
       res.status(200).json({
         success: true,
         progress: progressRecords,
         hifzStatus,
+        analytics,
         pagination: {
           total: totalCount,
           page: parseInt(page),
@@ -385,32 +1280,7 @@ class HifzProgressController {
     }
   }
 
-  // Get student analytics
-  async getStudentAnalytics(req, res) {
-    try {
-      const { studentId } = req.params;
-      const { days = 30 } = req.query;
-
-      const analytics = await HifzAnalyticsService.calculateStudentAnalytics(
-        studentId,
-        parseInt(days)
-      );
-
-      res.status(200).json({
-        success: true,
-        analytics
-      });
-
-    } catch (error) {
-      console.error('Get analytics error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
-  }
-
-  // Initialize student Hifz status (when student joins with prior memorization)
+  // Initialize student Hifz status
   async initializeHifzStatus(req, res) {
     try {
       const { studentId } = req.params;
@@ -445,10 +1315,11 @@ class HifzProgressController {
       }
 
       // Validate para numbers
-      if (alreadyMemorizedParas.some(p => p < 1 || p > 30)) {
+      const invalidParas = alreadyMemorizedParas.filter(p => p < 1 || p > 30);
+      if (invalidParas.length > 0) {
         return res.status(400).json({
           success: false,
-          message: 'Para numbers must be between 1 and 30'
+          message: `Invalid para numbers: ${invalidParas.join(', ')}. Must be between 1 and 30.`
         });
       }
 
@@ -459,9 +1330,8 @@ class HifzProgressController {
         });
       }
 
-      // Calculate initial total lines memorized
-      const linesPerPara = HifzProgressController.LINES_PER_PAGE * HifzProgressController.PAGES_PER_PARA;
-      const totalLinesMemorized = alreadyMemorizedParas.length * linesPerPara;
+      // Calculate total lines memorized
+      const totalLinesMemorized = alreadyMemorizedParas.length * this.AVG_LINES_PER_PARA;
 
       // Create Hifz status
       const hifzStatus = await prisma.studentHifzStatus.create({
@@ -474,13 +1344,19 @@ class HifzProgressController {
           currentParaProgress: 0,
           completedParas: [],
           totalParasCompleted: 0,
-          totalLinesMemorized
+          totalLinesMemorized,
+          totalDaysActive: 0,
+          averageLinesPerDay: 0,
+          averageMistakesPerDay: 0,
+          mistakeRate: 0,
+          totalMistakes: 0
         }
       });
 
       res.status(201).json({
         success: true,
-        hifzStatus
+        hifzStatus,
+        message: `Hifz status initialized. ${alreadyMemorizedParas.length} paras already memorized. Starting from Para ${startingPara}.`
       });
 
     } catch (error) {
@@ -492,221 +1368,19 @@ class HifzProgressController {
     }
   }
 
-  // Update para completion
-async updateParaCompletion(req, res) {
-  console.log('updateParaCompletion called:', {
-    params: req.params,
-    body: req.body,
-    user: req.user?.id
-  });
-  
-  try {
-    const { studentId } = req.params;
-    const { completedPara, currentPara, currentParaProgress } = req.body;
-
-    console.log('Looking for student:', studentId);
-    
-    const student = await prisma.student.findUnique({
-      where: { id: studentId },
-      include: {
-        hifzStatus: true,
-        user: true
-      }
-    });
-
-    console.log('Student found:', !!student);
-    console.log('Student Hifz status:', student?.hifzStatus);
-
-    if (!student) {
-      return res.status(404).json({
-        success: false,
-        message: 'Student not found'
-      });
-    }
-
-    // If no Hifz status exists, create one
-    let hifzStatus = student.hifzStatus;
-    if (!hifzStatus) {
-      console.log('Creating new Hifz status for student');
-      
-      // Create initial Hifz status - FIXED: use studentHifzStatus
-      hifzStatus = await prisma.studentHifzStatus.create({
-        data: {
-          studentId,
-          currentPara: currentPara || 1,
-          currentParaProgress: currentParaProgress || 0,
-          completedParas: completedPara ? [completedPara] : [],
-          alreadyMemorizedParas: [], // Empty array for new students
-          joiningDate: new Date(),
-          totalParasCompleted: completedPara ? 1 : 0,
-          totalLinesMemorized: 0
-        }
-      });
-      
-      console.log('Created new Hifz status:', hifzStatus);
-    }
-
-    const updateData = {};
-    
-    // If a para was completed
-    if (completedPara) {
-      if (completedPara < 1 || completedPara > 30) {
-        return res.status(400).json({
-          success: false,
-          message: 'Para number must be between 1 and 30'
-        });
-      }
-
-      const completedParas = [...(hifzStatus.completedParas || [])];
-      if (!completedParas.includes(completedPara)) {
-        completedParas.push(completedPara);
-        updateData.completedParas = completedParas;
-        updateData.totalParasCompleted = completedParas.length;
-
-        console.log('Para completed:', completedPara);
-        
-        // Send celebration notification
-        try {
-          await HifzNotificationService.notifyParaCompletion(student, completedPara);
-        } catch (notifError) {
-          console.error('Notification error:', notifError);
-        }
-      }
-    }
-
-    // Update current para and progress
-    if (currentPara !== undefined) {
-      updateData.currentPara = currentPara;
-    }
-    if (currentParaProgress !== undefined) {
-      updateData.currentParaProgress = currentParaProgress;
-    }
-
-    console.log('Updating with data:', updateData);
-    
-    // Check if there's anything to update
-    if (Object.keys(updateData).length === 0) {
-      return res.status(400).json({
-        success: false,
-        message: 'No data to update. Provide currentPara or completedPara.'
-      });
-    }
-    
-    // Update status - FIXED: use studentHifzStatus
-    const updatedStatus = await prisma.studentHifzStatus.update({
-      where: { studentId },
-      data: updateData
-    });
-
-    console.log('Update successful:', updatedStatus);
-
-    // Recalculate overall status
-    await this.updateStudentHifzStatus(studentId);
-
-    return res.status(200).json({
-      success: true,
-      hifzStatus: updatedStatus
-    });
-
-  } catch (error) {
-    console.error('Update para completion error:', error);
-    console.error('Error stack:', error.stack);
-    
-    // Check for specific Prisma errors
-    if (error.code === 'P2002') {
-      return res.status(400).json({
-        success: false,
-        message: 'Duplicate record error',
-        error: error.message
-      });
-    }
-    
-    if (error.code === 'P2025') {
-      return res.status(404).json({
-        success: false,
-        message: 'Record not found',
-        error: error.message
-      });
-    }
-    
-    return res.status(500).json({ 
-      success: false, 
-      message: 'Internal server error',
-      error: error.message 
-    });
-  }
-}
-
-  // Get poor performers (students with below-average weekly performance)
-  async getPoorPerformers(req, res) {
-    try {
-      // Get all active Hifz students
-      const students = await prisma.student.findMany({
-        where: {
-          currentEnrollment: {
-            classRoom: {
-              type: 'HIFZ'
-            }
-          }
-        },
-        include: {
-          user: true,
-          currentEnrollment: {
-            include: {
-              classRoom: true
-            }
-          }
-        }
-      });
-
-      const poorPerformers = [];
-
-      for (const student of students) {
-        const weeklyPerformance = await this.checkWeeklyPerformance(student.id);
-
-        if (weeklyPerformance.hasPoorPerformance) {
-          poorPerformers.push({
-            student: {
-              id: student.id,
-              name: student.user.name,
-              admissionNo: student.admissionNo,
-              rollNumber: student.currentEnrollment?.rollNumber,
-              classRoom: student.currentEnrollment?.classRoom?.name
-            },
-            weeklyPerformance
-          });
-        }
-      }
-
-      res.status(200).json({
-        success: true,
-        poorPerformers,
-        count: poorPerformers.length
-      });
-
-    } catch (error) {
-      console.error('Get poor performers error:', error);
-      res.status(500).json({
-        success: false,
-        message: 'Internal server error'
-      });
-    }
-  }
-
-  // Helper: Check weekly performance (Saturday to Thursday)
+  // Improved weekly performance check
   async checkWeeklyPerformance(studentId) {
     try {
       const today = new Date();
-      const currentDay = today.getDay(); // 0 (Sunday) to 6 (Saturday)
 
-      // Calculate previous week's Saturday to Thursday
-      const daysToPreviousSaturday = (currentDay + 1) % 7;
+      // Calculate previous week (Sunday to Saturday)
+      const daysToSunday = today.getDay(); // 0 = Sunday, 1 = Monday, etc.
       const startDate = new Date(today);
-      startDate.setDate(today.getDate() - daysToPreviousSaturday - 7);
+      startDate.setDate(today.getDate() - daysToSunday - 7); // Previous Sunday
       startDate.setHours(0, 0, 0, 0);
 
       const endDate = new Date(startDate);
-      endDate.setDate(startDate.getDate() + 5); // Thursday
+      endDate.setDate(startDate.getDate() + 6); // Following Saturday
       endDate.setHours(23, 59, 59, 999);
 
       // Fetch reports for the period
@@ -721,36 +1395,48 @@ async updateParaCompletion(req, res) {
         orderBy: { date: 'asc' }
       });
 
-      const totalDays = reports.length;
-      const presentDays = reports.filter(r => r.attendance === 'PRESENT').length;
-      const attendanceRate = totalDays > 0 ? presentDays / totalDays : 0;
+      const totalDaysInWeek = 7;
+      const presentDays = reports.filter(r =>
+        r.attendance === 'PRESENT' || r.attendance === 'Present'
+      ).length;
 
-      // Check for poor performance indicators
-      const hasBelowAverageReports = reports.some(r =>
-        r.condition === 'Below Average' || r.condition === 'Need Focus'
-      );
+      const attendanceRate = (presentDays / totalDaysInWeek) * 100;
 
-      const hasLowAttendance = attendanceRate > 0 && attendanceRate < 0.7;
+      // Calculate mistakes
+      const totalMistakes = reports.reduce((sum, r) => sum + (r.totalMistakes || 0), 0);
+      const avgMistakesPerDay = presentDays > 0 ? totalMistakes / presentDays : 0;
 
-      const avgMistakes = reports.length > 0
-        ? reports.reduce((sum, r) => sum + r.totalMistakes, 0) / reports.length
-        : 0;
+      // Check performance indicators
+      const hasBelowAverageReports = reports.some(r => r.condition === 'Below Average');
+      const hasLowAttendance = attendanceRate < 70; // Below 70%
+      const hasHighMistakes = avgMistakesPerDay > 3;
+      const hasNoProgress = reports.filter(r =>
+        (r.sabaqLines || 0) + (r.sabqiLines || 0) + (r.manzilLines || 0) === 0
+      ).length >= 3; // 3 or more days with no lines
 
-      const hasHighMistakes = avgMistakes > 3;
-
-      const hasPoorPerformance = hasBelowAverageReports || hasLowAttendance || hasHighMistakes;
+      const hasPoorPerformance = hasBelowAverageReports ||
+        hasLowAttendance ||
+        hasHighMistakes ||
+        hasNoProgress;
 
       return {
         hasPoorPerformance,
-        totalDays,
+        totalDays: reports.length,
         presentDays,
-        attendanceRate: (attendanceRate * 100).toFixed(1),
-        avgMistakes: avgMistakes.toFixed(1),
+        attendanceRate: parseFloat(attendanceRate.toFixed(1)),
+        avgMistakesPerDay: parseFloat(avgMistakesPerDay.toFixed(1)),
         hasBelowAverageReports,
         hasLowAttendance,
         hasHighMistakes,
+        hasNoProgress,
         periodStart: startDate,
-        periodEnd: endDate
+        periodEnd: endDate,
+        recommendations: this.generateWeeklyRecommendations(
+          hasBelowAverageReports,
+          hasLowAttendance,
+          hasHighMistakes,
+          hasNoProgress
+        )
       };
 
     } catch (error) {
@@ -762,69 +1448,306 @@ async updateParaCompletion(req, res) {
     }
   }
 
-  // Helper: Update student's overall Hifz status
-  async updateStudentHifzStatus(studentId) {
+  // Generate recommendations based on weekly performance
+  generateWeeklyRecommendations(hasBelowAverageReports, hasLowAttendance, hasHighMistakes, hasNoProgress) {
+    const recommendations = [];
+
+    if (hasBelowAverageReports) {
+      recommendations.push({
+        priority: 'High',
+        message: 'Multiple below average performances',
+        action: 'Review difficult areas and provide extra support'
+      });
+    }
+
+    if (hasLowAttendance) {
+      recommendations.push({
+        priority: 'High',
+        message: 'Low attendance rate',
+        action: 'Discuss attendance importance with student and parents'
+      });
+    }
+
+    if (hasHighMistakes) {
+      recommendations.push({
+        priority: 'Medium',
+        message: 'High average mistakes per day',
+        action: 'Focus on accuracy rather than speed, increase revision time'
+      });
+    }
+
+    if (hasNoProgress) {
+      recommendations.push({
+        priority: 'Medium',
+        message: 'Multiple days with no progress',
+        action: 'Set smaller, achievable daily targets'
+      });
+    }
+
+    return recommendations;
+  }
+
+  // Get students with poor performance
+  async getPoorPerformers(req, res) {
     try {
-      const progressRecords = await prisma.hifzProgress.findMany({
-        where: { studentId },
-        orderBy: { date: 'asc' }
+      const { days = 7 } = req.query;
+
+      // Get all active Hifz students
+      const students = await prisma.student.findMany({
+        where: {
+          currentEnrollment: {
+            classRoom: {
+              type: 'HIFZ'
+            }
+          }
+        },
+        include: {
+          user: true,
+          hifzStatus: true,
+          currentEnrollment: {
+            include: {
+              classRoom: true
+            }
+          }
+        }
       });
 
-      if (progressRecords.length === 0) return;
+      const poorPerformers = [];
 
-      const latestProgress = progressRecords[progressRecords.length - 1];
-      const currentStatus = await prisma.studentHifzStatus.findUnique({
-        where: { studentId }
+      for (const student of students) {
+        const weeklyPerformance = await this.checkWeeklyPerformance(student.id);
+
+        if (weeklyPerformance.hasPoorPerformance) {
+          // Get recent progress for context
+          const recentProgress = await prisma.hifzProgress.findMany({
+            where: {
+              studentId: student.id,
+              date: {
+                gte: new Date(new Date().setDate(new Date().getDate() - parseInt(days)))
+              }
+            },
+            orderBy: { date: 'desc' },
+            take: 5
+          });
+
+          poorPerformers.push({
+            student: {
+              id: student.id,
+              name: student.user.name,
+              admissionNo: student.admissionNo,
+              classRoom: student.currentEnrollment?.classRoom?.name,
+              teacher: student.currentEnrollment?.classRoom?.teacherId
+            },
+            hifzStatus: student.hifzStatus,
+            weeklyPerformance,
+            recentProgress: recentProgress.map(p => ({
+              date: p.date,
+              condition: p.condition,
+              totalLines: p.totalLines,
+              totalMistakes: p.totalMistakes
+            }))
+          });
+        }
+      }
+
+      // Sort by severity (high priority first)
+      poorPerformers.sort((a, b) => {
+        const priorityA = a.weeklyPerformance.recommendations?.some(r => r.priority === 'High') ? 1 : 0;
+        const priorityB = b.weeklyPerformance.recommendations?.some(r => r.priority === 'High') ? 1 : 0;
+        return priorityB - priorityA;
       });
 
-      if (!currentStatus) return;
+      res.status(200).json({
+        success: true,
+        poorPerformers,
+        count: poorPerformers.length,
+        period: `${days} days`
+      });
 
-      // ⭐ USE HELPER for accurate calculation
-      const calculation = HifzCalculationHelper.calculateTotalMemorized(
-        currentStatus.alreadyMemorizedParas || [],
-        latestProgress.completedParas || [],
-        latestProgress.currentPara,
-        latestProgress.currentParaProgress
-      );
+    } catch (error) {
+      console.error('Get poor performers error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  }
 
-      // Calculate other metrics
-      const totalDaysActive = progressRecords.length;
-      const totalMistakes = progressRecords.reduce((sum, r) => sum + r.totalMistakes, 0);
-      const totalSabaqLines = progressRecords.reduce((sum, r) => sum + r.sabaqLines, 0);
+  // Generate comprehensive report
+  async generateComprehensiveReport(req, res) {
+    try {
+      const { studentId } = req.params;
+      const { days = 30 } = req.query;
 
-      const averageLinesPerDay = totalDaysActive > 0 ? totalSabaqLines / totalDaysActive : 0;
-      const averageMistakesPerDay = totalDaysActive > 0 ? totalMistakes / totalDaysActive : 0;
-      const mistakeRate = calculation.totalMemorizedLines > 0
-        ? (totalMistakes / calculation.totalMemorizedLines) * 100
-        : 0;
+      // Get student with all data
+      const student = await prisma.student.findUnique({
+        where: { id: studentId },
+        include: {
+          user: { select: { name: true, phone: true } },
+          hifzStatus: true,
+          hifzProgress: {
+            where: {
+              date: {
+                gte: new Date(new Date().setDate(new Date().getDate() - parseInt(days)))
+              }
+            },
+            orderBy: { date: 'desc' }
+          },
+          currentEnrollment: {
+            include: {
+              classRoom: {
+                include: {
+                  teacher: {
+                    include: {
+                      user: { select: { name: true } }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
 
-      // Estimate completion using helper
-      const estimation = HifzCalculationHelper.estimateCompletion(
-        calculation.remainingLines,
-        averageLinesPerDay
-      );
+      if (!student) {
+        return res.status(404).json({
+          success: false,
+          message: 'Student not found'
+        });
+      }
 
-      // Update status with accurate calculations
-      await prisma.studentHifzStatus.update({
-        where: { studentId },
-        data: {
-          currentPara: latestProgress.currentPara,
-          currentParaProgress: latestProgress.currentParaProgress,
-          completedParas: calculation.validCompletedParas,
-          totalParasCompleted: calculation.validCompletedParas.length,
-          totalLinesMemorized: calculation.totalMemorizedLines,
-          totalDaysActive,
-          averageLinesPerDay,
-          averageMistakesPerDay,
-          mistakeRate,
-          totalMistakes,
-          estimatedDaysToComplete: estimation.daysRemaining,
-          estimatedCompletionDate: estimation.estimatedDate
+      // Calculate analytics
+      const analytics = await this.calculateStudentAnalytics(student, parseInt(days), true);
+
+      // Get weekly performance
+      const weeklyPerformance = await this.checkWeeklyPerformance(studentId);
+
+      // Get milestones and achievements
+      const milestones = await this.getStudentMilestones(studentId);
+
+      res.status(200).json({
+        success: true,
+        report: {
+          studentInfo: {
+            name: student.user.name,
+            admissionNo: student.admissionNo,
+            rollNo: student.currentEnrollment?.rollNumber,
+            class: student.currentEnrollment?.classRoom?.name,
+            teacher: student.currentEnrollment?.classRoom?.teacher?.user?.name
+          },
+          analytics,
+          weeklyPerformance,
+          milestones,
+          progressRecords: student.hifzProgress.slice(0, 10), // Last 10 records
+          summary: this.generateReportSummary(analytics, weeklyPerformance)
         }
       });
 
     } catch (error) {
-      console.error('Update student Hifz status error:', error);
+      console.error('Generate report error:', error);
+      res.status(500).json({
+        success: false,
+        message: 'Internal server error'
+      });
+    }
+  }
+
+  // Generate report summary
+  generateReportSummary(analytics, weeklyPerformance) {
+    const summary = {
+      overallStatus: 'Good',
+      keyStrengths: [],
+      areasForImprovement: [],
+      immediateActions: []
+    };
+
+    // Determine overall status
+    if (analytics.attendance.rate >= 80 &&
+      analytics.mistakes.mistakeRate <= 5 &&
+      analytics.performance.consistencyScore >= 80) {
+      summary.overallStatus = 'Excellent';
+    } else if (analytics.attendance.rate >= 70 &&
+      analytics.mistakes.mistakeRate <= 10 &&
+      analytics.performance.consistencyScore >= 60) {
+      summary.overallStatus = 'Good';
+    } else if (analytics.attendance.rate >= 50 &&
+      analytics.mistakes.mistakeRate <= 15) {
+      summary.overallStatus = 'Average';
+    } else {
+      summary.overallStatus = 'Needs Improvement';
+    }
+
+    // Identify strengths
+    if (analytics.attendance.rate >= 85) {
+      summary.keyStrengths.push('Excellent attendance');
+    }
+    if (analytics.mistakes.mistakeRate <= 5) {
+      summary.keyStrengths.push('High accuracy');
+    }
+    if (analytics.lines.avgSabaqLinesPerDay >= 15) {
+      summary.keyStrengths.push('Good memorization pace');
+    }
+    if (analytics.paraProgress.totalMemorized >= 5) {
+      summary.keyStrengths.push(`Significant progress (${analytics.paraProgress.totalMemorized} paras)`);
+    }
+
+    // Identify areas for improvement
+    if (analytics.attendance.rate < 70) {
+      summary.areasForImprovement.push('Attendance needs improvement');
+      summary.immediateActions.push('Discuss attendance with student and parents');
+    }
+    if (analytics.mistakes.mistakeRate > 10) {
+      summary.areasForImprovement.push('Accuracy needs attention');
+      summary.immediateActions.push('Increase revision time and slow down pace');
+    }
+    if (analytics.lines.avgSabaqLinesPerDay < 5) {
+      summary.areasForImprovement.push('Memorization pace is slow');
+      summary.immediateActions.push('Set smaller daily targets and celebrate achievements');
+    }
+
+    // Add weekly performance insights
+    if (weeklyPerformance.hasPoorPerformance) {
+      summary.immediateActions.push(...weeklyPerformance.recommendations.map(r => r.action));
+    }
+
+    return summary;
+  }
+
+  // Get student milestones
+  async getStudentMilestones(studentId) {
+    try {
+      const hifzStatus = await prisma.studentHifzStatus.findUnique({
+        where: { studentId }
+      });
+
+      if (!hifzStatus) return {};
+
+      const totalMemorized = (hifzStatus.alreadyMemorizedParas?.length || 0) +
+        (hifzStatus.completedParas?.length || 0);
+
+      const milestones = [
+        { paras: 1, description: 'First para memorized', achieved: totalMemorized >= 1 },
+        { paras: 5, description: '5 paras milestone', achieved: totalMemorized >= 5 },
+        { paras: 10, description: '10 paras (1/3 of Quran)', achieved: totalMemorized >= 10 },
+        { paras: 15, description: '15 paras (halfway point)', achieved: totalMemorized >= 15 },
+        { paras: 20, description: '20 paras milestone', achieved: totalMemorized >= 20 },
+        { paras: 25, description: '25 paras (5 remaining)', achieved: totalMemorized >= 25 },
+        { paras: 30, description: 'Complete Quran memorized', achieved: totalMemorized >= 30 }
+      ];
+
+      const achieved = milestones.filter(m => m.achieved);
+      const nextMilestone = milestones.find(m => !m.achieved);
+
+      return {
+        totalParasMemorized: totalMemorized,
+        achievedMilestones: achieved,
+        nextMilestone,
+        parasToNextMilestone: nextMilestone ? nextMilestone.paras - totalMemorized : 0
+      };
+
+    } catch (error) {
+      console.error('Get milestones error:', error);
+      return {};
     }
   }
 }

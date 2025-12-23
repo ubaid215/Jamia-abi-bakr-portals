@@ -1,3 +1,4 @@
+/* eslint-disable no-unused-vars */
 // src/components/hifz/utils/paraCalculations.js
 
 export const calculateParaLogic = {
@@ -95,20 +96,27 @@ export const calculateParaLogic = {
   },
 
   // Get para visualization data
-  getParaVisualization: (hifzStatus, calculatedCurrentPara) => {
-    const completed = hifzStatus?.completedParas || [];
-    const alreadyMemorized = hifzStatus?.alreadyMemorizedParas || [];
-    const allMemorized = [...new Set([...alreadyMemorized, ...completed])];
-    const remaining = calculateParaLogic.getRemainingParas(completed, alreadyMemorized);
-    
-    return {
-      completed,
-      alreadyMemorized,
-      allMemorized,
-      remaining,
-      currentPara: calculatedCurrentPara,
-      totalMemorized: allMemorized.length,
-      completionPercentage: (allMemorized.length / 30) * 100
-    };
-  }
+getParaVisualization: (hifzStatus, calculatedCurrentPara) => {
+  const completed = hifzStatus?.completedParas || [];
+  const alreadyMemorized = hifzStatus?.alreadyMemorizedParas || [];
+  const allMemorized = [...new Set([...alreadyMemorized, ...completed])];
+  
+  // 🔥 FIX: Get ALL paras, not just remaining
+  const allParas = Array.from({ length: 30 }, (_, i) => i + 1);
+  
+  // Calculate remaining (non-memorized) paras
+  const remaining = allParas.filter(para => !allMemorized.includes(para));
+  
+  return {
+    completed,
+    alreadyMemorized,
+    allMemorized,
+    remaining,
+    // 🔥 ADD: All paras for dropdown
+    allParas,
+    currentPara: calculatedCurrentPara,
+    totalMemorized: allMemorized.length,
+    completionPercentage: (allMemorized.length / 30) * 100
+  };
+},
 };
