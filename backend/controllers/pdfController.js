@@ -4,42 +4,35 @@ const path = require('path');
 const prisma = require('../db/prismaClient');
 
 class PDFController {
+  constructor() {
+    // Bind all methods to the instance
+    this.generateStudentProgressReport = this.generateStudentProgressReport.bind(this);
+    this.generateExamMarkSheet = this.generateExamMarkSheet.bind(this);
+    this.generateCustomPDF = this.generateCustomPDF.bind(this);
+    this.getAllStudentsForPDF = this.getAllStudentsForPDF.bind(this);
+    this.getAllClassroomsForPDF = this.getAllClassroomsForPDF.bind(this);
+    this.getPDFStats = this.getPDFStats.bind(this);
+    this.generateClassAttendanceSheet = this.generateClassAttendanceSheet.bind(this);
+    this.addHeader = this.addHeader.bind(this);
+    this.addFooter = this.addFooter.bind(this);
+    this.drawAdvancedTable = this.drawAdvancedTable.bind(this);
+    this.drawTable = this.drawTable.bind(this);
+  }
   
   // ============================================
   // STUDENT PROGRESS REPORT PDF
   // ============================================
   async generateStudentProgressReport(req, res) {
-  try {
-    const { studentId } = req.params;
-    const { startDate, endDate } = req.query;
+    try {
+      const { studentId } = req.params;
+      const { startDate, endDate } = req.query;
 
-    console.log('📄 Generating student progress report for:', studentId);
-    console.log('⏱ Date Range:', startDate, 'to', endDate);
+      console.log('📄 Generating student progress report for:', studentId);
+      console.log('⏱ Date Range:', startDate, 'to', endDate);
 
-    // Find student
-    let student = await prisma.student.findFirst({
-      where: { userId: studentId },
-      include: {
-        user: { select: { id: true, name: true, email: true, phone: true, profileImage: true } },
-        currentEnrollment: {
-          include: {
-            classRoom: {
-              include: {
-                teacher: { include: { user: { select: { name: true, phone: true } } } },
-                subjects: { include: { teacher: { include: { user: { select: { name: true } } } } } }
-              }
-            }
-          }
-        },
-        parents: { include: { user: { select: { name: true, email: true, phone: true } } } }
-      }
-    });
-
-    console.log('🔍 Student found (by userId)?', !!student);
-
-    if (!student) {
-      student = await prisma.student.findUnique({
-        where: { id: studentId },
+      // Find student
+      let student = await prisma.student.findFirst({
+        where: { userId: studentId },
         include: {
           user: { select: { id: true, name: true, email: true, phone: true, profileImage: true } },
           currentEnrollment: {
@@ -55,93 +48,243 @@ class PDFController {
           parents: { include: { user: { select: { name: true, email: true, phone: true } } } }
         }
       });
-      console.log('🔍 Student found (by id)?', !!student);
-    }
 
-    if (!student) {
-      console.warn('⚠️ Student not found:', studentId);
-      return res.status(404).json({ error: 'Student not found' });
-    }
+      console.log('🔍 Student found (by userId)?', !!student);
 
-    // Get attendance data
-    const attendanceWhere = { studentId: student.id };
-    if (startDate && endDate) {
-      attendanceWhere.date = { gte: new Date(startDate), lte: new Date(endDate) };
-    }
-
-    console.log('📊 Fetching attendances with filter:', attendanceWhere);
-    const attendances = await prisma.attendance.findMany({
-      where: attendanceWhere,
-      include: { subject: { select: { name: true } } },
-      orderBy: { date: 'desc' }
-    });
-    console.log(`📊 Total attendance records found: ${attendances.length}`);
-
-    // Calculate attendance statistics
-    const totalAttendance = attendances.length;
-    const presentCount = attendances.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
-    const attendancePercentage = totalAttendance > 0 ? ((presentCount / totalAttendance) * 100).toFixed(2) : 0;
-    console.log(`✅ Attendance - Total: ${totalAttendance}, Present: ${presentCount}, Percentage: ${attendancePercentage}%`);
-
-    // Get progress based on class type
-    let progressData = null;
-    if (student.currentEnrollment) {
-      const classType = student.currentEnrollment.classRoom.type;
-      console.log('📚 Student class type:', classType);
-
-      if (classType === 'HIFZ') {
-        const hifzProgress = await prisma.hifzProgress.findMany({ where: { studentId: student.id }, orderBy: { date: 'desc' }, take: 10 });
-        console.log('📄 HIFZ progress records found:', hifzProgress.length);
-        const totalLines = hifzProgress.reduce((sum, p) => sum + p.sabaqLines, 0);
-        progressData = {
-          type: 'HIFZ',
-          records: hifzProgress,
-          summary: { totalLines, currentPara: hifzProgress[0]?.currentPara || 1, completionPercentage: ((totalLines / 540) * 100).toFixed(2) }
-        };
-      } else if (classType === 'NAZRA') {
-        const nazraProgress = await prisma.nazraProgress.findMany({ where: { studentId: student.id }, orderBy: { date: 'desc' }, take: 10 });
-        console.log('📄 NAZRA progress records found:', nazraProgress.length);
-        const totalLines = nazraProgress.reduce((sum, p) => sum + p.recitedLines, 0);
-        progressData = { type: 'NAZRA', records: nazraProgress, summary: { totalLines, completionPercentage: ((totalLines / 540) * 100).toFixed(2) } };
-      } else if (classType === 'REGULAR') {
-        const subjectProgress = await prisma.subjectProgress.findMany({
-          where: { studentId: student.id },
-          include: { subject: { select: { name: true } } },
-          orderBy: { date: 'desc' },
-          take: 20
+      if (!student) {
+        student = await prisma.student.findUnique({
+          where: { id: studentId },
+          include: {
+            user: { select: { id: true, name: true, email: true, phone: true, profileImage: true } },
+            currentEnrollment: {
+              include: {
+                classRoom: {
+                  include: {
+                    teacher: { include: { user: { select: { name: true, phone: true } } } },
+                    subjects: { include: { teacher: { include: { user: { select: { name: true } } } } } }
+                  }
+                }
+              }
+            },
+            parents: { include: { user: { select: { name: true, email: true, phone: true } } } }
+          }
         });
-        console.log('📄 REGULAR subject progress records found:', subjectProgress.length);
-        const avgResult = await prisma.subjectProgress.aggregate({ where: { studentId: student.id }, _avg: { percentage: true } });
-        progressData = { type: 'REGULAR', records: subjectProgress, summary: { averagePercentage: (avgResult._avg.percentage || 0).toFixed(2), totalAssessments: subjectProgress.length } };
+        console.log('🔍 Student found (by id)?', !!student);
+      }
+
+      if (!student) {
+        console.warn('⚠️ Student not found:', studentId);
+        return res.status(404).json({ error: 'Student not found' });
+      }
+
+      // Get attendance data
+      const attendanceWhere = { studentId: student.id };
+      if (startDate && endDate) {
+        attendanceWhere.date = { gte: new Date(startDate), lte: new Date(endDate) };
+      }
+
+      console.log('📊 Fetching attendances with filter:', attendanceWhere);
+      const attendances = await prisma.attendance.findMany({
+        where: attendanceWhere,
+        include: { subject: { select: { name: true } } },
+        orderBy: { date: 'desc' }
+      });
+      console.log(`📊 Total attendance records found: ${attendances.length}`);
+
+      // Calculate attendance statistics
+      const totalAttendance = attendances.length;
+      const presentCount = attendances.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+      const attendancePercentage = totalAttendance > 0 ? ((presentCount / totalAttendance) * 100).toFixed(2) : 0;
+      console.log(`✅ Attendance - Total: ${totalAttendance}, Present: ${presentCount}, Percentage: ${attendancePercentage}%`);
+
+      // Get progress based on class type
+      let progressData = null;
+      if (student.currentEnrollment) {
+        const classType = student.currentEnrollment.classRoom.type;
+        console.log('📚 Student class type:', classType);
+
+        if (classType === 'HIFZ') {
+          const hifzProgress = await prisma.hifzProgress.findMany({ 
+            where: { studentId: student.id }, 
+            orderBy: { date: 'desc' }, 
+            take: 10 
+          });
+          console.log('📄 HIFZ progress records found:', hifzProgress.length);
+          const totalLines = hifzProgress.reduce((sum, p) => sum + p.sabaqLines, 0);
+          progressData = {
+            type: 'HIFZ',
+            records: hifzProgress,
+            summary: { 
+              totalLines, 
+              currentPara: hifzProgress[0]?.currentPara || 1, 
+              completionPercentage: ((totalLines / 540) * 100).toFixed(2) 
+            }
+          };
+        } else if (classType === 'NAZRA') {
+          const nazraProgress = await prisma.nazraProgress.findMany({ 
+            where: { studentId: student.id }, 
+            orderBy: { date: 'desc' }, 
+            take: 10 
+          });
+          console.log('📄 NAZRA progress records found:', nazraProgress.length);
+          const totalLines = nazraProgress.reduce((sum, p) => sum + p.recitedLines, 0);
+          progressData = { 
+            type: 'NAZRA', 
+            records: nazraProgress, 
+            summary: { 
+              totalLines, 
+              completionPercentage: ((totalLines / 540) * 100).toFixed(2) 
+            } 
+          };
+        } else if (classType === 'REGULAR') {
+          const subjectProgress = await prisma.subjectProgress.findMany({
+            where: { studentId: student.id },
+            include: { subject: { select: { name: true } } },
+            orderBy: { date: 'desc' },
+            take: 20
+          });
+          console.log('📄 REGULAR subject progress records found:', subjectProgress.length);
+          const avgResult = await prisma.subjectProgress.aggregate({ 
+            where: { studentId: student.id }, 
+            _avg: { percentage: true } 
+          });
+          progressData = { 
+            type: 'REGULAR', 
+            records: subjectProgress, 
+            summary: { 
+              averagePercentage: (avgResult._avg.percentage || 0).toFixed(2), 
+              totalAssessments: subjectProgress.length 
+            } 
+          };
+        }
+      }
+
+      console.log('📝 Progress data prepared:', progressData ? progressData.type : 'No progress data');
+
+      // PDF generation logs
+      console.log('📄 Generating PDF...');
+      
+      const doc = new PDFDocument({ margin: 50, size: 'A4' });
+      
+      // Set response headers BEFORE piping
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename=student-report-${student.admissionNo || student.id}.pdf`);
+      
+      // Pipe the PDF to response
+      doc.pipe(res);
+
+      // Add header using the class method
+      this.addHeader(doc, 'STUDENT PROGRESS REPORT');
+      console.log('📄 PDF header added');
+
+      // Add student information
+      doc.moveDown(1);
+      doc.fontSize(14).fillColor('#1e3a8a').text('Student Information', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor('#000000');
+      doc.text(`Name: ${student.user?.name || 'N/A'}`);
+      doc.text(`Admission No: ${student.admissionNo || 'N/A'}`);
+      doc.text(`Email: ${student.user?.email || 'N/A'}`);
+      doc.text(`Phone: ${student.user?.phone || 'N/A'}`);
+      
+      if (student.currentEnrollment) {
+        doc.moveDown(0.5);
+        doc.text(`Class: ${student.currentEnrollment.classRoom?.name || 'N/A'}`);
+        doc.text(`Grade: ${student.currentEnrollment.classRoom?.grade || 'N/A'}`);
+        doc.text(`Class Type: ${student.currentEnrollment.classRoom?.type || 'N/A'}`);
+        doc.text(`Class Teacher: ${student.currentEnrollment.classRoom?.teacher?.user?.name || 'N/A'}`);
+      }
+
+      // Add attendance summary
+      doc.moveDown(1);
+      doc.fontSize(14).fillColor('#1e3a8a').text('Attendance Summary', { underline: true });
+      doc.moveDown(0.5);
+      doc.fontSize(10).fillColor('#000000');
+      doc.text(`Total Attendance Records: ${totalAttendance}`);
+      doc.text(`Present Days: ${presentCount}`);
+      doc.text(`Attendance Percentage: ${attendancePercentage}%`);
+      
+      if (startDate || endDate) {
+        doc.text(`Date Range: ${startDate || 'Start'} to ${endDate || 'End'}`);
+      }
+
+      // Add progress data
+      if (progressData) {
+        doc.moveDown(1);
+        doc.fontSize(14).fillColor('#1e3a8a').text(`${progressData.type} Progress Summary`, { underline: true });
+        doc.moveDown(0.5);
+        doc.fontSize(10).fillColor('#000000');
+        
+        if (progressData.type === 'HIFZ') {
+          doc.text(`Total Lines Memorized: ${progressData.summary.totalLines}`);
+          doc.text(`Current Para: ${progressData.summary.currentPara}`);
+          doc.text(`Completion Percentage: ${progressData.summary.completionPercentage}%`);
+          
+          // Add recent progress records table if available
+          if (progressData.records.length > 0) {
+            doc.moveDown(1);
+            doc.fontSize(12).fillColor('#1e3a8a').text('Recent Progress Records', { underline: true });
+            doc.moveDown(0.5);
+            
+            const headers = ['Date', 'Sabaq Lines', 'Sabaq Mistakes', 'Sabqi Lines', 'Sabqi Mistakes'];
+            const rows = progressData.records.map(record => [
+              new Date(record.date).toLocaleDateString(),
+              record.sabaqLines.toString(),
+              record.sabaqMistakes?.toString() || '0',
+              record.sabqiLines?.toString() || '0',
+              record.sabqiMistakes?.toString() || '0'
+            ]);
+            
+            this.drawTable(doc, headers, rows);
+          }
+        } else if (progressData.type === 'NAZRA') {
+          doc.text(`Total Lines Recited: ${progressData.summary.totalLines}`);
+          doc.text(`Completion Percentage: ${progressData.summary.completionPercentage}%`);
+        } else if (progressData.type === 'REGULAR') {
+          doc.text(`Average Percentage: ${progressData.summary.averagePercentage}%`);
+          doc.text(`Total Assessments: ${progressData.summary.totalAssessments}`);
+        }
+      }
+
+      // Add parent/guardian information
+      if (student.parents && student.parents.length > 0) {
+        doc.moveDown(1);
+        doc.fontSize(14).fillColor('#1e3a8a').text('Parent/Guardian Information', { underline: true });
+        doc.moveDown(0.5);
+        doc.fontSize(10).fillColor('#000000');
+        
+        student.parents.forEach((parent, index) => {
+          if (parent.user) {
+            doc.text(`Parent ${index + 1}: ${parent.user.name || 'N/A'}`);
+            doc.text(`Email: ${parent.user.email || 'N/A'}`);
+            doc.text(`Phone: ${parent.user.phone || 'N/A'}`);
+            doc.moveDown(0.3);
+          }
+        });
+      }
+
+      // Add footer
+      this.addFooter(doc);
+      
+      // Footer log
+      doc.on('end', () => console.log('✅ PDF generation completed and sent to client'));
+
+      // Finalize the PDF
+      doc.end();
+
+    } catch (error) {
+      console.error('❌ Generate student progress report error:', error);
+      if (!res.headersSent) {
+        res.status(500).json({ 
+          error: 'Failed to generate report', 
+          details: error.message 
+        });
+      } else {
+        // If headers were already sent, end the response
+        res.end();
       }
     }
-
-    console.log('📝 Progress data prepared:', progressData ? progressData.type : 'No progress data');
-
-    // PDF generation logs
-    console.log('📄 Generating PDF...');
-    
-    const doc = new PDFDocument({ margin: 50, size: 'A4' });
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename=student-report-${student.admissionNo}.pdf`);
-    doc.pipe(res);
-
-    this.addHeader(doc, 'STUDENT PROGRESS REPORT');
-    console.log('📄 PDF header added');
-
-    // Footer log
-    doc.on('end', () => console.log('✅ PDF generation completed and sent to client'));
-
-    doc.end();
-
-  } catch (error) {
-    console.error('❌ Generate student progress report error:', error);
-    if (!res.headersSent) {
-      res.status(500).json({ error: 'Failed to generate report', details: error.message });
-    }
   }
-}
-
 
   // ============================================
   // EXAM MARK SHEET PDF
@@ -274,156 +417,154 @@ class PDFController {
   // ============================================
   // ENHANCED CUSTOM PDF GENERATOR
   // ============================================
- generateCustomPDF = async (req, res) => {
-  let doc;
+  async generateCustomPDF(req, res) {
+    let doc;
 
-  try {
-    const { 
-      title, 
-      subtitle,
-      content, 
-      tables, 
-      includeDate,
-      orientation,
-      includeHeader,
-      includeFooter,
-      headerText,
-      footerText,
-      pageMargins,
-      defaultFontSize,
-      theme
-    } = req.body;
+    try {
+      const { 
+        title, 
+        subtitle,
+        content, 
+        tables, 
+        includeDate,
+        orientation,
+        includeHeader,
+        includeFooter,
+        headerText,
+        footerText,
+        pageMargins,
+        defaultFontSize,
+        theme
+      } = req.body;
 
-    console.log('📄 Generating custom PDF:', title);
-    console.log('📥 Incoming tables:', JSON.stringify(tables, null, 2));
+      console.log('📄 Generating custom PDF:', title);
+      console.log('📥 Incoming tables:', JSON.stringify(tables, null, 2));
 
-    if (!title) {
-      console.error('❌ Title missing');
-      return res.status(400).json({ error: 'Title is required' });
-    }
+      if (!title) {
+        console.error('❌ Title missing');
+        return res.status(400).json({ error: 'Title is required' });
+      }
 
-    const themeColors = theme || {
-      primary: '#1e3a8a',
-      secondary: '#6b7280',
-      accent: '#3b82f6',
-      headerBg: '#e0e7ff',
-      border: '#d1d5db',
-      rowAlt: '#f9fafb'
-    };
+      const themeColors = theme || {
+        primary: '#1e3a8a',
+        secondary: '#6b7280',
+        accent: '#3b82f6',
+        headerBg: '#e0e7ff',
+        border: '#d1d5db',
+        rowAlt: '#f9fafb'
+      };
 
-    doc = new PDFDocument({ 
-      margin: pageMargins || 50, 
-      size: 'A4',
-      layout: orientation || 'portrait'
-    });
+      doc = new PDFDocument({ 
+        margin: pageMargins || 50, 
+        size: 'A4',
+        layout: orientation || 'portrait'
+      });
 
-    console.log('📐 PDF created:', {
-      margin: pageMargins || 50,
-      orientation: orientation || 'portrait'
-    });
+      console.log('📐 PDF created:', {
+        margin: pageMargins || 50,
+        orientation: orientation || 'portrait'
+      });
 
-    const filename = `custom-${title.replace(/\s+/g, '-').toLowerCase()}.pdf`;
-    res.setHeader('Content-Type', 'application/pdf');
-    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+      const filename = `custom-${title.replace(/\s+/g, '-').toLowerCase()}.pdf`;
+      res.setHeader('Content-Type', 'application/pdf');
+      res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
 
-    doc.pipe(res);
+      doc.pipe(res);
 
-    /* ================= CONTENT ================= */
-    if (Array.isArray(content)) {
-      console.log(`🧱 Rendering ${content.length} content blocks`);
-    }
+      /* ================= CONTENT ================= */
+      if (Array.isArray(content)) {
+        console.log(`🧱 Rendering ${content.length} content blocks`);
+      }
 
-    /* ================= TABLES ================= */
-    if (Array.isArray(tables)) {
-      console.log(`📊 Rendering ${tables.length} tables`);
+      /* ================= TABLES ================= */
+      if (Array.isArray(tables)) {
+        console.log(`📊 Rendering ${tables.length} tables`);
 
-      tables.forEach((table, tableIndex) => {
-        console.log(`➡️ Table #${tableIndex + 1}`, table);
+        tables.forEach((table, tableIndex) => {
+          console.log(`➡️ Table #${tableIndex + 1}`, table);
 
-        if (!table?.headers || !table?.rows) {
-          console.warn(`⚠️ Table #${tableIndex + 1} missing headers or rows`);
-          return;
-        }
-
-        console.log(`🧾 Headers count: ${table.headers.length}`);
-        console.log(`📐 Column widths:`, table.columnWidths);
-
-        if (
-          table.columnWidths &&
-          table.columnWidths.length !== table.headers.length
-        ) {
-          console.error(
-            `❌ Column width mismatch in table #${tableIndex + 1}`,
-            `headers=${table.headers.length}`,
-            `widths=${table.columnWidths.length}`
-          );
-        }
-
-        console.log(`📦 Rows count: ${table.rows.length}`);
-
-        table.rows.forEach((row, rowIndex) => {
-          if (!Array.isArray(row)) {
-            console.error(
-              `❌ Invalid row format in table #${tableIndex + 1}, row #${rowIndex + 1}`,
-              row
-            );
+          if (!table?.headers || !table?.rows) {
+            console.warn(`⚠️ Table #${tableIndex + 1} missing headers or rows`);
             return;
           }
 
-          if (row.length !== table.headers.length) {
+          console.log(`🧾 Headers count: ${table.headers.length}`);
+          console.log(`📐 Column widths:`, table.columnWidths);
+
+          if (
+            table.columnWidths &&
+            table.columnWidths.length !== table.headers.length
+          ) {
             console.error(
-              `❌ Cell count mismatch in table #${tableIndex + 1}, row #${rowIndex + 1}`,
-              `cells=${row.length}`,
-              `headers=${table.headers.length}`
+              `❌ Column width mismatch in table #${tableIndex + 1}`,
+              `headers=${table.headers.length}`,
+              `widths=${table.columnWidths.length}`
             );
           }
+
+          console.log(`📦 Rows count: ${table.rows.length}`);
+
+          table.rows.forEach((row, rowIndex) => {
+            if (!Array.isArray(row)) {
+              console.error(
+                `❌ Invalid row format in table #${tableIndex + 1}, row #${rowIndex + 1}`,
+                row
+              );
+              return;
+            }
+
+            if (row.length !== table.headers.length) {
+              console.error(
+                `❌ Cell count mismatch in table #${tableIndex + 1}, row #${rowIndex + 1}`,
+                `cells=${row.length}`,
+                `headers=${table.headers.length}`
+              );
+            }
+          });
+
+          doc.moveDown(1);
+
+          if (table.title) {
+            doc.fontSize(12)
+              .fillColor(themeColors.primary)
+              .text(table.title, { underline: true });
+            doc.moveDown(0.5);
+          }
+
+          console.log(`🛠 Drawing table #${tableIndex + 1}`);
+
+          this.drawAdvancedTable(doc, {
+            headers: table.headers,
+            rows: table.rows,
+            columnWidths: table.columnWidths,
+            headerColor: table.headerColor || themeColors.primary,
+            headerBgColor: table.headerBgColor || themeColors.headerBg,
+            rowColors: table.rowColors || ['#fff', themeColors.rowAlt],
+            borderColor: table.borderColor || themeColors.border,
+            fontSize: table.fontSize || 9,
+            columnSettings: table.columnSettings || {}
+          });
         });
+      }
 
-        doc.moveDown(1);
+      doc.end();
+      console.log('✅ PDF generation completed successfully');
 
-        if (table.title) {
-          doc.fontSize(12)
-            .fillColor(themeColors.primary)
-            .text(table.title, { underline: true });
-          doc.moveDown(0.5);
-        }
+    } catch (error) {
+      console.error('🔥 Generate custom PDF error:', error);
 
-        console.log(`🛠 Drawing table #${tableIndex + 1}`);
+      if (doc && !doc.ended) {
+        try { doc.end(); } catch {}
+      }
 
-        this.drawAdvancedTable(doc, {
-          headers: table.headers,
-          rows: table.rows,
-          columnWidths: table.columnWidths,
-          headerColor: table.headerColor || themeColors.primary,
-          headerBgColor: table.headerBgColor || themeColors.headerBg,
-          rowColors: table.rowColors || ['#fff', themeColors.rowAlt],
-          borderColor: table.borderColor || themeColors.border,
-          fontSize: table.fontSize || 9,
-          columnSettings: table.columnSettings || {}
+      if (!res.headersSent) {
+        res.status(500).json({
+          error: 'Failed to generate PDF',
+          message: error.message
         });
-      });
-    }
-
-    doc.end();
-    console.log('✅ PDF generation completed successfully');
-
-  } catch (error) {
-    console.error('🔥 Generate custom PDF error:', error);
-
-    if (doc && !doc.ended) {
-      try { doc.end(); } catch {}
-    }
-
-    if (!res.headersSent) {
-      res.status(500).json({
-        error: 'Failed to generate PDF',
-        message: error.message
-      });
+      }
     }
   }
-};
-
-
 
   // ============================================
   // ENHANCED DATA FETCHING METHODS
@@ -664,26 +805,9 @@ class PDFController {
         }
       });
 
-      // Get recent activity from audit logs
-      const recentActivities = await prisma.auditLog.findMany({
-        where: {
-          action: {
-            contains: 'PDF'
-          },
-          createdAt: {
-            gte: new Date(new Date().setDate(new Date().getDate() - 30))
-          }
-        },
-        take: 10,
-        orderBy: { createdAt: 'desc' },
-        include: {
-          user: {
-            select: {
-              name: true
-            }
-          }
-        }
-      }).catch(() => []); // Gracefully handle if auditLog doesn't exist
+      // Instead, get reports generated this month from another source
+      // or create a simple counter
+      const reportsThisMonth = 0; // You can track this differently if needed
 
       res.json({
         success: true,
@@ -692,14 +816,10 @@ class PDFController {
           totalTeachers,
           totalClassRooms,
           totalActiveEnrollments,
+          reportsThisMonth, // Add this field
           classTypeDistribution: classTypeDistribution.map(ct => ({
             type: ct.type,
             count: ct._count.id
-          })),
-          recentActivities: recentActivities.map(activity => ({
-            action: activity.action,
-            user: activity.user?.name || 'System',
-            timestamp: activity.createdAt
           }))
         }
       });
@@ -825,164 +945,163 @@ class PDFController {
    * Supports full customization of colors, borders, fonts, and column-specific settings
    */
   drawAdvancedTable(doc, options) {
-  try {
-    console.log('🧱 drawAdvancedTable called');
+    try {
+      console.log('🧱 drawAdvancedTable called');
 
-    const {
-      headers,
-      rows,
-      columnWidths,
-      headerColor = '#1e3a8a',
-      headerBgColor = '#e0e7ff',
-      headerFontSize = 10,
-      rowColors = ['#ffffff', '#f9fafb'],
-      borderColor = '#d1d5db',
-      fontSize = 9,
-      rowHeight = 25,
-      textAlign = 'left',
-      headerTextAlign = 'left',
-      cellPadding = 5,
-      borderWidth = 1,
-      columnSettings = {}
-    } = options;
+      const {
+        headers,
+        rows,
+        columnWidths,
+        headerColor = '#1e3a8a',
+        headerBgColor = '#e0e7ff',
+        headerFontSize = 10,
+        rowColors = ['#ffffff', '#f9fafb'],
+        borderColor = '#d1d5db',
+        fontSize = 9,
+        rowHeight = 25,
+        textAlign = 'left',
+        headerTextAlign = 'left',
+        cellPadding = 5,
+        borderWidth = 1,
+        columnSettings = {}
+      } = options;
 
-    console.log('📊 Headers:', headers);
-    console.log('📦 Rows count:', rows?.length || 0);
-    console.log('📐 Incoming columnWidths:', columnWidths);
+      console.log('📊 Headers:', headers);
+      console.log('📦 Rows count:', rows?.length || 0);
+      console.log('📐 Incoming columnWidths:', columnWidths);
 
-    const startX = 50;
-    let startY = doc.y;
+      const startX = 50;
+      let startY = doc.y;
 
-    /* ===============================
-       ✅ SAFE COLUMN WIDTH HANDLING
-    =============================== */
+      /* ===============================
+         ✅ SAFE COLUMN WIDTH HANDLING
+      =============================== */
 
-    let colWidths;
-    const isValidColumnWidths =
-      Array.isArray(columnWidths) &&
-      columnWidths.length === headers.length &&
-      columnWidths.every(w => Number.isFinite(w) && w > 0);
+      let colWidths;
+      const isValidColumnWidths =
+        Array.isArray(columnWidths) &&
+        columnWidths.length === headers.length &&
+        columnWidths.every(w => Number.isFinite(w) && w > 0);
 
-    if (isValidColumnWidths) {
-      colWidths = columnWidths;
-      console.log('✅ Using provided columnWidths:', colWidths);
-    } else {
-      const totalWidth = doc.page.width - 100;
-      colWidths = headers.map(() => totalWidth / headers.length);
-      console.warn('⚠️ Invalid/empty columnWidths. Auto-calculated:', colWidths);
-    }
+      if (isValidColumnWidths) {
+        colWidths = columnWidths;
+        console.log('✅ Using provided columnWidths:', colWidths);
+      } else {
+        const totalWidth = doc.page.width - 100;
+        colWidths = headers.map(() => totalWidth / headers.length);
+        console.warn('⚠️ Invalid/empty columnWidths. Auto-calculated:', colWidths);
+      }
 
-    const tableWidth = colWidths.reduce((a, b) => a + b, 0);
-    console.log('📐 Table width:', tableWidth);
+      const tableWidth = colWidths.reduce((a, b) => a + b, 0);
+      console.log('📐 Table width:', tableWidth);
 
-    const colPositions = [startX];
-    for (let i = 0; i < colWidths.length - 1; i++) {
-      colPositions.push(colPositions[i] + colWidths[i]);
-    }
+      const colPositions = [startX];
+      for (let i = 0; i < colWidths.length - 1; i++) {
+        colPositions.push(colPositions[i] + colWidths[i]);
+      }
 
-    console.log('📍 Column positions:', colPositions);
+      console.log('📍 Column positions:', colPositions);
 
-    /* ===============================
-       🧾 HEADER ROW
-    =============================== */
+      /* ===============================
+         🧾 HEADER ROW
+      =============================== */
 
-    doc.fontSize(headerFontSize).fillColor(headerColor);
-    doc.rect(startX, startY, tableWidth, rowHeight)
-      .fillAndStroke(headerBgColor, borderColor);
+      doc.fontSize(headerFontSize).fillColor(headerColor);
+      doc.rect(startX, startY, tableWidth, rowHeight)
+        .fillAndStroke(headerBgColor, borderColor);
 
-    headers.forEach((header, i) => {
-      const colSettings = columnSettings[i] || {};
-      const align = colSettings.headerAlign || headerTextAlign;
-      const color = colSettings.headerColor || headerColor;
+      headers.forEach((header, i) => {
+        const colSettings = columnSettings[i] || {};
+        const align = colSettings.headerAlign || headerTextAlign;
+        const color = colSettings.headerColor || headerColor;
 
-      const safeWidth = Number.isFinite(colWidths[i])
-        ? colWidths[i] - (cellPadding * 2)
-        : 50;
+        const safeWidth = Number.isFinite(colWidths[i])
+          ? colWidths[i] - (cellPadding * 2)
+          : 50;
 
-      doc.fillColor(color).text(
-        header || '',
-        colPositions[i] + cellPadding,
-        startY + (rowHeight - headerFontSize) / 2,
-        { width: safeWidth, align, ellipsis: true }
-      );
-    });
+        doc.fillColor(color).text(
+          header || '',
+          colPositions[i] + cellPadding,
+          startY + (rowHeight - headerFontSize) / 2,
+          { width: safeWidth, align, ellipsis: true }
+        );
+      });
 
-    /* ===============================
-       📄 DATA ROWS
-    =============================== */
+      /* ===============================
+         📄 DATA ROWS
+      =============================== */
 
-    let currentY = startY + rowHeight;
-    doc.fontSize(fontSize);
+      let currentY = startY + rowHeight;
+      doc.fontSize(fontSize);
 
-    rows.forEach((row, rowIndex) => {
-      if (currentY > doc.page.height - 100) {
-        console.log('📄 New page added');
-        doc.addPage();
-        currentY = 50;
+      rows.forEach((row, rowIndex) => {
+        if (currentY > doc.page.height - 100) {
+          console.log('📄 New page added');
+          doc.addPage();
+          currentY = 50;
 
-        // Redraw header
-        doc.fontSize(headerFontSize).fillColor(headerColor);
-        doc.rect(startX, currentY, tableWidth, rowHeight)
-          .fillAndStroke(headerBgColor, borderColor);
+          // Redraw header
+          doc.fontSize(headerFontSize).fillColor(headerColor);
+          doc.rect(startX, currentY, tableWidth, rowHeight)
+            .fillAndStroke(headerBgColor, borderColor);
 
-        headers.forEach((header, i) => {
-          const safeWidth = Number.isFinite(colWidths[i])
-            ? colWidths[i] - (cellPadding * 2)
-            : 50;
+          headers.forEach((header, i) => {
+            const safeWidth = Number.isFinite(colWidths[i])
+              ? colWidths[i] - (cellPadding * 2)
+              : 50;
 
-          doc.text(
-            header || '',
-            colPositions[i] + cellPadding,
-            currentY + (rowHeight - headerFontSize) / 2,
-            { width: safeWidth, align: headerTextAlign, ellipsis: true }
-          );
-        });
+            doc.text(
+              header || '',
+              colPositions[i] + cellPadding,
+              currentY + (rowHeight - headerFontSize) / 2,
+              { width: safeWidth, align: headerTextAlign, ellipsis: true }
+            );
+          });
+
+          currentY += rowHeight;
+          doc.fontSize(fontSize);
+        }
+
+        const rowBgColor = rowColors[rowIndex % rowColors.length] || rowColors[0];
+        doc.rect(startX, currentY, tableWidth, rowHeight).fill(rowBgColor);
+
+        if (Array.isArray(row)) {
+          row.forEach((cell, i) => {
+            const colSettings = columnSettings[i] || {};
+            const align = colSettings.align || textAlign;
+            const color = colSettings.color || '#000000';
+            const bold = colSettings.bold || false;
+
+            const safeWidth = Number.isFinite(colWidths[i])
+              ? colWidths[i] - (cellPadding * 2)
+              : 50;
+
+            if (bold) doc.font('Helvetica-Bold');
+
+            doc.fillColor(color).text(
+              cell?.toString() || '',
+              colPositions[i] + cellPadding,
+              currentY + (rowHeight - fontSize) / 2,
+              { width: safeWidth, align, ellipsis: true }
+            );
+
+            if (bold) doc.font('Helvetica');
+          });
+        }
+
+        doc.lineWidth(borderWidth);
+        doc.rect(startX, currentY, tableWidth, rowHeight).stroke(borderColor);
 
         currentY += rowHeight;
-        doc.fontSize(fontSize);
-      }
+      });
 
-      const rowBgColor = rowColors[rowIndex % rowColors.length] || rowColors[0];
-      doc.rect(startX, currentY, tableWidth, rowHeight).fill(rowBgColor);
-
-      if (Array.isArray(row)) {
-        row.forEach((cell, i) => {
-          const colSettings = columnSettings[i] || {};
-          const align = colSettings.align || textAlign;
-          const color = colSettings.color || '#000000';
-          const bold = colSettings.bold || false;
-
-          const safeWidth = Number.isFinite(colWidths[i])
-            ? colWidths[i] - (cellPadding * 2)
-            : 50;
-
-          if (bold) doc.font('Helvetica-Bold');
-
-          doc.fillColor(color).text(
-            cell?.toString() || '',
-            colPositions[i] + cellPadding,
-            currentY + (rowHeight - fontSize) / 2,
-            { width: safeWidth, align, ellipsis: true }
-          );
-
-          if (bold) doc.font('Helvetica');
-        });
-      }
-
-      doc.lineWidth(borderWidth);
-      doc.rect(startX, currentY, tableWidth, rowHeight).stroke(borderColor);
-
-      currentY += rowHeight;
-    });
-
-    doc.y = currentY + 10;
-    console.log('✅ Table rendered successfully');
-  } catch (err) {
-    console.error('🔥 drawAdvancedTable failed:', err);
-    throw err; // important: let controller handle response properly
+      doc.y = currentY + 10;
+      console.log('✅ Table rendered successfully');
+    } catch (err) {
+      console.error('🔥 drawAdvancedTable failed:', err);
+      throw err; // important: let controller handle response properly
+    }
   }
-}
-
 
   // Legacy table method for backward compatibility
   drawTable(doc, headers, rows) {

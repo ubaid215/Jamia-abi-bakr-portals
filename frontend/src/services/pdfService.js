@@ -1,11 +1,7 @@
-// services/pdfService.js
+import api from './api';
 
-import api from './api'; 
-
-
-class pdfService {
-  
- 
+class PDFService {
+  // Download blob helper
   downloadBlob(blob, filename) {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -17,136 +13,105 @@ class pdfService {
     window.URL.revokeObjectURL(url);
   }
 
-  
+  // Preview PDF in new tab
+  previewPDF(blob) {
+    const url = window.URL.createObjectURL(blob);
+    window.open(url, '_blank');
+  }
+
+  // Build query string from options
+  buildQueryString(options) {
+    const params = new URLSearchParams();
+    Object.keys(options).forEach(key => {
+      if (options[key]) params.append(key, options[key]);
+    });
+    return params.toString();
+  }
+
+  // Generate student progress report
   async generateStudentProgressReport(studentId, options = {}) {
     try {
-      const params = new URLSearchParams();
-      
-      if (options.startDate) {
-        params.append('startDate', options.startDate);
-      }
-      if (options.endDate) {
-        params.append('endDate', options.endDate);
-      }
-
-      const queryString = params.toString();
+      const queryString = this.buildQueryString(options);
       const url = `/pdf/student/${studentId}/progress-report${queryString ? `?${queryString}` : ''}`;
-
-      const response = await api.get(url, {
-        responseType: 'blob'
-      });
-
+      
+      const response = await api.get(url, { responseType: 'blob' });
       const filename = `student-progress-report-${studentId}-${new Date().toISOString().split('T')[0]}.pdf`;
+      
       this.downloadBlob(response.data, filename);
-
       return { success: true, message: 'Report downloaded successfully' };
     } catch (error) {
-      console.error('Error generating student progress report:', error);
-      throw new Error(error.response?.data?.error || 'Failed to generate progress report');
+      const errorMessage = error.response?.data?.error || 'Failed to generate progress report';
+      throw new Error(errorMessage);
     }
   }
 
-
+  // Generate exam mark sheet
   async generateExamMarkSheet(classRoomId, options = {}) {
     try {
-      const params = new URLSearchParams();
-      
-      if (options.examName) params.append('examName', options.examName);
-      if (options.examDate) params.append('examDate', options.examDate);
-      if (options.subjectName) params.append('subjectName', options.subjectName);
-      if (options.totalMarks) params.append('totalMarks', options.totalMarks);
-
-      const queryString = params.toString();
+      const queryString = this.buildQueryString(options);
       const url = `/pdf/class/${classRoomId}/exam-marksheet${queryString ? `?${queryString}` : ''}`;
-
-      const response = await api.get(url, {
-        responseType: 'blob'
-      });
-
+      
+      const response = await api.get(url, { responseType: 'blob' });
       const filename = `exam-marksheet-${options.examName?.replace(/\s+/g, '-') || 'exam'}-${new Date().toISOString().split('T')[0]}.pdf`;
+      
       this.downloadBlob(response.data, filename);
-
       return { success: true, message: 'Mark sheet downloaded successfully' };
     } catch (error) {
-      console.error('Error generating exam mark sheet:', error);
-      throw new Error(error.response?.data?.error || 'Failed to generate mark sheet');
+      const errorMessage = error.response?.data?.error || 'Failed to generate mark sheet';
+      throw new Error(errorMessage);
     }
   }
 
+  // Generate attendance sheet
   async generateAttendanceSheet(classRoomId, options = {}) {
     try {
-      const params = new URLSearchParams();
-      
-      if (options.date) params.append('date', options.date);
-      if (options.month) params.append('month', options.month);
-
-      const queryString = params.toString();
+      const queryString = this.buildQueryString(options);
       const url = `/pdf/class/${classRoomId}/attendance-sheet${queryString ? `?${queryString}` : ''}`;
-
-      const response = await api.get(url, {
-        responseType: 'blob'
-      });
-
+      
+      const response = await api.get(url, { responseType: 'blob' });
       const dateStr = options.date || new Date().toISOString().split('T')[0];
       const filename = `attendance-sheet-${dateStr}.pdf`;
+      
       this.downloadBlob(response.data, filename);
-
       return { success: true, message: 'Attendance sheet downloaded successfully' };
     } catch (error) {
-      console.error('Error generating attendance sheet:', error);
-      throw new Error(error.response?.data?.error || 'Failed to generate attendance sheet');
+      const errorMessage = error.response?.data?.error || 'Failed to generate attendance sheet';
+      throw new Error(errorMessage);
     }
   }
 
-
+  // Generate custom PDF
   async generateCustomPDF(pdfData) {
     try {
       if (!pdfData.title) {
         throw new Error('Title is required for custom PDF');
       }
 
-      const response = await api.post('/pdf/custom', pdfData, {
-        responseType: 'blob'
-      });
-
+      const response = await api.post('/pdf/custom', pdfData, { responseType: 'blob' });
       const filename = `${pdfData.title.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.pdf`;
+      
       this.downloadBlob(response.data, filename);
-
       return { success: true, message: 'Custom PDF downloaded successfully' };
     } catch (error) {
-      console.error('Error generating custom PDF:', error);
-      throw new Error(error.response?.data?.error || 'Failed to generate custom PDF');
+      const errorMessage = error.response?.data?.error || 'Failed to generate custom PDF';
+      throw new Error(errorMessage);
     }
   }
 
- 
+  // Get blob for preview
   async getStudentProgressReportBlob(studentId, options = {}) {
     try {
-      const params = new URLSearchParams();
-      
-      if (options.startDate) params.append('startDate', options.startDate);
-      if (options.endDate) params.append('endDate', options.endDate);
-
-      const queryString = params.toString();
+      const queryString = this.buildQueryString(options);
       const url = `/pdf/student/${studentId}/progress-report${queryString ? `?${queryString}` : ''}`;
-
-      const response = await api.get(url, {
-        responseType: 'blob'
-      });
-
+      
+      const response = await api.get(url, { responseType: 'blob' });
       return response.data;
     } catch (error) {
-      console.error('Error getting student progress report blob:', error);
-      throw new Error(error.response?.data?.error || 'Failed to get progress report');
+      const errorMessage = error.response?.data?.error || 'Failed to get progress report';
+      throw new Error(errorMessage);
     }
-  }
-
-  previewPDF(blob) {
-    const url = window.URL.createObjectURL(blob);
-    window.open(url, '_blank');
-    // Note: URL will be cleaned up when the new tab is closed
   }
 }
 
 // Export singleton instance
-export default new pdfService();
+export default new PDFService();

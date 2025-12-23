@@ -1,8 +1,7 @@
-// contexts/PDFContext.jsx
-
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import pdfService from '../services/pdfService';
-import { toast } from 'react-hot-toast'; // Or your preferred toast library
+import api from '../services/api'; // Add this import
+import { toast } from 'react-hot-toast';
 
 const PDFContext = createContext();
 
@@ -20,141 +19,86 @@ export const PDFProvider = ({ children }) => {
   const [progress, setProgress] = useState(null);
 
   // Clear error
-  const clearError = useCallback(() => {
+  const clearError = useCallback(() => setError(null), []);
+
+  // Generic API call handler
+  const handlePDFOperation = useCallback(async (operation, successMessage, progressMessage) => {
+    setLoading(true);
     setError(null);
+    setProgress(progressMessage);
+
+    try {
+      await operation();
+      toast.success(successMessage);
+      setProgress(null);
+      return { success: true };
+    } catch (err) {
+      const errorMessage = err.message || 'Operation failed';
+      setError(errorMessage);
+      toast.error(errorMessage);
+      setProgress(null);
+      return { success: false, error: errorMessage };
+    } finally {
+      setLoading(false);
+    }
   }, []);
 
-  /**
-   * Generate student progress report
-   */
+  // ==================== PDF GENERATION METHODS ====================
+
+  // Generate student progress report
   const generateStudentReport = useCallback(async (studentId, options = {}) => {
-    setLoading(true);
-    setError(null);
-    setProgress('Generating student progress report...');
+    return handlePDFOperation(
+      () => pdfService.generateStudentProgressReport(studentId, options),
+      'Student report downloaded successfully!',
+      'Generating student progress report...'
+    );
+  }, [handlePDFOperation]);
 
-    try {
-      await pdfService.generateStudentProgressReport(studentId, options);
-      toast.success('Student report downloaded successfully!');
-      setProgress(null);
-      return { success: true };
-    } catch (err) {
-      const errorMessage = err.message || 'Failed to generate student report';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      setProgress(null);
-      return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  /**
-   * Generate exam mark sheet
-   */
+  // Generate exam mark sheet
   const generateMarkSheet = useCallback(async (classRoomId, options = {}) => {
-    setLoading(true);
-    setError(null);
-    setProgress('Generating exam mark sheet...');
+    return handlePDFOperation(
+      () => pdfService.generateExamMarkSheet(classRoomId, options),
+      'Mark sheet downloaded successfully!',
+      'Generating exam mark sheet...'
+    );
+  }, [handlePDFOperation]);
 
-    try {
-      await pdfService.generateExamMarkSheet(classRoomId, options);
-      toast.success('Mark sheet downloaded successfully!');
-      setProgress(null);
-      return { success: true };
-    } catch (err) {
-      const errorMessage = err.message || 'Failed to generate mark sheet';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      setProgress(null);
-      return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  /**
-   * Generate attendance sheet
-   */
+  // Generate attendance sheet
   const generateAttendanceSheet = useCallback(async (classRoomId, options = {}) => {
-    setLoading(true);
-    setError(null);
-    setProgress('Generating attendance sheet...');
+    return handlePDFOperation(
+      () => pdfService.generateAttendanceSheet(classRoomId, options),
+      'Attendance sheet downloaded successfully!',
+      'Generating attendance sheet...'
+    );
+  }, [handlePDFOperation]);
 
-    try {
-      await pdfService.generateAttendanceSheet(classRoomId, options);
-      toast.success('Attendance sheet downloaded successfully!');
-      setProgress(null);
-      return { success: true };
-    } catch (err) {
-      const errorMessage = err.message || 'Failed to generate attendance sheet';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      setProgress(null);
-      return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  /**
-   * Generate custom PDF
-   */
+  // Generate custom PDF
   const generateCustomPDF = useCallback(async (pdfData) => {
-    setLoading(true);
-    setError(null);
-    setProgress('Generating custom PDF...');
+    return handlePDFOperation(
+      () => pdfService.generateCustomPDF(pdfData),
+      'Custom PDF downloaded successfully!',
+      'Generating custom PDF...'
+    );
+  }, [handlePDFOperation]);
 
-    try {
-      await pdfService.generateCustomPDF(pdfData);
-      toast.success('Custom PDF downloaded successfully!');
-      setProgress(null);
-      return { success: true };
-    } catch (err) {
-      const errorMessage = err.message || 'Failed to generate custom PDF';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      setProgress(null);
-      return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  /**
-   * Preview student report in new tab
-   */
+  // Preview student report
   const previewStudentReport = useCallback(async (studentId, options = {}) => {
-    setLoading(true);
-    setError(null);
-    setProgress('Loading preview...');
+    return handlePDFOperation(
+      async () => {
+        const blob = await pdfService.getStudentProgressReportBlob(studentId, options);
+        pdfService.previewPDF(blob);
+      },
+      'Preview opened in new tab!',
+      'Loading preview...'
+    );
+  }, [handlePDFOperation]);
 
-    try {
-      const blob = await pdfService.getStudentProgressReportBlob(studentId, options);
-      pdfService.previewPDF(blob);
-      setProgress(null);
-      return { success: true };
-    } catch (err) {
-      const errorMessage = err.message || 'Failed to preview report';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      setProgress(null);
-      return { success: false, error: errorMessage };
-    } finally {
-      setLoading(false);
-    }
-  }, []);
-
-  /**
-   * Batch generate reports for multiple students
-   */
+  // Batch generate reports
   const batchGenerateStudentReports = useCallback(async (studentIds, options = {}) => {
     setLoading(true);
     setError(null);
     
-    const results = {
-      successful: [],
-      failed: []
-    };
+    const results = { successful: [], failed: [] };
 
     for (let i = 0; i < studentIds.length; i++) {
       const studentId = studentIds[i];
@@ -164,12 +108,11 @@ export const PDFProvider = ({ children }) => {
         await pdfService.generateStudentProgressReport(studentId, options);
         results.successful.push(studentId);
         
-        // Add small delay between downloads
+        // Small delay between downloads
         if (i < studentIds.length - 1) {
           await new Promise(resolve => setTimeout(resolve, 500));
         }
       } catch (err) {
-        console.error(`Failed to generate report for student ${studentId}:`, err);
         results.failed.push({ studentId, error: err.message });
       }
     }
@@ -180,12 +123,90 @@ export const PDFProvider = ({ children }) => {
     if (results.failed.length === 0) {
       toast.success(`Successfully generated ${results.successful.length} reports!`);
     } else {
-      toast.warning(
-        `Generated ${results.successful.length} reports. ${results.failed.length} failed.`
-      );
+      toast.warning(`Generated ${results.successful.length} reports. ${results.failed.length} failed.`);
     }
 
     return results;
+  }, []);
+
+  // ==================== DATA FETCHING METHODS ====================
+
+  // Get all students for dropdown
+  const getAllStudents = useCallback(async () => {
+    try {
+      const response = await api.get('/pdf/students');
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error fetching students:', error);
+      toast.error('Failed to load students');
+      throw error;
+    }
+  }, []);
+
+  // Get all classrooms for dropdown
+  const getAllClassrooms = useCallback(async () => {
+    try {
+      const response = await api.get('/pdf/classrooms');
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error fetching classrooms:', error);
+      toast.error('Failed to load classrooms');
+      throw error;
+    }
+  }, []);
+
+  // Get PDF generation stats
+  const getStats = useCallback(async () => {
+    try {
+      const response = await api.get('/pdf/stats');
+      return response.data.data || {
+        totalStudents: 0,
+        totalTeachers: 0,
+        totalClassRooms: 0,
+        totalActiveEnrollments: 0,
+        reportsThisMonth: 0
+      };
+    } catch (error) {
+      console.error('Error fetching stats:', error);
+      // Return default stats instead of throwing error
+      return {
+        totalStudents: 0,
+        totalTeachers: 0,
+        totalClassRooms: 0,
+        totalActiveEnrollments: 0,
+        reportsThisMonth: 0
+      };
+    }
+  }, []);
+
+  // Optional: Get students by search term
+  const searchStudents = useCallback(async (searchTerm = '', classId = '') => {
+    try {
+      const params = new URLSearchParams();
+      if (searchTerm) params.append('search', searchTerm);
+      if (classId) params.append('classId', classId);
+      
+      const response = await api.get(`/pdf/students?${params.toString()}`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error searching students:', error);
+      throw error;
+    }
+  }, []);
+
+  // Optional: Get classrooms by search term
+  const searchClassrooms = useCallback(async (searchTerm = '', type = '') => {
+    try {
+      const params = new URLSearchParams();
+      if (searchTerm) params.append('search', searchTerm);
+      if (type) params.append('type', type);
+      
+      const response = await api.get(`/pdf/classrooms?${params.toString()}`);
+      return response.data.data || [];
+    } catch (error) {
+      console.error('Error searching classrooms:', error);
+      throw error;
+    }
   }, []);
 
   const value = {
@@ -194,14 +215,21 @@ export const PDFProvider = ({ children }) => {
     error,
     progress,
     
-    // Actions
+    // PDF Generation Actions
     generateStudentReport,
     generateMarkSheet,
     generateAttendanceSheet,
     generateCustomPDF,
     previewStudentReport,
     batchGenerateStudentReports,
-    clearError
+    clearError,
+    
+    // Data Fetching Methods
+    getAllStudents,
+    getAllClassrooms,
+    getStats,
+    searchStudents,
+    searchClassrooms
   };
 
   return (
