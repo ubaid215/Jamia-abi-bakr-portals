@@ -78,7 +78,11 @@ const authenticateToken = async (req, res, next) => {
       '/auth/logout',
     ];
 
-    if (user.forcePasswordReset && !allowedPaths.includes(req.path)) {
+    // Normalize path to handle router nesting and query parameters
+    // req.originalUrl contains the full path (e.g., /api/auth/change-password)
+    const currentPath = req.originalUrl.split('?')[0];
+
+    if (user.forcePasswordReset && !allowedPaths.includes(currentPath)) {
       return res.status(403).json({
         error: 'Password reset required. Please change your password.',
       });

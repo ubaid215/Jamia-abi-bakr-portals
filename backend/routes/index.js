@@ -6,17 +6,17 @@ const router = express.Router();
 // Daily Activity Module
 const dailyActivityRoutes = require('../modules/dailyActivity/activity.routes');
 
-// Weekly Progress Module (Future)
-// const weeklyProgressRoutes = require('../modules/weeklyProgress/weeklyProgress.routes');
+// Weekly Progress Module
+const weeklyProgressRoutes = require('../modules/weeklyProgress/weeklyProgress.routes');
 
-// Real-Time Progress Dashboard Module (Future)
-// const progressDashboardRoutes = require('../modules/progressDashboard/dashboard.routes');
+// Real-Time Progress Dashboard Module
+const progressDashboardRoutes = require('../modules/progressSnapshot/progressSnapshot.routes');
 
-// Notifications Module (Future)
-// const notificationRoutes = require('../modules/notifications/notification.routes');
+// Notifications Module
+const notificationRoutes = require('../modules/notifications/notification.routes');
 
-// Goals & Targets Module (Future)
-// const goalsRoutes = require('../modules/goals/goals.routes');
+// Goals & Targets Module
+const goalsRoutes = require('../modules/goals/goals.routes');
 
 // Parent Communication Module (Future)
 // const parentCommunicationRoutes = require('../modules/parentCommunication/communication.routes');
@@ -35,10 +35,10 @@ router.get('/', (req, res) => {
     timestamp: new Date().toISOString(),
     endpoints: {
       activities: '/api/activities',
-      weeklyProgress: '/api/weekly-progress (Coming Soon)',
-      dashboard: '/api/dashboard (Coming Soon)',
-      notifications: '/api/notifications (Coming Soon)',
-      goals: '/api/goals (Coming Soon)',
+      weeklyProgress: '/api/weekly-progress',
+      dashboard: '/api/dashboard',
+      notifications: '/api/notifications',
+      goals: '/api/goals',
       parentCommunication: '/api/parent-communication (Coming Soon)'
     }
   });
@@ -53,36 +53,36 @@ router.get('/', (req, res) => {
 router.use('/activities', dailyActivityRoutes);
 
 /**
- * Weekly Progress Routes (Future)
+ * Weekly Progress Routes
  * @route /api/weekly-progress
  * @description Weekly summaries and analytics
  * @access Teacher, Admin, Super Admin, Student (own), Parent (own children)
  */
-// router.use('/weekly-progress', weeklyProgressRoutes);
+router.use('/weekly-progress', weeklyProgressRoutes);
 
 /**
- * Progress Dashboard Routes (Future)
+ * Progress Dashboard Routes
  * @route /api/dashboard
  * @description Real-time progress snapshots and metrics
  * @access Teacher, Admin, Super Admin, Student (own), Parent (own children)
  */
-// router.use('/dashboard', progressDashboardRoutes);
+router.use('/dashboard', progressDashboardRoutes);
 
 /**
- * Notification Routes (Future)
+ * Notification Routes
  * @route /api/notifications
  * @description System notifications and alerts
  * @access All authenticated users (role-based filtering)
  */
-// router.use('/notifications', notificationRoutes);
+router.use('/notifications', notificationRoutes);
 
 /**
- * Goals & Targets Routes (Future)
+ * Goals & Targets Routes
  * @route /api/goals
  * @description Student goals and targets management
  * @access Teacher, Admin, Super Admin, Student (own)
  */
-// router.use('/goals', goalsRoutes);
+router.use('/goals', goalsRoutes);
 
 /**
  * Parent Communication Routes (Future)

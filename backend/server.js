@@ -316,6 +316,16 @@ const server = app.listen(config.PORT, '127.0.0.1', () => {
     logger.info('⚠️  Redis: disabled (set REDIS_URL to enable caching)');
   }
   logger.info('✅ Server ready to accept connections');
+
+  // Start background jobs
+  try {
+    const { startWeeklyProgressJob } = require('./jobs/weeklyProgressJob');
+    const { startNotificationJobs } = require('./jobs/notificationCleanupJob');
+    startWeeklyProgressJob();
+    startNotificationJobs();
+  } catch (err) {
+    logger.error({ err }, 'Failed to start background jobs');
+  }
 });
 
 // Handle graceful shutdown

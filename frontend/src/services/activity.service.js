@@ -106,7 +106,9 @@ class ActivityService {
   // Get teacher's assigned classes
   async getTeacherClasses(teacherId) {
     try {
-      const response = await api.get(`/teachers/${teacherId}/classes`);
+      // Use the 'my-classes' endpoint which uses the authenticated user's ID
+      // The teacherId parameter is kept for compatibility but ignored
+      const response = await api.get('/teachers/my-classes');
       return response.data;
     } catch (error) {
       console.error('Failed to fetch teacher classes:', error);
@@ -130,7 +132,7 @@ class ActivityService {
   // Get subjects for a classroom
   async getClassroomSubjects(classRoomId) {
     try {
-      const response = await api.get(`/classrooms/${classRoomId}/subjects`);
+      const response = await api.get(`/classes/${classRoomId}/subjects`);
       return response.data;
     } catch (error) {
       console.error('Failed to fetch classroom subjects:', error);
@@ -152,7 +154,7 @@ class ActivityService {
   // Get students for a classroom
   async getClassroomStudents(classRoomId) {
     try {
-      const response = await api.get(`/classrooms/${classRoomId}/students`);
+      const response = await api.get(`/classes/${classRoomId}/students`);
       return response.data;
     } catch (error) {
       console.error('Failed to fetch classroom students:', error);

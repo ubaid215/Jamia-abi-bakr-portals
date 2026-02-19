@@ -26,12 +26,12 @@ import {
 const ApplyLeave = () => {
   const {
     applyForLeave,
-    getMyLeaveHistory,
+    fetchMyLeaveHistory,
     loading,
     teacher
   } = useTeacher();
 
-  const [activeTab, setActiveTab] = useState('apply'); 
+  const [activeTab, setActiveTab] = useState('apply');
   const [leaveForm, setLeaveForm] = useState({
     fromDate: '',
     toDate: '',
@@ -41,7 +41,7 @@ const ApplyLeave = () => {
   const [leaveHistory, setLeaveHistory] = useState([]);
   const [leaveStats, setLeaveStats] = useState({});
   const [selectedFile, setSelectedFile] = useState(null);
-  const [filterStatus, setFilterStatus] = useState('all'); 
+  const [filterStatus, setFilterStatus] = useState('all');
   const [expandedLeave, setExpandedLeave] = useState(null);
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -55,7 +55,7 @@ const ApplyLeave = () => {
 
   const loadLeaveHistory = async () => {
     try {
-      const history = await getMyLeaveHistory();
+      const history = await fetchMyLeaveHistory();
       setLeaveHistory(history.leaveRequests || []);
     } catch (error) {
       console.error('Error loading leave history:', error);
@@ -150,7 +150,7 @@ const ApplyLeave = () => {
 
   const handleSubmitLeave = async (e) => {
     e.preventDefault();
-    
+
     if (!validateForm()) return;
 
     setIsSubmitting(true);
@@ -163,7 +163,7 @@ const ApplyLeave = () => {
       };
 
       await applyForLeave(leaveData);
-      
+
       // Reset form
       setLeaveForm({
         fromDate: '',
@@ -172,13 +172,13 @@ const ApplyLeave = () => {
         supportingDocuments: []
       });
       setSelectedFile(null);
-      
+
       // Reload history
       await loadLeaveHistory();
-      
+
       // Switch to history tab
       setActiveTab('history');
-      
+
       alert('Leave application submitted successfully!');
     } catch (error) {
       console.error('Error submitting leave application:', error);
@@ -243,7 +243,7 @@ const ApplyLeave = () => {
           Apply for Leave
         </h2>
       </div>
-      
+
       <form onSubmit={handleSubmitLeave} className="p-6">
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
           {/* From Date */}
@@ -351,11 +351,10 @@ const ApplyLeave = () => {
           <button
             type="submit"
             disabled={isSubmitting}
-            className={`px-6 py-2 border-amber-300 rounded-md font-medium flex items-center ${
-              isSubmitting
+            className={`px-6 py-2 border-amber-300 rounded-md font-medium flex items-center ${isSubmitting
                 ? 'bg-gray-400 text-gray-200 cursor-not-allowed'
                 : 'bg-gold text-black  hover:bg-yellow-600'
-            }`}
+              }`}
           >
             {isSubmitting ? (
               <>
@@ -382,7 +381,7 @@ const ApplyLeave = () => {
             <Clock className="h-5 w-5 mr-2 text-gold" />
             Leave History
           </h2>
-          
+
           <div className="flex items-center space-x-4">
             <select
               value={filterStatus}
@@ -394,7 +393,7 @@ const ApplyLeave = () => {
               <option value="APPROVED">Approved</option>
               <option value="REJECTED">Rejected</option>
             </select>
-            
+
             <button className="flex items-center px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
               <Download className="h-4 w-4 mr-2" />
               Export
@@ -409,7 +408,7 @@ const ApplyLeave = () => {
             <FileText className="mx-auto h-12 w-12 text-gray-400" />
             <h3 className="mt-2 text-sm font-medium text-gray-900">No leave applications</h3>
             <p className="mt-1 text-sm text-gray-500">
-              {filterStatus === 'all' 
+              {filterStatus === 'all'
                 ? "You haven't applied for any leave yet."
                 : `No ${filterStatus.toLowerCase()} leave applications found.`
               }
@@ -426,7 +425,7 @@ const ApplyLeave = () => {
                         {getStatusIcon(leave.status)}
                         <span className="ml-1">{leave.status}</span>
                       </span>
-                      
+
                       <div>
                         <div className="font-medium text-gray-900">
                           {formatDate(leave.fromDate)} - {formatDate(leave.toDate)}
@@ -448,7 +447,7 @@ const ApplyLeave = () => {
                           </div>
                         )}
                       </div>
-                      
+
                       <button
                         onClick={() => setExpandedLeave(expandedLeave === leave.id ? null : leave.id)}
                         className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
@@ -468,7 +467,7 @@ const ApplyLeave = () => {
                           {leave.reason}
                         </p>
                       </div>
-                      
+
                       <div>
                         <h4 className="font-medium text-gray-900 mb-2">Application Details</h4>
                         <div className="space-y-2 text-sm">
@@ -613,7 +612,7 @@ const ApplyLeave = () => {
                 Apply for leave and track your leave history
               </p>
             </div>
-            
+
             <div className="flex items-center space-x-4">
               <div className="text-right">
                 <p className="text-sm font-medium text-gray-900">{teacher?.name}</p>
@@ -641,11 +640,10 @@ const ApplyLeave = () => {
                 <button
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
-                  className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${
-                    activeTab === tab.id
+                  className={`flex items-center py-4 px-1 border-b-2 font-medium text-sm ${activeTab === tab.id
                       ? 'border-gold text-gold'
                       : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-                  }`}
+                    }`}
                 >
                   <Icon className="h-4 w-4 mr-2" />
                   {tab.label}

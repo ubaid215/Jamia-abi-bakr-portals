@@ -18,7 +18,7 @@ const Login = () => {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
-    
+
     if (!email || !password) {
       toast.error('Please fill in all fields');
       return;
@@ -30,7 +30,12 @@ const Login = () => {
       const user = await login(email, password);
       toast.success(`Welcome back, ${user.name}!`);
 
-      // Redirect based on user role
+      // Redirect based on user role and status
+      if (user.forcePasswordReset === true) {
+        navigate('/change-password', { replace: true });
+        return;
+      }
+
       switch (user.role) {
         case 'SUPER_ADMIN':
         case 'ADMIN':
@@ -70,26 +75,26 @@ const Login = () => {
   };
 
   return (
-    <div 
+    <div
       className="min-h-screen flex flex-col justify-center py-12 sm:px-6 lg:px-8"
-      style={{ 
-        background: `linear-gradient(135deg, ${goldColors[50]} 0%, #FFFFFF 50%, ${goldColors[50]} 100%)` 
+      style={{
+        background: `linear-gradient(135deg, ${goldColors[50]} 0%, #FFFFFF 50%, ${goldColors[50]} 100%)`
       }}
     >
       <div className="sm:mx-auto sm:w-full sm:max-w-md">
         <div className="flex justify-center">
           <div className="flex items-center space-x-4">
-            <div 
+            <div
               className="p-4 rounded-2xl shadow-lg"
-              style={{ 
-                background: `linear-gradient(135deg, ${goldColors[500]}, ${goldColors[700]})` 
+              style={{
+                background: `linear-gradient(135deg, ${goldColors[500]}, ${goldColors[700]})`
               }}
             >
               <BookOpen className="h-10 w-10 text-white" />
             </div>
             <div className="text-center sm:text-left">
               <h1 className="text-3xl font-bold text-black font-serif">Madrassa</h1>
-              <p 
+              <p
                 className="text-sm font-medium tracking-wide"
                 style={{ color: goldColors[700] }}
               >
@@ -107,7 +112,7 @@ const Login = () => {
       </div>
 
       <div className="mt-8 sm:mx-auto sm:w-full sm:max-w-md">
-        <div 
+        <div
           className="bg-white py-8 px-6 shadow-2xl sm:rounded-2xl sm:px-10 backdrop-blur-sm"
           style={{ border: `1px solid ${goldColors[200]}50` }}
         >
@@ -126,9 +131,9 @@ const Login = () => {
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
                   className="block w-full px-4 py-3 border border-gray-300 rounded-xl placeholder-gray-400 focus:outline-none transition-all duration-200 bg-white/80 text-gray-900 font-medium"
-                  style={{ 
+                  style={{
                     '--tw-ring-color': goldColors[500],
-                    focus: `outline-none ring-2 ring-[${goldColors[500]}] border-transparent` 
+                    focus: `outline-none ring-2 ring-[${goldColors[500]}] border-transparent`
                   }}
                   placeholder="your@email.com"
                 />
@@ -149,18 +154,18 @@ const Login = () => {
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
                   className="block w-full px-4 py-3 border border-gray-300 rounded-xl placeholder-gray-400 focus:outline-none transition-all duration-200 bg-white/80 text-gray-900 font-medium pr-12"
-                  style={{ 
+                  style={{
                     '--tw-ring-color': goldColors[500],
-                    focus: `outline-none ring-2 ring-[${goldColors[500]}] border-transparent` 
+                    focus: `outline-none ring-2 ring-[${goldColors[500]}] border-transparent`
                   }}
                   placeholder="Enter your password"
                 />
                 <button
                   type="button"
                   className="absolute inset-y-0 right-0 pr-4 flex items-center text-gray-400 transition-colors duration-200"
-                  style={{ 
+                  style={{
                     '--tw-hover-color': goldColors[600],
-                    hover: `text-[${goldColors[600]}]` 
+                    hover: `text-[${goldColors[600]}]`
                   }}
                   onClick={() => setShowPassword(!showPassword)}
                 >
@@ -180,11 +185,11 @@ const Login = () => {
                   name="remember-me"
                   type="checkbox"
                   className="h-4 w-4 border-gray-300 rounded"
-                  style={{ 
+                  style={{
                     '--tw-ring-color': goldColors[500],
                     '--tw-checked-color': goldColors[600],
                     focus: `ring-2 ring-[${goldColors[500]}]`,
-                    checked: `bg-[${goldColors[600]}] border-[${goldColors[600]}]` 
+                    checked: `bg-[${goldColors[600]}] border-[${goldColors[600]}]`
                   }}
                 />
                 <label htmlFor="remember-me" className="ml-2 block text-sm text-gray-900 font-medium">
@@ -193,13 +198,13 @@ const Login = () => {
               </div>
 
               <div className="text-sm">
-                <a 
-                  href="#" 
+                <a
+                  href="#"
                   className="font-semibold transition-colors duration-200"
-                  style={{ 
+                  style={{
                     color: goldColors[700],
                     '--tw-hover-color': goldColors[800],
-                    hover: `color: ${goldColors[800]}` 
+                    hover: `color: ${goldColors[800]}`
                   }}
                 >
                   Forgot password?
@@ -222,17 +227,17 @@ const Login = () => {
                 }}
               >
                 <span className="absolute left-0 inset-y-0 flex items-center pl-4">
-                  <LogIn 
-                    className="h-6 w-6 transition-colors duration-200" 
-                    style={{ 
+                  <LogIn
+                    className="h-6 w-6 transition-colors duration-200"
+                    style={{
                       color: goldColors[200],
                       '--tw-group-hover-color': goldColors[100],
-                    }} 
+                    }}
                   />
                 </span>
                 {isLoading ? (
                   <div className="flex items-center space-x-2">
-                    <div 
+                    <div
                       className="animate-spin rounded-full h-5 w-5 border-b-2 border-white"
                     ></div>
                     <span>Signing in...</span>

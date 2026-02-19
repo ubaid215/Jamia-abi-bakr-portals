@@ -383,66 +383,49 @@ class ClassController {
   }
 
   // ============================================
-// ROUTE CONFIGURATION (Add to your routes file):
-// router.post('/classes/enroll', classController.enrollStudent);
-// ============================================
+  // ROUTE CONFIGURATION (Add to your routes file):
+  // router.post('/classes/enroll', classController.enrollStudent);
+  // ============================================
 
-async enrollStudent(req, res) {
-  try {
-    console.log('🎓 [ENROLLMENT] Enroll student request received');
-    console.log('📦 Full request body:', req.body);
+  async enrollStudent(req, res) {
+    try {
+      console.log('🎓 [ENROLLMENT] Enroll student request received');
+      console.log('📦 Full request body:', req.body);
 
-    // Get both studentId and classId from request body
-    const { 
-      studentId,  // ✅ Student ID from body (the student we're enrolling)
-      classId,    // ✅ Class ID from body (the class we're enrolling them into)
-      rollNumber, 
-      startDate, 
-      isCurrent = true,
-      transferFromClassId 
-    } = req.body;
+      // Get both studentId and classId from request body
+      const {
+        studentId,  // ✅ Student ID from body (the student we're enrolling)
+        classId,    // ✅ Class ID from body (the class we're enrolling them into)
+        rollNumber,
+        startDate,
+        isCurrent = true,
+        transferFromClassId
+      } = req.body;
 
-    console.log('➡️ Request Data:', {
-      studentId,
-      classId,
-      rollNumber,
-      startDate,
-      isCurrent,
-      transferFromClassId
-    });
+      console.log('➡️ Request Data:', {
+        studentId,
+        classId,
+        rollNumber,
+        startDate,
+        isCurrent,
+        transferFromClassId
+      });
 
-    // Validate required fields
-    if (!studentId) {
-      console.warn('⚠️ Student ID missing');
-      return res.status(400).json({ error: 'Student ID is required' });
-    }
-
-    if (!classId) {
-      console.warn('⚠️ Class ID missing');
-      return res.status(400).json({ error: 'Class ID is required' });
-    }
-
-    // Check if student exists - try by student.id first
-    console.log('🔍 Checking student existence...');
-    let student = await prisma.student.findUnique({
-      where: { id: studentId },
-      include: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            email: true,
-            status: true
-          }
-        }
+      // Validate required fields
+      if (!studentId) {
+        console.warn('⚠️ Student ID missing');
+        return res.status(400).json({ error: 'Student ID is required' });
       }
-    });
 
-    // If not found by student.id, try by userId
-    if (!student) {
-      console.log('🔄 Trying to find student by userId...');
-      student = await prisma.student.findFirst({
-        where: { userId: studentId },
+      if (!classId) {
+        console.warn('⚠️ Class ID missing');
+        return res.status(400).json({ error: 'Class ID is required' });
+      }
+
+      // Check if student exists - try by student.id first
+      console.log('🔍 Checking student existence...');
+      let student = await prisma.student.findUnique({
+        where: { id: studentId },
         include: {
           user: {
             select: {
@@ -454,189 +437,206 @@ async enrollStudent(req, res) {
           }
         }
       });
-    }
 
-    if (!student) {
-      console.warn(`❌ Student not found: ${studentId}`);
-      return res.status(404).json({ 
-        error: 'Student not found',
-        studentId: studentId
-      });
-    }
-
-    console.log('✅ Student found:', {
-      id: student.id,
-      userId: student.userId,
-      name: student.user?.name,
-      status: student.user?.status
-    });
-
-    // Check if class exists
-    console.log('🔍 Checking class existence...');
-    const classRoom = await prisma.classRoom.findUnique({
-      where: { id: classId }
-    });
-
-    if (!classRoom) {
-      console.warn(`❌ Class not found: ${classId}`);
-      return res.status(404).json({ error: 'Class not found' });
-    }
-
-    console.log('✅ Class found:', {
-      id: classRoom.id,
-      name: classRoom.name,
-      grade: classRoom.grade,
-      section: classRoom.section
-    });
-
-    // Check if student already enrolled in this class
-    console.log('🔎 Checking existing enrollment...');
-    const existingEnrollment = await prisma.enrollment.findFirst({
-      where: {
-        studentId: student.id,  // Use student.id, not the original studentId
-        classRoomId: classId,
-        isCurrent: true
-      }
-    });
-
-    if (existingEnrollment) {
-      console.warn('⚠️ Student already enrolled in this class');
-      return res.status(400).json({ 
-        error: 'Student is already enrolled in this class',
-        enrollment: existingEnrollment
-      });
-    }
-
-    // Handle transfer or previous enrollments
-    if (transferFromClassId) {
-      console.log('🔁 Transferring student from class:', transferFromClassId);
-      await prisma.enrollment.updateMany({
-        where: {
-          studentId: student.id,
-          classRoomId: transferFromClassId,
-          isCurrent: true
-        },
-        data: {
-          isCurrent: false,
-          endDate: new Date()
-        }
-      });
-    } else {
-      console.log('🧹 Marking all previous enrollments as inactive');
-      await prisma.enrollment.updateMany({
-        where: {
-          studentId: student.id,
-          isCurrent: true
-        },
-        data: {
-          isCurrent: false,
-          endDate: new Date()
-        }
-      });
-    }
-
-    // Generate roll number if not provided
-    let finalRollNumber = rollNumber;
-    if (!finalRollNumber) {
-      console.log('🔢 Generating roll number...');
-      finalRollNumber = await generateRollNumber(classId);
-      console.log('✅ Generated roll number:', finalRollNumber);
-    }
-
-    // Ensure roll number is an integer
-    const rollNumberInt = Number(finalRollNumber);
-    if (isNaN(rollNumberInt) || rollNumberInt <= 0) {
-      console.error('❌ Invalid roll number:', finalRollNumber);
-      return res.status(400).json({ 
-        error: 'Invalid roll number generated',
-        rollNumber: finalRollNumber
-      });
-    }
-
-    // Create new enrollment
-    console.log('📝 Creating enrollment...');
-    const enrollment = await prisma.enrollment.create({
-      data: {
-        studentId: student.id,  // Use student.id
-        classRoomId: classId,
-        rollNumber: rollNumberInt,
-        startDate: startDate ? new Date(startDate) : new Date(),
-        isCurrent,
-        endDate: null
-      },
-      include: {
-        student: {
+      // If not found by student.id, try by userId
+      if (!student) {
+        console.log('🔄 Trying to find student by userId...');
+        student = await prisma.student.findFirst({
+          where: { userId: studentId },
           include: {
             user: {
               select: {
                 id: true,
                 name: true,
-                email: true
+                email: true,
+                status: true
               }
             }
           }
-        },
-        classRoom: {
-          select: {
-            id: true,
-            name: true,
-            grade: true,
-            section: true,
-            type: true
-          }
-        }
+        });
       }
-    });
 
-    console.log('✅ Enrollment created:', {
-      enrollmentId: enrollment.id,
-      rollNumber: enrollment.rollNumber,
-      class: enrollment.classRoom?.name
-    });
-
-    // Update student's current enrollment reference
-    console.log('🔗 Updating student current enrollment...');
-    await prisma.student.update({
-      where: { id: student.id },
-      data: { 
-        currentEnrollmentId: enrollment.id 
+      if (!student) {
+        console.warn(`❌ Student not found: ${studentId}`);
+        return res.status(404).json({
+          error: 'Student not found',
+          studentId: studentId
+        });
       }
-    });
 
-    // Update class lastRollNumber
-    console.log('🔄 Updating class lastRollNumber...');
-    await prisma.classRoom.update({
-      where: { id: classId },
-      data: { 
-        lastRollNumber: rollNumberInt
-      }
-    });
-
-    console.log('🎉 Student enrolled successfully');
-
-    res.status(201).json({
-      message: 'Student enrolled successfully',
-      enrollment,
-      student: {
+      console.log('✅ Student found:', {
         id: student.id,
         userId: student.userId,
         name: student.user?.name,
-        admissionNo: student.admissionNo
+        status: student.user?.status
+      });
+
+      // Check if class exists
+      console.log('🔍 Checking class existence...');
+      const classRoom = await prisma.classRoom.findUnique({
+        where: { id: classId }
+      });
+
+      if (!classRoom) {
+        console.warn(`❌ Class not found: ${classId}`);
+        return res.status(404).json({ error: 'Class not found' });
       }
-    });
 
-  } catch (error) {
-    console.error('🔥 [ENROLLMENT ERROR]', {
-      message: error.message,
-      stack: error.stack
-    });
+      console.log('✅ Class found:', {
+        id: classRoom.id,
+        name: classRoom.name,
+        grade: classRoom.grade,
+        section: classRoom.section
+      });
 
-    res.status(500).json({ 
-      error: 'Internal server error',
-      details: error.message 
-    });
+      // Check if student already enrolled in this class
+      console.log('🔎 Checking existing enrollment...');
+      const existingEnrollment = await prisma.enrollment.findFirst({
+        where: {
+          studentId: student.id,  // Use student.id, not the original studentId
+          classRoomId: classId,
+          isCurrent: true
+        }
+      });
+
+      if (existingEnrollment) {
+        console.warn('⚠️ Student already enrolled in this class');
+        return res.status(400).json({
+          error: 'Student is already enrolled in this class',
+          enrollment: existingEnrollment
+        });
+      }
+
+      // Handle transfer or previous enrollments
+      if (transferFromClassId) {
+        console.log('🔁 Transferring student from class:', transferFromClassId);
+        await prisma.enrollment.updateMany({
+          where: {
+            studentId: student.id,
+            classRoomId: transferFromClassId,
+            isCurrent: true
+          },
+          data: {
+            isCurrent: false,
+            endDate: new Date()
+          }
+        });
+      } else {
+        console.log('🧹 Marking all previous enrollments as inactive');
+        await prisma.enrollment.updateMany({
+          where: {
+            studentId: student.id,
+            isCurrent: true
+          },
+          data: {
+            isCurrent: false,
+            endDate: new Date()
+          }
+        });
+      }
+
+      // Generate roll number if not provided
+      let finalRollNumber = rollNumber;
+      if (!finalRollNumber) {
+        console.log('🔢 Generating roll number...');
+        finalRollNumber = await generateRollNumber(classId);
+        console.log('✅ Generated roll number:', finalRollNumber);
+      }
+
+      // Ensure roll number is an integer
+      const rollNumberInt = Number(finalRollNumber);
+      if (isNaN(rollNumberInt) || rollNumberInt <= 0) {
+        console.error('❌ Invalid roll number:', finalRollNumber);
+        return res.status(400).json({
+          error: 'Invalid roll number generated',
+          rollNumber: finalRollNumber
+        });
+      }
+
+      // Create new enrollment
+      console.log('📝 Creating enrollment...');
+      const enrollment = await prisma.enrollment.create({
+        data: {
+          studentId: student.id,  // Use student.id
+          classRoomId: classId,
+          rollNumber: rollNumberInt,
+          startDate: startDate ? new Date(startDate) : new Date(),
+          isCurrent,
+          endDate: null
+        },
+        include: {
+          student: {
+            include: {
+              user: {
+                select: {
+                  id: true,
+                  name: true,
+                  email: true
+                }
+              }
+            }
+          },
+          classRoom: {
+            select: {
+              id: true,
+              name: true,
+              grade: true,
+              section: true,
+              type: true
+            }
+          }
+        }
+      });
+
+      console.log('✅ Enrollment created:', {
+        enrollmentId: enrollment.id,
+        rollNumber: enrollment.rollNumber,
+        class: enrollment.classRoom?.name
+      });
+
+      // Update student's current enrollment reference
+      console.log('🔗 Updating student current enrollment...');
+      await prisma.student.update({
+        where: { id: student.id },
+        data: {
+          currentEnrollmentId: enrollment.id
+        }
+      });
+
+      // Update class lastRollNumber
+      console.log('🔄 Updating class lastRollNumber...');
+      await prisma.classRoom.update({
+        where: { id: classId },
+        data: {
+          lastRollNumber: rollNumberInt
+        }
+      });
+
+      console.log('🎉 Student enrolled successfully');
+
+      res.status(201).json({
+        message: 'Student enrolled successfully',
+        enrollment,
+        student: {
+          id: student.id,
+          userId: student.userId,
+          name: student.user?.name,
+          admissionNo: student.admissionNo
+        }
+      });
+
+    } catch (error) {
+      console.error('🔥 [ENROLLMENT ERROR]', {
+        message: error.message,
+        stack: error.stack
+      });
+
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
+    }
   }
-}
 
 
   // Get students in a class
@@ -707,6 +707,48 @@ async enrollStudent(req, res) {
 
     } catch (error) {
       console.error('Get class students error:', error);
+      res.status(500).json({ error: 'Internal server error' });
+    }
+  }
+
+  // Get subjects in a class
+  async getClassSubjects(req, res) {
+    try {
+      const { id } = req.params;
+
+      // Check if class exists
+      const classRoom = await prisma.classRoom.findUnique({
+        where: { id },
+        include: {
+          subjects: {
+            include: {
+              teacher: {
+                include: {
+                  user: {
+                    select: {
+                      id: true,
+                      name: true,
+                      email: true
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      });
+
+      if (!classRoom) {
+        return res.status(404).json({ error: 'Class not found' });
+      }
+
+      res.json({
+        success: true,
+        data: classRoom.subjects
+      });
+
+    } catch (error) {
+      console.error('Get class subjects error:', error);
       res.status(500).json({ error: 'Internal server error' });
     }
   }

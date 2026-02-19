@@ -9,7 +9,7 @@ class ActivityController {
   async createActivity(req, res) {
     const startTime = Date.now();
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     console.log(`[${new Date().toISOString()}] [${requestId}] ========== CREATE ACTIVITY STARTED ==========`);
     console.log(`[${new Date().toISOString()}] [${requestId}] Request from User: ${req.user?.id}, Role: ${req.user?.role}`);
     console.log(`[${new Date().toISOString()}] [${requestId}] Teacher Profile: ${req.user?.teacherProfile?.id || 'None'}`);
@@ -150,6 +150,16 @@ class ActivityController {
       console.log(`[${new Date().toISOString()}] [${requestId}] Duration: ${duration}ms`);
       console.log(`[${new Date().toISOString()}] [${requestId}] ========== CREATE ACTIVITY COMPLETED ==========`);
 
+      // Fire-and-forget: Update student snapshot asynchronously
+      setImmediate(async () => {
+        try {
+          const snapshotService = require('../progressSnapshot/progressSnapshot.service');
+          await snapshotService.recalculate(req.body.studentId);
+        } catch (err) {
+          console.error(`[${requestId}] Snapshot recalculation failed (non-blocking):`, err.message);
+        }
+      });
+
       return res.status(201).json({
         success: true,
         message: 'Daily activity created successfully',
@@ -181,9 +191,9 @@ class ActivityController {
         });
       }
 
-      if (error.message.includes('required') || 
-          error.message.includes('must be') ||
-          error.message.includes('invalid')) {
+      if (error.message.includes('required') ||
+        error.message.includes('must be') ||
+        error.message.includes('invalid')) {
         return res.status(400).json({
           success: false,
           error: error.message,
@@ -191,8 +201,8 @@ class ActivityController {
         });
       }
 
-      if (error.message.includes('access') || 
-          error.message.includes('permission')) {
+      if (error.message.includes('access') ||
+        error.message.includes('permission')) {
         return res.status(403).json({
           success: false,
           error: error.message,
@@ -226,14 +236,14 @@ class ActivityController {
   async getStudentActivities(req, res) {
     const startTime = Date.now();
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     console.log(`[${new Date().toISOString()}] [${requestId}] ========== GET STUDENT ACTIVITIES STARTED ==========`);
     console.log(`[${new Date().toISOString()}] [${requestId}] Student ID from params: ${req.params.studentId}`);
     console.log(`[${new Date().toISOString()}] [${requestId}] Request from User: ${req.user?.id}, Role: ${req.user?.role}`);
 
     try {
       const { studentId } = req.params;
-      
+
       if (!studentId) {
         return res.status(400).json({
           success: false,
@@ -243,20 +253,20 @@ class ActivityController {
       }
 
       // Parse query parameters
-      const { 
-        startDate, 
-        endDate, 
-        page = 1, 
+      const {
+        startDate,
+        endDate,
+        page = 1,
         limit = 20,
         sortBy = 'date',
         sortOrder = 'desc'
       } = req.query;
 
       const skip = (parseInt(page) - 1) * parseInt(limit);
-      
+
       // Build where clause
       const where = { studentId };
-      
+
       if (startDate || endDate) {
         where.date = {};
         if (startDate) where.date.gte = new Date(startDate);
@@ -325,7 +335,7 @@ class ActivityController {
       const duration = Date.now() - startTime;
       console.error(`[${new Date().toISOString()}] [${requestId}] ❌ GET STUDENT ACTIVITIES ERROR: ${error.message}`);
       console.error(`[${new Date().toISOString()}] [${requestId}] Duration: ${duration}ms`);
-      
+
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch student activities',
@@ -342,12 +352,12 @@ class ActivityController {
   async getClassActivities(req, res) {
     const startTime = Date.now();
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     console.log(`[${new Date().toISOString()}] [${requestId}] ========== GET CLASS ACTIVITIES STARTED ==========`);
 
     try {
       const { classRoomId } = req.params;
-      
+
       if (!classRoomId) {
         return res.status(400).json({
           success: false,
@@ -378,24 +388,24 @@ class ActivityController {
       }
 
       // Parse query parameters
-      const { 
+      const {
         date,
         studentId,
-        page = 1, 
+        page = 1,
         limit = 20
       } = req.query;
 
       const skip = (parseInt(page) - 1) * parseInt(limit);
-      
+
       // Build where clause
       const where = { classRoomId };
-      
+
       if (date) {
         const activityDate = new Date(date);
         activityDate.setHours(0, 0, 0, 0);
         where.date = activityDate;
       }
-      
+
       if (studentId) {
         where.studentId = studentId;
       }
@@ -452,7 +462,7 @@ class ActivityController {
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(`[${new Date().toISOString()}] [${requestId}] ❌ GET CLASS ACTIVITIES ERROR: ${error.message}`);
-      
+
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch classroom activities',
@@ -469,12 +479,12 @@ class ActivityController {
   async getActivityById(req, res) {
     const startTime = Date.now();
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     console.log(`[${new Date().toISOString()}] [${requestId}] ========== GET ACTIVITY BY ID STARTED ==========`);
 
     try {
       const { id } = req.params;
-      
+
       if (!id) {
         return res.status(400).json({
           success: false,
@@ -554,7 +564,7 @@ class ActivityController {
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(`[${new Date().toISOString()}] [${requestId}] ❌ GET ACTIVITY BY ID ERROR: ${error.message}`);
-      
+
       return res.status(500).json({
         success: false,
         error: 'Failed to fetch activity',
@@ -571,7 +581,7 @@ class ActivityController {
   async updateActivity(req, res) {
     const startTime = Date.now();
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     console.log(`[${new Date().toISOString()}] [${requestId}] ========== UPDATE ACTIVITY STARTED ==========`);
 
     try {
@@ -733,7 +743,7 @@ class ActivityController {
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(`[${new Date().toISOString()}] [${requestId}] ❌ UPDATE ACTIVITY ERROR: ${error.message}`);
-      
+
       if (error.code === 'P2025') {
         return res.status(404).json({
           success: false,
@@ -758,7 +768,7 @@ class ActivityController {
   async deleteActivity(req, res) {
     const startTime = Date.now();
     const requestId = `req_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`;
-    
+
     console.log(`[${new Date().toISOString()}] [${requestId}] ========== DELETE ACTIVITY STARTED ==========`);
 
     try {
@@ -815,7 +825,7 @@ class ActivityController {
     } catch (error) {
       const duration = Date.now() - startTime;
       console.error(`[${new Date().toISOString()}] [${requestId}] ❌ DELETE ACTIVITY ERROR: ${error.message}`);
-      
+
       if (error.code === 'P2025') {
         return res.status(404).json({
           success: false,

@@ -68,6 +68,7 @@ const WeeklyProgressReports = lazy(() => import("../pages/progress/WeeklyProgres
 
 // ─── Auth Pages (lazy) ──────────────────────────────────
 const ResetPassword = lazy(() => import("../pages/auth/ResetPassword"));
+const ChangePassword = lazy(() => import("../pages/auth/ChangePassword"));
 
 // Parent pages (Communications, WeeklyReports) excluded — missing service/context dependencies
 
@@ -86,6 +87,7 @@ const AppRoutes = () => {
       {/* Public Routes */}
       <Route path="/login" element={<Login />} />
       <Route path="/reset-password" element={<Lazy><ResetPassword /></Lazy>} />
+      <Route path="/change-password" element={<Lazy><ChangePassword /></Lazy>} />
 
       {/* Admin Routes */}
       <Route
@@ -130,6 +132,14 @@ const AppRoutes = () => {
         <Route path="attendance" element={<Lazy><ClassAttendanceCharts /></Lazy>} />
         <Route path="leave" element={<Lazy><ApplyLeave /></Lazy>} />
         <Route path="hifz-progress" element={<Lazy><HifzNazraProgress /></Lazy>} />
+
+        {/* Activity & Progress Routes */}
+        <Route path="activities" element={<Lazy><DailyActivityList /></Lazy>} />
+        <Route path="activity/new" element={<Lazy><DailyActivityForm /></Lazy>} />
+        <Route path="activity/:id" element={<Lazy><DailyActivityForm isEditing={true} /></Lazy>} />
+        <Route path="class-activities/:classId" element={<Lazy><ClassActivityView /></Lazy>} />
+        <Route path="regular-progress" element={<Lazy><RegularProgressInput /></Lazy>} />
+        <Route path="hifz-report" element={<Lazy><HifzReport /></Lazy>} />
         <Route index element={<Navigate to="/teacher/dashboard" replace />} />
       </Route>
 
