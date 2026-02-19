@@ -1,12 +1,12 @@
 /* eslint-disable no-unused-vars */
 // components/AttendanceOverview.jsx
 import React, { useState, useEffect } from 'react';
-import { 
-  TrendingUp, 
-  Users, 
-  CheckCircle, 
-  XCircle, 
-  Clock, 
+import {
+  TrendingUp,
+  Users,
+  CheckCircle,
+  XCircle,
+  Clock,
   Calendar,
   Filter,
   Download,
@@ -34,15 +34,15 @@ import {
 } from 'recharts';
 
 const AttendanceOverview = () => {
-  const { 
-    fetchAttendanceOverview, 
-    fetchAttendanceTrends, 
+  const {
+    fetchAttendanceOverview,
+    fetchAttendanceTrends,
     fetchClassAttendanceComparison,
-    loading 
+    loading
   } = useAdmin();
-  
+
   const { classes, fetchClasses } = useClass();
-  
+
   const [overviewData, setOverviewData] = useState(null);
   const [trendsData, setTrendsData] = useState(null);
   const [comparisonData, setComparisonData] = useState(null);
@@ -65,7 +65,7 @@ const AttendanceOverview = () => {
         fetchAttendanceTrends({ days: filters.days, classRoomId: filters.classRoomId }),
         fetchClassAttendanceComparison(filters)
       ]);
-      
+
       setOverviewData(overview);
       setTrendsData(trends);
       setComparisonData(comparison);
@@ -170,7 +170,7 @@ const AttendanceOverview = () => {
                 className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm"
               >
                 <option value="">All Classes</option>
-                {classes.map(classItem => (
+                {(classes || []).map(classItem => (
                   <option key={classItem.id} value={classItem.id}>
                     {classItem.name} - {classItem.grade} {classItem.section}
                   </option>
@@ -207,28 +207,28 @@ const AttendanceOverview = () => {
           <StatusCard
             icon={Users}
             title="Total Students"
-            value={overviewData.summary.enrolledStudents}
+            value={overviewData?.summary?.enrolledStudents || 0}
             color="bg-blue-500"
           />
           <StatusCard
             icon={CheckCircle}
             title="Overall Attendance"
-            value={overviewData.summary.overallAttendancePercentage}
-            percentage={overviewData.summary.overallAttendancePercentage}
+            value={overviewData?.summary?.overallAttendancePercentage || 0}
+            percentage={overviewData?.summary?.overallAttendancePercentage || 0}
             trend="up"
             color="bg-green-500"
           />
           <StatusCard
             icon={Calendar}
             title="Records Processed"
-            value={overviewData.summary.totalRecords}
+            value={overviewData?.summary?.totalRecords || 0}
             color="bg-purple-500"
           />
           <StatusCard
             icon={TrendingUp}
             title="Present Today"
-            value={overviewData.summary.presentCount}
-            percentage={((overviewData.summary.presentCount / overviewData.summary.totalRecords) * 100).toFixed(1)}
+            value={overviewData?.summary?.presentCount || 0}
+            percentage={((overviewData?.summary?.presentCount || 0) / Math.max(overviewData?.summary?.totalRecords || 1, 1) * 100).toFixed(1)}
             trend="up"
             color="bg-orange-500"
           />
@@ -273,12 +273,12 @@ const AttendanceOverview = () => {
               <ResponsiveContainer width="100%" height="100%">
                 <LineChart data={trendsData.trends}>
                   <CartesianGrid strokeDasharray="3 3" />
-                  <XAxis 
-                    dataKey="date" 
+                  <XAxis
+                    dataKey="date"
                     tickFormatter={(date) => new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
                   />
                   <YAxis />
-                  <Tooltip 
+                  <Tooltip
                     labelFormatter={(date) => new Date(date).toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}
                     formatter={(value, name) => {
                       if (name === 'percentage') return [`${value}%`, 'Attendance Rate'];
@@ -286,10 +286,10 @@ const AttendanceOverview = () => {
                     }}
                   />
                   <Legend />
-                  <Line 
-                    type="monotone" 
-                    dataKey="percentage" 
-                    stroke="#F59E0B" 
+                  <Line
+                    type="monotone"
+                    dataKey="percentage"
+                    stroke="#F59E0B"
                     strokeWidth={2}
                     name="percentage"
                     dot={{ fill: '#F59E0B', strokeWidth: 2, r: 4 }}
@@ -317,15 +317,14 @@ const AttendanceOverview = () => {
                 </tr>
               </thead>
               <tbody>
-                {comparisonData.classes.map((classItem, index) => (
+                {(comparisonData?.classes || []).map((classItem, index) => (
                   <tr key={classItem.classId} className="border-b border-gray-100 hover:bg-gray-50">
                     <td className="py-3 px-4 text-sm text-gray-900">{classItem.className}</td>
                     <td className="py-3 px-4 text-sm">
-                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${
-                        classItem.classType === 'REGULAR' ? 'bg-blue-100 text-blue-800' :
-                        classItem.classType === 'HIFZ' ? 'bg-purple-100 text-purple-800' :
-                        'bg-orange-100 text-orange-800'
-                      }`}>
+                      <span className={`px-2 py-1 rounded-full text-xs font-medium ${classItem.classType === 'REGULAR' ? 'bg-blue-100 text-blue-800' :
+                          classItem.classType === 'HIFZ' ? 'bg-purple-100 text-purple-800' :
+                            'bg-orange-100 text-orange-800'
+                        }`}>
                         {classItem.classType}
                       </span>
                     </td>
@@ -333,20 +332,18 @@ const AttendanceOverview = () => {
                     <td className="py-3 px-4 text-sm">
                       <div className="flex items-center space-x-2">
                         <div className="w-16 bg-gray-200 rounded-full h-2">
-                          <div 
-                            className={`h-2 rounded-full ${
-                              classItem.attendancePercentage >= 90 ? 'bg-green-500' :
-                              classItem.attendancePercentage >= 75 ? 'bg-yellow-500' :
-                              'bg-red-500'
-                            }`}
+                          <div
+                            className={`h-2 rounded-full ${classItem.attendancePercentage >= 90 ? 'bg-green-500' :
+                                classItem.attendancePercentage >= 75 ? 'bg-yellow-500' :
+                                  'bg-red-500'
+                              }`}
                             style={{ width: `${Math.min(classItem.attendancePercentage, 100)}%` }}
                           />
                         </div>
-                        <span className={`font-medium ${
-                          classItem.attendancePercentage >= 90 ? 'text-green-600' :
-                          classItem.attendancePercentage >= 75 ? 'text-yellow-600' :
-                          'text-red-600'
-                        }`}>
+                        <span className={`font-medium ${classItem.attendancePercentage >= 90 ? 'text-green-600' :
+                            classItem.attendancePercentage >= 75 ? 'text-yellow-600' :
+                              'text-red-600'
+                          }`}>
                           {classItem.attendancePercentage}%
                         </span>
                       </div>
@@ -368,37 +365,37 @@ const AttendanceOverview = () => {
               <CheckCircle className="h-8 w-8 text-green-600" />
               <div>
                 <p className="text-sm font-medium text-green-800">Present</p>
-                <p className="text-2xl font-bold text-green-900">{overviewData.summary.presentCount}</p>
+                <p className="text-2xl font-bold text-green-900">{overviewData?.summary?.presentCount || 0}</p>
                 <p className="text-sm text-green-600">
-                  {((overviewData.summary.presentCount / overviewData.summary.totalRecords) * 100).toFixed(1)}% of records
+                  {((overviewData?.summary?.presentCount || 0) / Math.max(overviewData?.summary?.totalRecords || 1, 1) * 100).toFixed(1)}% of records
                 </p>
               </div>
             </div>
           </div>
-          
+
           <div className="bg-linear-to-r from-red-50 to-red-100 border border-red-200 rounded-2xl p-6">
             <div className="flex items-center space-x-3">
               <XCircle className="h-8 w-8 text-red-600" />
               <div>
                 <p className="text-sm font-medium text-red-800">Absent</p>
-                <p className="text-2xl font-bold text-red-900">{overviewData.summary.absentCount}</p>
+                <p className="text-2xl font-bold text-red-900">{overviewData?.summary?.absentCount || 0}</p>
                 <p className="text-sm text-red-600">
-                  {((overviewData.summary.absentCount / overviewData.summary.totalRecords) * 100).toFixed(1)}% of records
+                  {((overviewData?.summary?.absentCount || 0) / Math.max(overviewData?.summary?.totalRecords || 1, 1) * 100).toFixed(1)}% of records
                 </p>
               </div>
             </div>
           </div>
-          
+
           <div className="bg-linear-to-r from-orange-50 to-orange-100 border border-orange-200 rounded-2xl p-6">
             <div className="flex items-center space-x-3">
               <Clock className="h-8 w-8 text-orange-600" />
               <div>
                 <p className="text-sm font-medium text-orange-800">Late & Excused</p>
                 <p className="text-2xl font-bold text-orange-900">
-                  {overviewData.summary.lateCount + overviewData.summary.excusedCount}
+                  {(overviewData?.summary?.lateCount || 0) + (overviewData?.summary?.excusedCount || 0)}
                 </p>
                 <p className="text-sm text-orange-600">
-                  {(((overviewData.summary.lateCount + overviewData.summary.excusedCount) / overviewData.summary.totalRecords) * 100).toFixed(1)}% of records
+                  {(((overviewData?.summary?.lateCount || 0) + (overviewData?.summary?.excusedCount || 0)) / Math.max(overviewData?.summary?.totalRecords || 1, 1) * 100).toFixed(1)}% of records
                 </p>
               </div>
             </div>

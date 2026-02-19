@@ -7,23 +7,31 @@ const {
     requireSuperAdmin,
     requireAdmin
 } = require('../middlewares/auth');
+const { validate } = require('../middlewares/validateRequest');
+const {
+    loginSchema,
+    registerSchema,
+    changePasswordSchema,
+    resetPasswordSchema,
+    forgotPasswordSchema,
+} = require('../schemas/auth.schema');
 
-// Public routes
-router.post('/login', authController.login);
-router.post('/register', authController.register); // Added registration route
-router.post('/forgot-password', authController.forgotPassword); // Added forgot password
+// Public routes — with Zod validation
+router.post('/login', validate(loginSchema), authController.login);
+router.post('/register', validate(registerSchema), authController.register);
+router.post('/forgot-password', validate(forgotPasswordSchema), authController.forgotPassword);
 
 // Protected routes - Authentication
 router.post('/logout', authenticateToken, authController.logout);
 router.get('/profile', authenticateToken, authController.getProfile);
 router.put('/profile', authenticateToken, authController.updateProfile);
-router.put('/change-password', authenticateToken, authController.changePassword);
-router.get('/check-session', authenticateToken, authController.checkSession); // Added session check
+router.put('/change-password', authenticateToken, validate(changePasswordSchema), authController.changePassword);
+router.get('/check-session', authenticateToken, authController.checkSession);
 
 // Password reset and account management (admin functions)
-router.post('/reset-password/:userId', authenticateToken, requireAdmin, authController.resetUserPassword);
-router.post('/terminate/:userId', authenticateToken, requireAdmin, authController.terminateUserAccount); // Added terminate
-router.post('/reactivate/:userId', authenticateToken, requireAdmin, authController.reactivateUserAccount); // Added reactivate
+router.post('/reset-password/:userId', authenticateToken, requireAdmin, validate(resetPasswordSchema), authController.resetUserPassword);
+router.post('/terminate/:userId', authenticateToken, requireAdmin, authController.terminateUserAccount);
+router.post('/reactivate/:userId', authenticateToken, requireAdmin, authController.reactivateUserAccount);
 
 // User management routes (admin only)
 router.get('/users', authenticateToken, requireAdmin, userController.getUsers);

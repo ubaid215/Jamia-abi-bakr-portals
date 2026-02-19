@@ -8,6 +8,8 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+// ==================== ENUMS ====================
+
 enum Role {
   SUPER_ADMIN
   ADMIN
@@ -20,6 +22,7 @@ enum UserStatus {
   ACTIVE
   INACTIVE
   TERMINATED
+  SUSPENDED
 }
 
 enum AttendanceStatus {
@@ -27,6 +30,7 @@ enum AttendanceStatus {
   ABSENT
   LATE
   EXCUSED
+  HALF_DAY
 }
 
 enum LeaveStatus {
@@ -37,13 +41,11 @@ enum LeaveStatus {
 }
 
 enum ClassType {
-  REGULAR    // standard subjects (Dars-e-Nizami)
+  REGULAR
   NAZRA
   HIFZ
 }
 
-
-// For Dars-e-nizami progress
 enum AssessmentType {
   CLASS_TEST
   MONTHLY_TEST
@@ -53,6 +55,8 @@ enum AssessmentType {
   PROJECT
   ORAL_TEST
   PRACTICAL
+  QUIZ
+  RECITATION
 }
 
 enum Grade {
@@ -66,6 +70,98 @@ enum Grade {
   F
 }
 
+enum StudentType {
+  REGULAR
+  NAZRA
+  HIFZ
+  REGULAR_HIFZ
+}
+
+enum StudentMode {
+  PHYSICAL      // Student attends school in-person
+  ONLINE        // Student attends remotely/virtually
+  HYBRID        // Student attends both physical and online
+}
+
+enum GoalStatus {
+  IN_PROGRESS
+  ACHIEVED
+  AT_RISK
+  FAILED
+  CANCELLED
+}
+
+enum Priority {
+  LOW
+  NORMAL
+  HIGH
+  URGENT
+}
+
+enum RiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum AuditAction {
+  CREATE
+  UPDATE
+  DELETE
+  LOGIN
+  LOGOUT
+  APPROVE
+  REJECT
+  RESTORE
+  ARCHIVE
+  EXPORT
+  IMPORT
+  DOWNLOAD
+}
+
+enum AuditEntity {
+  USER
+  TEACHER
+  STUDENT
+  PARENT
+  CLASSROOM
+  SUBJECT
+  ENROLLMENT
+  ATTENDANCE
+  DAILY_ACTIVITY
+  WEEKLY_PROGRESS
+  STUDENT_PROGRESS_SNAPSHOT
+  PROGRESS_NOTIFICATION
+  STUDENT_GOAL
+  PARENT_COMMUNICATION
+  SUBJECT_PROGRESS
+  MONTHLY_PROGRESS
+  STUDY_PLAN
+  LEAVE_REQUEST
+  EXAM
+  EXAM_RESULT
+  NAZRA_PROGRESS
+  HIFZ_PROGRESS
+  STUDENT_HIFZ_STATUS
+  ACADEMIC_CONFIGURATION
+  HOLIDAY
+  MESSAGE
+  DOCUMENT
+  CHAT_ROOM
+}
+
+enum HolidayType {
+  NATIONAL
+  RELIGIOUS
+  SCHOOL_EVENT
+  SEMESTER_BREAK
+  EXAM_PERIOD
+  CUSTOM
+}
+
+// ==================== CORE USER MODELS ====================
+
 model User {
   id           String     @id @default(uuid())
   email        String     @unique
@@ -76,161 +172,187 @@ model User {
   profileImage String?
   status       UserStatus @default(ACTIVE)
   
-  // Add these fields for password security
-  passwordChangedAt DateTime?  // Track when password was last changed
-  passwordResetToken String?   // For forgot password functionality
+  // Password security fields
+  passwordChangedAt DateTime?
+  passwordResetToken String?
   passwordResetExpires DateTime?
-  
-  // Add flag for forced password reset
   forcePasswordReset Boolean @default(false)
   
   createdAt    DateTime   @default(now())
   updatedAt    DateTime   @updatedAt
   isOnline     Boolean    @default(false)
   
-  // relations - only declare the relation name here, ownership is on the other side
+  // Relations
   teacherProfile Teacher?
   studentProfile Student?
   parentProfile  Parent?
-
-  // messages and uploads
   messagesSent Message[]    @relation("sentMessages")
   messagesReceived Message[] @relation("receivedMessages")
   documentsUploaded Document[]
   leaveRequestsReceived LeaveRequest[] @relation("adminLeaveRequests")
   chatRooms ChatRoom[] @relation("chatParticipants")
 
-  @@index([role])
-  @@index([status]) // Added index for status for better query performance
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([role, status])
+  @@index([email])
+  @@index([createdAt(sort: Desc)])
+  @@index([isOnline, role])
+  @@index([status, role])
 }
 
 model Teacher {
   id          String      @id @default(uuid())
-  user        User        @relation(fields: [userId], references: [id])
+  user        User        @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId      String      @unique
   bio         String?
   
-  // Enhanced teacher details
+  // Personal details
   dateOfBirth   DateTime?
   gender        String?
-  cnic          String?    @unique  // National ID
-  qualification String?    // Academic qualifications
-  specialization String?   // Teaching specialization
-  experience    String?       // Years of experience
+  cnic          String?    @unique
+  qualification String?
+  specialization String?
+  experience    String?
   
   // Contact details
   address       String?
   emergencyContactName  String?
   emergencyContactPhone String?
   emergencyContactRelation String?
-  
-  // Additional contact numbers
   phoneSecondary String?
   phoneEmergency String?
   
   // Documents
-  profileImage  String?    // URL to profile image
-  cnicFront     String?    // URL to CNIC front image
-  cnicBack      String?    // URL to CNIC back image
-  degreeDocuments String?  // JSON array of degree document URLs
-  otherDocuments String?   // JSON array of other document URLs
+  profileImage  String?
+  cnicFront     String?
+  cnicBack      String?
+  degreeDocuments String?
+  otherDocuments String?
   
   // Employment details
   joiningDate   DateTime?
   salary        Float?
-  employmentType String?   // Permanent, Contract, Part-time
+  employmentType String?
   
+  // Relations
   teacherSubjects TeacherSubject[]
-  subjects    Subject[]    // subjects directly assigned
-  classes     ClassRoom[]  // classes this teacher is assigned to
+  subjects    Subject[]
+  classes     ClassRoom[]
   leaveRequests LeaveRequest[] @relation("teacherLeaveRequests")
   dailyReports DailyStudyReport[]
   attendances Attendance[]
   nazraProgress NazraProgress[]
   hifzProgress HifzProgress[]
-  
-  // Add missing relation fields
   subjectProgress  SubjectProgress[]
   monthlyProgress  MonthlyProgress[]
   studyPlans       StudyPlan[]
   
+  // Progress Tracking Relations
+  dailyActivities         DailyActivity[]
+  weeklyProgressReports   WeeklyProgress[]
+  studentGoals            StudentGoal[]
+  parentCommunications    ParentCommunication[]
+  
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
+
+  // ✅ PERFORMANCE INDEXES
+  @@index([userId])
+  @@index([cnic])
+  @@index([employmentType, joiningDate])
+  @@index([joiningDate(sort: Desc)])
 }
 
-// If teacher can teach multiple subjects
 model TeacherSubject {
   id         String   @id @default(uuid())
-  teacher    Teacher  @relation(fields: [teacherId], references: [id])
+  teacher    Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   teacherId  String
-  subject    Subject  @relation(fields: [subjectId], references: [id])
+  subject    Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   subjectId  String
   assignedAt DateTime @default(now())
 
   @@unique([teacherId, subjectId])
+  @@index([teacherId])
+  @@index([subjectId])
 }
 
 model Parent {
   id           String    @id @default(uuid())
-  user         User      @relation(fields: [userId], references: [id])
+  user         User      @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId       String    @unique
   children     Student[] @relation("parentChildren")
+  
+  // Parent Communication (Future Feature)
+  communications ParentCommunication[]
+  
   createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+
+  @@index([userId])
 }
 
 model Student {
   id            String       @id @default(uuid())
-  user          User         @relation(fields: [userId], references: [id])
+  user          User         @relation(fields: [userId], references: [id], onDelete: Cascade)
   userId        String       @unique
   admissionNo   String       @unique
   dob           DateTime?
   gender        String?
+  studentType   StudentType  @default(REGULAR)
   
-  // Student personal details
+  // ✅ NEW: Student Mode (Physical/Online/Hybrid)
+  studentMode   StudentMode  @default(PHYSICAL)
+  modeChangedAt DateTime?    // Track when mode was last changed
+  modeReason    String?      // Reason for mode change
+  
+  // Personal details
   placeOfBirth  String?
   nationality   String?      @default("Pakistani")
   religion      String?      @default("Islam")
   bloodGroup    String?
   
-  // Student documents
-  profileImage  String?      // URL to profile image
-  birthCertificate String?   // URL to birth certificate
-  cnicOrBForm   String?      // URL to CNIC/B-Form
-  previousSchoolCertificate String? // URL to previous school certificate
-  otherDocuments String?     // JSON array of other document URLs
+  // Documents
+  profileImage  String?
+  birthCertificate String?
+  cnicOrBForm   String?
+  previousSchoolCertificate String?
+  otherDocuments String?
   
   // Medical information
-  medicalConditions String?  // Any medical conditions
-  allergies        String?   // Any allergies
-  medication       String?   // Regular medications
+  medicalConditions String?
+  allergies        String?
+  medication       String?
   
-  // current enrollment relationship
-  currentEnrollment Enrollment? @relation("currentEnrollment", fields: [currentEnrollmentId], references: [id])
+  // Current enrollment
+  currentEnrollment Enrollment? @relation("currentEnrollment", fields: [currentEnrollmentId], references: [id], onDelete: SetNull)
   currentEnrollmentId String?  @unique
   
-  // all enrollments
+  // Relations
   enrollments   Enrollment[] @relation("studentEnrollments")
-  
-  
   attendances   Attendance[]
   examResults   ExamResult[]
   nazraProgress  NazraProgress[]
-  // Hifz related
-hifzProgress   HifzProgress[]
-hifzStatus     StudentHifzStatus?
+  hifzProgress   HifzProgress[]
+  hifzStatus     StudentHifzStatus?
   parents       Parent[] @relation("parentChildren")
-  
-  // Add missing relation fields
   subjectProgress  SubjectProgress[]
   monthlyProgress  MonthlyProgress[]
   studyPlans       StudyPlan[]
   
+  // Progress Tracking Relations (REGULAR students only)
+  dailyActivities         DailyActivity[]
+  weeklyProgress          WeeklyProgress[]
+  progressSnapshot        StudentProgressSnapshot?
+  progressNotifications   ProgressNotification[]
+  goals                   StudentGoal[]
+  parentCommunications    ParentCommunication[]
+  
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   
-  // Guardian details (enhanced)
+  // Guardian details
   guardianName        String?
-  guardianRelation    String?    // Father, Mother, Grandfather, etc.
+  guardianRelation    String?
   guardianPhone       String?
   guardianEmail       String?
   guardianOccupation  String?
@@ -242,246 +364,694 @@ hifzStatus     StudentHifzStatus?
   guardian2Phone      String?
   guardian2Email      String?
   
-  // Address details
+  // Address
   address             String?
   city                String?
   province            String?
   postalCode          String?
   
-  // Emergency contacts (other than guardians)
+  // Emergency contacts
   emergencyContactName    String?
   emergencyContactPhone   String?
   emergencyContactRelation String?
+
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([userId])
+  @@index([admissionNo])
+  @@index([currentEnrollmentId])
+  @@index([gender, studentType])
+  @@index([city, province])
+  @@index([createdAt(sort: Desc)])
+  @@index([studentType, studentMode]) // Filter by type and mode
+  @@index([studentMode, currentEnrollmentId]) // Active students by mode
 }
 
-// New model to track admission number sequence
 model AdmissionCounter {
   id          String   @id @default(uuid())
-  year        Int      @unique  // Academic year (e.g., 2025)
-  lastNumber  Int      @default(0)  // Last assigned number for this year
+  year        Int      @unique
+  lastNumber  Int      @default(0)
   updatedAt   DateTime @updatedAt
+
+  @@index([year])
 }
 
 model ClassRoom {
   id          String       @id @default(uuid())
-  name        String       // e.g., "Class 5A" or "Hifz Batch 1"
-  grade       String?      // optional grade string
-  section     String?      // optional
+  name        String
+  grade       String?
+  section     String?
   type        ClassType    @default(REGULAR)
   description String?
-  teacher     Teacher?     @relation(fields: [teacherId], references: [id])
+  teacher     Teacher?     @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId   String?
   subjects    Subject[]
   enrollments Enrollment[] @relation("classEnrollments")
   attendances Attendance[]
   dailyReports DailyStudyReport[]
   exams       Exam[]
-  
-  // Add missing relation field
   monthlyProgress  MonthlyProgress[]
   
-  // Roll number counter for this class
+  // Progress Tracking Relations
+  dailyActivities         DailyActivity[]
+  weeklyProgress          WeeklyProgress[]
+  
   lastRollNumber Int      @default(0)
   
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
 
-  @@index([type])
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([type, grade])
+  @@index([teacherId])
+  @@index([grade, section])
+  @@index([name])
+  @@index([type, teacherId])
 }
 
 model Subject {
   id        String     @id @default(uuid())
   name      String
-  code      String?     // optional code
-  classRoom ClassRoom?  @relation(fields: [classRoomId], references: [id])
+  code      String?
+  classRoom ClassRoom?  @relation(fields: [classRoomId], references: [id], onDelete: Cascade)
   classRoomId String?
-  teacher   Teacher?    @relation(fields: [teacherId], references: [id])
+  teacher   Teacher?    @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId String?
   teacherSubjects TeacherSubject[]
   attendances Attendance[]
   dailyReports DailyStudyReport[]
   exams     Exam[]
-  
-  // Add missing relation fields
   subjectProgress  SubjectProgress[]
   studyPlans       StudyPlan[]
+  
+  // Progress Tracking Relations
+  dailyActivities DailyActivity[]
+
+  // ✅ PERFORMANCE INDEXES
+  @@index([classRoomId])
+  @@index([teacherId])
+  @@index([name])
+  @@index([code])
+  @@index([classRoomId, teacherId])
 }
 
 model Enrollment {
   id          String   @id @default(uuid())
-  student     Student  @relation("studentEnrollments", fields: [studentId], references: [id])
+  student     Student  @relation("studentEnrollments", fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String
-  classRoom   ClassRoom @relation("classEnrollments", fields: [classRoomId], references: [id])
+  classRoom   ClassRoom @relation("classEnrollments", fields: [classRoomId], references: [id], onDelete: Cascade)
   classRoomId String
   
-  // Roll number for this enrollment
-  rollNumber  Int?     // Roll number assigned in this class
-  
+  rollNumber  Int?
   startDate   DateTime @default(now())
   endDate     DateTime?
-  promotedTo  String?  // notes about promotion or reason
+  promotedTo  String?
   isCurrent   Boolean  @default(true)
   
-  // This allows one enrollment to be marked as "current" for a student
   currentStudent Student? @relation("currentEnrollment")
 
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([studentId, isCurrent])
+  @@index([classRoomId, isCurrent])
+  @@index([startDate(sort: Desc)])
+  @@index([endDate])
+  @@unique([classRoomId, rollNumber])
+}
+
+// ==================== DAILY ACTIVITY TRACKING (REGULAR STUDENTS ONLY) ====================
+
+model DailyActivity {
+  id          String   @id @default(uuid())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  teacherId   String?
+  classRoom   ClassRoom @relation(fields: [classRoomId], references: [id], onDelete: Cascade)
+  classRoomId String
+  
+  // ✅ Subject relation for teacher to select specific subject
+  subject     Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
+  subjectId   String?
+  
+  date        DateTime @default(now())
+  
+  // ✅ Link to existing Attendance system (Single Source of Truth)
+  attendance     Attendance? @relation(fields: [attendanceId], references: [id], onDelete: SetNull)
+  attendanceId   String?
+  
+  // ✅ SIMPLIFIED: Derived from Attendance link
+  attendanceStatus AttendanceStatus @default(PRESENT)
+  
+  // ✅ AUTO-CALCULATED: From class schedule (no manual entry)
+  totalHoursSpent Float @default(0)
+  
+  // ✅ Academic Activities (Core Purpose - WHAT was learned)
+  subjectsStudied Json // [{subjectId, topicsCovered: string[], understandingLevel: 1-5, notes: string}]
+  
+  // ✅ Assignments & Homework (Focused on quality, not logistics)
+  homeworkAssigned   Json? // [{subjectId, title, dueDate, description}]
+  homeworkCompleted  Json? // [{subjectId, title, completionStatus: "COMPLETE|PARTIAL|NOT_DONE", quality: 1-5, notes: string}]
+  
+  // ✅ Classwork & Participation
+  classworkCompleted Json? // [{subjectId, activity, completionStatus, quality: 1-5}]
+  participationLevel Int @default(3) // 1-5 scale per day
+  
+  // ✅ Assessments (if any conducted today)
+  assessmentsTaken   Json? // [{subjectId, type: "QUIZ|TEST|ORAL", topic, marksObtained, totalMarks}]
+  
+  // ✅ Behavioral & Discipline
+  behaviorRating    Int @default(3) // 1-5 scale (1=Poor, 5=Excellent)
+  disciplineScore   Int @default(3) // 1-5 scale
+  
+  // ✅ DERIVED from Attendance system
+  punctuality       Boolean @default(true)
+  uniformCompliance Boolean @default(true)
+  
+  // ✅ Skills & Competencies
+  skillsSnapshot    Json? // {reading: 3, writing: 4, listening: 3, speaking: 4, criticalThinking: 3}
+  
+  // ✅ Teacher Observations
+  strengths         String?
+  improvements      String?
+  concerns          String?
+  teacherRemarks    String?
+  
+  // ✅ Parent Communication (Structured notes)
+  parentNotes       String?
+  
+  // ✅ Metadata
+  recordedBy        String // teacherId who recorded
+  isVerified        Boolean @default(true)
+  
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+  
+  // ✅ OPTIMIZED PERFORMANCE INDEXES
+  @@unique([studentId, date])
+  @@index([studentId, date(sort: Desc)])
+  @@index([classRoomId, date(sort: Desc)])
+  @@index([teacherId, date(sort: Desc)])
+  @@index([subjectId, date(sort: Desc)])
+  @@index([attendanceId])
+  @@index([date(sort: Desc)])
+  @@index([attendanceStatus, date])
+  @@index([isVerified, date])
+  @@index([recordedBy, date(sort: Desc)])
+  @@index([studentId, subjectId, date(sort: Desc)])
+}
+
+// ==================== WEEKLY SUMMARY (REGULAR STUDENTS) ====================
+
+model WeeklyProgress {
+  id          String   @id @default(uuid())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  teacherId   String?
+  classRoom   ClassRoom @relation(fields: [classRoomId], references: [id], onDelete: Cascade)
+  classRoomId String
+  
+  weekNumber  Int
+  year        Int
+  startDate   DateTime
+  endDate     DateTime
+  
+  // ===== ATTENDANCE METRICS =====
+  totalDaysPresent       Int @default(0)
+  totalDaysAbsent        Int @default(0)
+  totalDaysLate          Int @default(0)
+  totalDaysExcused       Int @default(0)
+  totalHolidays          Int @default(0) // From academic configuration
+  totalWorkingDays       Int @default(0) // Excluding holidays
+  attendancePercentage   Float @default(0)
+  punctualityPercentage  Float @default(0)
+  
+  // Subject-wise performance
+  subjectWiseProgress    Json // [{subjectId, name, topicsCompleted: count, avgUnderstanding: 1-5, assessments: [{type, score, outOf}], trend: "IMPROVING|STABLE|DECLINING"}]
+  
+  // Homework & Assignments
+  homeworkAssignedCount     Int @default(0)
+  homeworkCompletedCount    Int @default(0)
+  homeworkCompletionRate    Float @default(0)
+  averageHomeworkQuality    Float @default(0)
+  
+  // Classwork
+  classworkCompletionRate   Float @default(0)
+  averageClassworkQuality   Float @default(0)
+  
+  // Assessments Summary
+  totalAssessments          Int @default(0)
+  assessmentResults         Json? // [{subjectId, count, avgScore, avgPercentage}]
+  overallAverageScore       Float @default(0)
+  
+  // ===== BEHAVIORAL METRICS =====
+  averageBehaviorScore      Float @default(0)
+  averageParticipationScore Float @default(0)
+  averageDisciplineScore    Float @default(0)
+  uniformComplianceRate     Float @default(0)
+  
+  // Skills Development
+  averageReadingSkill       Float @default(0)
+  averageWritingSkill       Float @default(0)
+  averageListeningSkill     Float @default(0)
+  averageSpeakingSkill      Float @default(0)
+  averageCriticalThinking   Float @default(0)
+  
+  // ===== HIGHLIGHTS & FEEDBACK =====
+  weeklyHighlights       String?
+  areasOfImprovement     String?
+  strengthSubjects       String[] @default([])
+  weakSubjects           String[] @default([])
+  
+  teacherComments        String?
+  
+  // ===== ACHIEVEMENTS & INCIDENTS =====
+  achievements           Json? // [{title, description, date, category}]
+  incidents              Json? // [{type: "POSITIVE|NEGATIVE", description, date, actionTaken}]
+  
+  // ===== RECOMMENDATIONS =====
+  actionItems            Json? // [{category, item, priority, assignedTo}]
+  followUpRequired       Boolean @default(false)
+  
+  createdAt              DateTime @default(now())
+  updatedAt              DateTime @updatedAt
+  
+  // ✅ OPTIMIZED INDEXES
+  @@unique([studentId, weekNumber, year])
+  @@index([studentId, year, weekNumber(sort: Desc)])
+  @@index([classRoomId, year, weekNumber(sort: Desc)])
+  @@index([teacherId, year, weekNumber(sort: Desc)])
+  @@index([startDate, endDate])
+  @@index([followUpRequired, year])
+  @@index([year, weekNumber(sort: Desc)])
+}
+
+// ==================== REAL-TIME PROGRESS DASHBOARD ====================
+
+model StudentProgressSnapshot {
+  id          String   @id @default(uuid())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String   @unique
+  
+  // ===== CURRENT STATUS =====
+  lastActivityDate       DateTime?
+  lastUpdated            DateTime @updatedAt
+  
+  // Streaks
+  currentAttendanceStreak    Int @default(0)
+  longestAttendanceStreak    Int @default(0)
+  currentHomeworkStreak      Int @default(0)
+  
+  // ===== OVERALL METRICS =====
+  totalDaysAttended      Int @default(0)
+  totalDaysAbsent        Int @default(0)
+  totalHoursStudied      Float @default(0)
+  overallAttendanceRate  Float @default(0)
+  
+  // ===== ACADEMIC PERFORMANCE =====
+  subjectWisePerformance Json? // [{subjectId, name, percentage, rank, trend: "UP|DOWN|STABLE", lastAssessment: {score, date}}]
+  
+  strongestSubjects      String[] @default([])
+  weakestSubjects        String[] @default([])
+  improvingSubjects      String[] @default([])
+  decliningSubjects      String[] @default([])
+  
+  // ===== HOMEWORK & ASSIGNMENTS =====
+  overallHomeworkCompletionRate  Float @default(0)
+  averageHomeworkQuality         Float @default(0)
+  pendingHomeworkCount           Int @default(0)
+  overdueHomeworkCount           Int @default(0)
+  
+  // ===== BEHAVIORAL PROFILE =====
+  averageBehaviorRating      Float @default(0)
+  averageParticipation       Float @default(0)
+  averageDiscipline          Float @default(0)
+  punctualityRate            Float @default(0)
+  
+  // ===== SKILLS ASSESSMENT =====
+  currentReadingLevel        Float @default(0)
+  currentWritingLevel        Float @default(0)
+  currentListeningLevel      Float @default(0)
+  currentSpeakingLevel       Float @default(0)
+  currentCriticalThinking    Float @default(0)
+  
+  // ===== RANKINGS & COMPARISONS =====
+  classRank                  Int?
+  classTotalStudents         Int?
+  gradeRank                  Int?
+  percentileInClass          Float?
+  
+  // ===== ALERTS & FLAGS =====
+  needsAttention             Boolean @default(false)
+  attentionReasons           String[] @default([])
+  flaggedSubjects            String[] @default([])
+  
+  riskLevel                  RiskLevel @default(LOW)
+  interventionRequired       Boolean @default(false)
+  
+  // ===== CACHE MANAGEMENT =====
+  lastCalculatedAt           DateTime?
+  nextCalculationDue         DateTime?
+  
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
+  
+  // ✅ OPTIMIZED INDEXES
   @@index([studentId])
-  @@index([classRoomId])
-  @@unique([classRoomId, rollNumber])  // Unique roll number per class
+  @@index([needsAttention, riskLevel])
+  @@index([riskLevel, interventionRequired])
+  @@index([lastActivityDate(sort: Desc)])
+  @@index([interventionRequired, needsAttention])
+  @@index([currentAttendanceStreak(sort: Desc)])
+  @@index([lastCalculatedAt])
+}
+
+// ==================== NOTIFICATIONS & UPDATES ====================
+
+model ProgressNotification {
+  id          String   @id @default(uuid())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String
+  
+  recipientType String // STUDENT, TEACHER, ADMIN, SUPER_ADMIN, PARENT
+  recipientId   String
+  
+  notificationType String
+  category         String?
+  priority         Priority @default(NORMAL)
+  
+  title       String
+  message     String
+  data        Json?
+  
+  // Action items
+  requiresAction Boolean @default(false)
+  actionType     String?
+  actionDeadline DateTime?
+  
+  isRead      Boolean @default(false)
+  readAt      DateTime?
+  
+  actionUrl   String?
+  
+  // Batch support
+  batchId     String?
+  
+  // Notification delivery
+  deliveryMethod String[] @default(["IN_APP"])
+  emailSent      Boolean @default(false)
+  smsSent        Boolean @default(false)
+  
+  // Retry mechanism
+  retryCount     Int @default(0)
+  lastRetryAt    DateTime?
+  
+  createdAt   DateTime @default(now())
+  expiresAt   DateTime?
+  
+  // ✅ OPTIMIZED INDEXES
+  @@index([recipientId, isRead, createdAt(sort: Desc)])
+  @@index([studentId, notificationType, createdAt(sort: Desc)])
+  @@index([priority, requiresAction, isRead])
+  @@index([createdAt(sort: Desc)])
+  @@index([expiresAt])
+  @@index([batchId, createdAt])
+  @@index([recipientType, recipientId, isRead])
+}
+
+// ==================== GOALS & TARGETS ====================
+
+model StudentGoal {
+  id          String   @id @default(uuid())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  teacherId   String?
+  
+  goalType    String
+  category    String?
+  
+  title       String
+  description String?
+  
+  metric      String
+  targetValue Float
+  currentValue Float @default(0)
+  baselineValue Float @default(0)
+  unit        String
+  
+  startDate   DateTime
+  targetDate  DateTime
+  
+  status      GoalStatus @default(IN_PROGRESS)
+  achievedAt  DateTime?
+  
+  progress    Float @default(0)
+  
+  milestones  Json?
+  
+  lastChecked DateTime?
+  checkFrequency String @default("WEEKLY")
+  
+  supportActions Json?
+  relatedActivities String[] @default([])
+  
+  visibleToStudent Boolean @default(true)
+  visibleToParent  Boolean @default(true)
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // ✅ OPTIMIZED INDEXES
+  @@unique([studentId, title, startDate])
+  @@index([studentId, status, targetDate])
+  @@index([teacherId, status])
+  @@index([targetDate(sort: Asc)])
+  @@index([goalType, status])
+  @@index([status, progress])
+  @@index([checkFrequency, lastChecked])
+}
+
+// ==================== PARENT COMMUNICATION (FUTURE FEATURE) ====================
+
+model ParentCommunication {
+  id          String   @id @default(uuid())
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
+  studentId   String
+  parent      Parent?  @relation(fields: [parentId], references: [id], onDelete: SetNull)
+  parentId    String?
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
+  teacherId   String?
+  
+  communicationType String
+  subject     String
+  message     String
+  
+  relatedActivity Json?
+  
+  // Meeting scheduling (future feature)
+  meetingRequested Boolean @default(false)
+  meetingScheduled DateTime?
+  meetingCompleted Boolean @default(false)
+  meetingNotes     String?
+  
+  parentResponse   String?
+  parentResponseAt DateTime?
+  acknowledged     Boolean @default(false)
+  
+  sentVia         String[] @default(["IN_APP"])
+  deliveredAt     DateTime?
+  
+  priority        Priority @default(NORMAL)
+  
+  // Future feature flag
+  isActive        Boolean @default(false)
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // ✅ OPTIMIZED INDEXES
+  @@index([studentId, createdAt(sort: Desc)])
+  @@index([parentId, acknowledged])
+  @@index([teacherId, createdAt(sort: Desc)])
+  @@index([communicationType, priority])
+  @@index([meetingRequested, meetingCompleted])
+  @@index([isActive, createdAt(sort: Desc)])
 }
 
 model SubjectProgress {
   id          String   @id @default(uuid())
-  student     Student  @relation(fields: [studentId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String
-  subject     Subject  @relation(fields: [subjectId], references: [id])
+  subject     Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   subjectId   String
-  teacher     Teacher? @relation(fields: [teacherId], references: [id])
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId   String?
   
-  // Assessment details
   assessmentType AssessmentType
-  title         String?   // e.g., "Chapter 1 Test", "Monthly Assessment"
+  title         String?
   date          DateTime  @default(now())
   totalMarks    Int
   obtainedMarks Int
   grade        Grade?
   percentage   Float
   
-  // Detailed breakdown
-  topicsCovered String?   // JSON array of topics
-  strengths     String?   // JSON array of strengths
-  weaknesses    String?   // JSON array of weaknesses
+  topicsCovered String?
+  strengths     String?
+  weaknesses    String?
   remarks       String?
   
-  // Documents
-  answerSheet  String?   // URL to scanned answer sheet
-  attachments  String?   // JSON array of document URLs
+  answerSheet  String?
+  attachments  String?
   
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
 
-  @@index([studentId, subjectId])
-  @@index([date])
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([studentId, subjectId, date(sort: Desc)])
+  @@index([date(sort: Desc)])
+  @@index([assessmentType, date])
+  @@index([teacherId, date])
+  @@index([subjectId, date])
 }
 
 model MonthlyProgress {
   id          String   @id @default(uuid())
-  student     Student  @relation(fields: [studentId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String
-  teacher     Teacher? @relation(fields: [teacherId], references: [id])
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId   String?
-  classRoom   ClassRoom @relation(fields: [classRoomId], references: [id])
+  classRoom   ClassRoom @relation(fields: [classRoomId], references: [id], onDelete: Cascade)
   classRoomId String
   
-  // Monthly summary
-  month       Int     // 1-12
+  month       Int
   year        Int
-  attendance  Json    // { present: number, total: number, percentage: float }
+  attendance  Json
+  subjectPerformance Json
   
-  // Subject-wise performance
-  subjectPerformance Json  // { subjectId: { percentage: number, grade: string } }
-  
-  // Overall assessment
   overallGrade    Grade?
   overallPercentage Float
   remarks         String?
-  improvements    String?   // Areas for improvement
-  recommendations String?   // Recommendations for next month
+  improvements    String?
+  recommendations String?
   
-  // Behavior and participation
-  behavior        String?   // Excellent, Good, Satisfactory, Needs Improvement
-  participation   String?   // Active, Average, Low
-  homeworkCompletion String? // Complete, Partial, Incomplete
+  behavior        String?
+  participation   String?
+  homeworkCompletion String?
   
   createdAt      DateTime  @default(now())
   updatedAt      DateTime  @updatedAt
 
+  // ✅ CRITICAL PERFORMANCE INDEXES
   @@unique([studentId, month, year])
-  @@index([studentId])
   @@index([classRoomId, month, year])
+  @@index([studentId, year, month(sort: Desc)])
+  @@index([teacherId, year])
+  @@index([year, month(sort: Desc)])
 }
 
 model StudyPlan {
   id          String   @id @default(uuid())
-  student     Student  @relation(fields: [studentId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String
-  teacher     Teacher  @relation(fields: [teacherId], references: [id])
+  teacher     Teacher  @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   teacherId   String
-  subject     Subject  @relation(fields: [subjectId], references: [id])
+  subject     Subject  @relation(fields: [subjectId], references: [id], onDelete: Cascade)
   subjectId   String
   
-  // Plan details
   title       String
   description String?
-  topics      String    // JSON array of topics to cover
+  topics      String
   startDate   DateTime
   endDate     DateTime
-  priority    String?   // High, Medium, Low
+  priority    String?
   
-  // Progress tracking
-  completedTopics String? // JSON array of completed topics
-  status      String  @default("PENDING") // PENDING, IN_PROGRESS, COMPLETED
-  progress    Float   @default(0) // 0-100
+  completedTopics String?
+  status      String  @default("PENDING")
+  progress    Float   @default(0)
   
   remarks     String?
-  attachments String? // JSON array of document URLs
+  attachments String?
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
-  @@index([studentId, subjectId])
-  @@index([status])
+  // ✅ PERFORMANCE INDEXES
+  @@index([studentId, status, startDate])
+  @@index([teacherId, status])
+  @@index([subjectId, status])
+  @@index([startDate, endDate])
+  @@index([status, priority])
 }
 
 model Attendance {
   id         String          @id @default(uuid())
-  student    Student         @relation(fields: [studentId], references: [id])
+  student    Student         @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId  String
-  classRoom  ClassRoom       @relation(fields: [classRoomId], references: [id])
+  classRoom  ClassRoom       @relation(fields: [classRoomId], references: [id], onDelete: Cascade)
   classRoomId String
-  subject    Subject?        @relation(fields: [subjectId], references: [id])
+  subject    Subject?        @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   subjectId  String?
-  teacher    Teacher?        @relation(fields: [teacherId], references: [id])
+  teacher    Teacher?        @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId  String?
   date       DateTime
   status     AttendanceStatus
   remarks    String?
   createdAt  DateTime        @default(now())
+  
+  // Relation to DailyActivity
+  dailyActivities DailyActivity[]
 
-  @@index([studentId, date])
-  @@index([classRoomId, date])
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([date(sort: Desc)])
+  @@index([studentId, date(sort: Desc)])
+  @@index([classRoomId, date(sort: Desc)])
+  @@index([teacherId, date])
+  @@index([status, date])
+  @@index([date, status])
+  @@index([subjectId, date])
 }
 
 model DailyStudyReport {
   id         String    @id @default(uuid())
-  teacher    Teacher   @relation(fields: [teacherId], references: [id])
+  teacher    Teacher   @relation(fields: [teacherId], references: [id], onDelete: Cascade)
   teacherId  String
-  classRoom  ClassRoom @relation(fields: [classRoomId], references: [id])
+  classRoom  ClassRoom @relation(fields: [classRoomId], references: [id], onDelete: Cascade)
   classRoomId String
-  subject    Subject?  @relation(fields: [subjectId], references: [id])
+  subject    Subject?  @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   subjectId  String?
   date       DateTime  @default(now())
-  content    String    // plain text summary of the day's study
-  attachments Json?    // array of doc URLs / metadata
+  content    String
+  attachments Json?
   createdAt  DateTime  @default(now())
   updatedAt  DateTime  @updatedAt
+
+  @@index([teacherId, date(sort: Desc)])
+  @@index([classRoomId, date(sort: Desc)])
+  @@index([date(sort: Desc)])
+  @@index([subjectId, date])
 }
 
 model LeaveRequest {
   id         String      @id @default(uuid())
-  teacher    Teacher     @relation("teacherLeaveRequests", fields: [teacherId], references: [id])
+  teacher    Teacher     @relation("teacherLeaveRequests", fields: [teacherId], references: [id], onDelete: Cascade)
   teacherId  String
-  appliedToAdmin User?   @relation("adminLeaveRequests", fields: [adminId], references: [id])
+  appliedToAdmin User?   @relation("adminLeaveRequests", fields: [adminId], references: [id], onDelete: SetNull)
   adminId    String?
   fromDate   DateTime
   toDate     DateTime
   reason     String
   status     LeaveStatus @default(PENDING)
   response   String?
-  supportingDocuments String? // JSON array of document URLs
+  supportingDocuments String?
   createdAt  DateTime    @default(now())
   updatedAt  DateTime    @updatedAt
+
+  // ✅ PERFORMANCE INDEXES
+  @@index([teacherId, status, createdAt])
+  @@index([status, fromDate])
+  @@index([fromDate, toDate])
+  @@index([createdAt(sort: Desc)])
+  @@index([adminId, status])
 }
 
 model ChatRoom {
@@ -492,22 +1062,28 @@ model ChatRoom {
   documents  Document[]
   createdAt  DateTime  @default(now())
   lastActive DateTime  @updatedAt
+
+  @@index([lastActive(sort: Desc)])
+  @@index([createdAt])
 }
 
 model Message {
   id         String   @id @default(uuid())
-  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id])
+  chatRoom   ChatRoom @relation(fields: [chatRoomId], references: [id], onDelete: Cascade)
   chatRoomId String
-  sender     User     @relation("sentMessages", fields: [senderId], references: [id])
+  sender     User     @relation("sentMessages", fields: [senderId], references: [id], onDelete: Cascade)
   senderId   String
-  receiver   User?    @relation("receivedMessages", fields: [receiverId], references: [id])
+  receiver   User?    @relation("receivedMessages", fields: [receiverId], references: [id], onDelete: SetNull)
   receiverId String?
   content    String?
-  attachments Json?   // array of doc URLs / metadata
+  attachments Json?
   sentAt     DateTime @default(now())
   isRead     Boolean  @default(false)
 
-  @@index([chatRoomId, sentAt])
+  @@index([chatRoomId, sentAt(sort: Desc)])
+  @@index([senderId, sentAt])
+  @@index([receiverId, isRead, sentAt])
+  @@index([isRead, sentAt])
 }
 
 model Document {
@@ -515,141 +1091,140 @@ model Document {
   url         String
   fileName    String?
   mimeType    String?
-  uploadedBy  User     @relation(fields: [uploadedById], references: [id])
+  uploadedBy  User     @relation(fields: [uploadedById], references: [id], onDelete: Cascade)
   uploadedById String
-  chatRoom    ChatRoom? @relation(fields: [chatRoomId], references: [id])
+  chatRoom    ChatRoom? @relation(fields: [chatRoomId], references: [id], onDelete: SetNull)
   chatRoomId  String?
   createdAt   DateTime @default(now())
+
+  @@index([uploadedById, createdAt])
+  @@index([chatRoomId, createdAt])
+  @@index([createdAt(sort: Desc)])
 }
 
 model Exam {
   id         String   @id @default(uuid())
   title      String
-  classRoom  ClassRoom @relation(fields: [classRoomId], references: [id])
+  classRoom  ClassRoom @relation(fields: [classRoomId], references: [id], onDelete: Cascade)
   classRoomId String
-  subject    Subject? @relation(fields: [subjectId], references: [id])
+  subject    Subject? @relation(fields: [subjectId], references: [id], onDelete: SetNull)
   subjectId  String?
   date       DateTime
   totalMarks Int
   createdAt  DateTime @default(now())
   results    ExamResult[]
+
+  @@index([classRoomId, date(sort: Desc)])
+  @@index([subjectId, date])
+  @@index([date(sort: Desc)])
 }
 
 model ExamResult {
   id         String   @id @default(uuid())
-  exam       Exam     @relation(fields: [examId], references: [id])
+  exam       Exam     @relation(fields: [examId], references: [id], onDelete: Cascade)
   examId     String
-  student    Student  @relation(fields: [studentId], references: [id])
+  student    Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId  String
   marksObtained Int
   grade      String?
   remarks    String?
   createdAt  DateTime @default(now())
 
-  @@index([studentId])
   @@unique([examId, studentId])
+  @@index([studentId, createdAt])
+  @@index([examId])
 }
 
-/// Nazra-specific progress model
 model NazraProgress {
   id          String   @id @default(uuid())
-  student     Student  @relation(fields: [studentId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String
-  teacher     Teacher? @relation(fields: [teacherId], references: [id])
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId   String?
   date        DateTime @default(now())
-  recitedLines Int     // number of lines recited this session
+  recitedLines Int
   mistakes    Int
   remarks     String?
-  attachments String?  // JSON array of document URLs (audio recordings, notes, etc.)
+  attachments String?
   createdAt   DateTime @default(now())
+
+  // ✅ PERFORMANCE INDEXES
+  @@index([studentId, date(sort: Desc)])
+  @@index([teacherId, date(sort: Desc)])
+  @@index([date(sort: Desc)])
 }
 
-// Hifz-specific progress model
 model HifzProgress {
   id          String   @id @default(cuid())
-  student     Student  @relation(fields: [studentId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String
-  teacher     Teacher? @relation(fields: [teacherId], references: [id])
+  teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId   String?
   date        DateTime @default(now())
   
-  // Daily progress fields
-  sabaq       String?  // New lesson (e.g., "Para 3 lines 1-20")
-  sabaqLines  Int      @default(0) // Number of lines in new lesson
-  sabaqMistakes Int    @default(0) // Mistakes in Sabaq
+  sabaq       String?
+  sabaqLines  Int      @default(0)
+  sabaqMistakes Int    @default(0)
   
-  sabqi       String?  // Recent revision (e.g., "Para 2")
-  sabqiLines  Int      @default(0) // Always 0 - sabqi is just a string
-  sabqiMistakes Int    @default(0) // But still track mistakes
+  sabqi       String?
+  sabqiLines  Int      @default(0)
+  sabqiMistakes Int    @default(0)
   
-  manzil      String?  // Older revision (e.g., "Para 1")
-  manzilLines Int      @default(0) // Always 0 - manzil is just a string
-  manzilMistakes Int   @default(0) // But still track mistakes
+  manzil      String?
+  manzilLines Int      @default(0)
+  manzilMistakes Int   @default(0)
   
-  totalMistakes Int    @default(0) // Total mistakes for the day
-  
-  // Attendance
+  totalMistakes Int    @default(0)
   attendance  AttendanceStatus @default(PRESENT)
+  condition   String?
   
-  // Performance condition (auto-calculated)
-  condition   String?  // "Excellent", "Good", "Medium", "Below Average"
+  currentPara     Int?
+  currentParaProgress Float @default(0)
+  completedParas  Int[]
+  alreadyMemorizedParas Int[] @default([])
+  startingPara    Int?
   
-  // Para tracking fields
-  currentPara     Int?     // Current Para number (1-30)
-  currentParaProgress Float @default(0) // Progress in current Para (0-100%)
-  completedParas  Int[]    // Array of completed Para numbers
-  
-  // Already memorized tracking (for students joining with prior Hifz)
-  alreadyMemorizedParas Int[] @default([]) // Paras already memorized before joining
-  startingPara    Int?     // Para they started from when joining
-  
-  // Notes and attachments
   notes       String?
   remarks     String?
-  attachments String?  // JSON array of document URLs
+  attachments String?
   
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
   
-  @@index([studentId, date])
-  @@index([date])
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([studentId, date(sort: Desc)])
+  @@index([teacherId, date(sort: Desc)])
+  @@index([date(sort: Desc)])
   @@index([studentId, currentPara])
+  @@index([attendance, date])
 }
 
-// Add this new model to track student's overall Hifz status
 model StudentHifzStatus {
   id          String   @id @default(uuid())
-  student     Student  @relation(fields: [studentId], references: [id])
+  student     Student  @relation(fields: [studentId], references: [id], onDelete: Cascade)
   studentId   String   @unique
   
-  // Initial status when joining
   joiningDate DateTime @default(now())
-  alreadyMemorizedParas Int[] @default([]) // Paras memorized before joining
-  startingPara Int      @default(1) // Para they started from
+  alreadyMemorizedParas Int[] @default([])
+  startingPara Int      @default(1)
   
-  // Current status
   currentPara     Int      @default(1)
   currentParaProgress Float @default(0)
   completedParas  Int[]    @default([])
   totalParasCompleted Int  @default(0)
   
-  // Overall progress
   totalLinesMemorized Int  @default(0)
   totalDaysActive     Int  @default(0)
   averageLinesPerDay  Float @default(0)
   
-  // Completion projection
   estimatedDaysToComplete Int?
   estimatedCompletionDate DateTime?
   
-  // Performance metrics
   totalMistakes       Int   @default(0)
   averageMistakesPerDay Float @default(0)
-  mistakeRate         Float @default(0) // Percentage
-  consistencyScore    Float @default(0) // Attendance percentage
+  mistakeRate         Float @default(0)
+  consistencyScore    Float @default(0)
   
-  // Status
   isActive    Boolean  @default(true)
   completedAt DateTime?
   
@@ -657,4 +1232,178 @@ model StudentHifzStatus {
   createdAt   DateTime @default(now())
   
   @@index([studentId])
+  @@index([isActive, currentPara])
+  @@index([currentPara])
+}
+
+// ==================== COMPREHENSIVE AUDIT LOG ====================
+
+model AuditLog {
+  id          String      @id @default(uuid())
+  
+  // What happened
+  action      AuditAction
+  entity      AuditEntity
+  entityId    String
+  
+  // Who did it
+  userId      String
+  userName    String?
+  userRole    Role
+  userEmail   String?
+  
+  // When
+  timestamp   DateTime    @default(now())
+  
+  // Where (IP and location tracking)
+  ipAddress   String?
+  userAgent   String?
+  
+  // What changed
+  changes     Json? // {before: {...}, after: {...}}
+  
+  // Additional context
+  description String?
+  metadata    Json?
+  
+  // Request tracking
+  requestId   String?
+  sessionId   String?
+  
+  // Severity
+  severity    String @default("INFO") // INFO, WARNING, ERROR, CRITICAL
+  
+  // Tags for filtering
+  tags        String[] @default([])
+  
+  // Success/Failure
+  isSuccess   Boolean @default(true)
+  errorMessage String?
+  
+  // ✅ CRITICAL PERFORMANCE INDEXES
+  @@index([entity, entityId, timestamp(sort: Desc)])
+  @@index([userId, timestamp(sort: Desc)])
+  @@index([action, entity, timestamp(sort: Desc)])
+  @@index([timestamp(sort: Desc)])
+  @@index([severity, timestamp(sort: Desc)])
+  @@index([isSuccess, timestamp(sort: Desc)])
+  @@index([requestId, timestamp])
+  @@index([sessionId, timestamp])
+  @@index([userRole, timestamp(sort: Desc)])
+  @@index([tags, timestamp(sort: Desc)])
+}
+
+// ==================== ACADEMIC CONFIGURATION ====================
+
+model AcademicConfiguration {
+  id          String   @id @default(uuid())
+  
+  // Academic year settings
+  academicYear     String @unique
+  startDate        DateTime
+  endDate          DateTime
+  
+  // Semester/Term configuration
+  currentSemester  String?
+  semesterStartDate DateTime?
+  semesterEndDate   DateTime?
+  
+  // Weekly settings
+  workingDays      String[] @default(["MONDAY", "TUESDAY", "WEDNESDAY", "THURSDAY", "FRIDAY"])
+  weekendDays      String[] @default(["SATURDAY", "SUNDAY"])
+  
+  // Daily timings
+  schoolStartTime  String @default("08:00")
+  schoolEndTime    String @default("14:00")
+  
+  // Period/Class duration
+  periodDuration   Int @default(40)
+  breakDuration    Int @default(10)
+  lunchBreakDuration Int @default(30)
+  
+  // Attendance settings
+  lateThresholdMinutes Int @default(15)
+  halfDayThresholdHours Float @default(2)
+  
+  // Grading settings
+  passingPercentage Float @default(40)
+  gradeScale       Json?
+  
+  // Notification settings
+  enableAutoNotifications Boolean @default(true)
+  notificationTime        String @default("17:00")
+  
+  // Progress tracking settings
+  weeklyReportDay         String @default("FRIDAY")
+  monthlyReportDate       Int @default(1)
+  
+  // Academic calendar metadata
+  totalWorkingDays        Int @default(0)
+  totalHolidays           Int @default(0)
+  
+  // Status
+  isActive        Boolean @default(true)
+  isCurrent       Boolean @default(false)
+  
+  // Metadata
+  createdBy       String
+  updatedBy       String?
+  
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+  
+  // Relations
+  holidays        Holiday[]
+  
+  // ✅ OPTIMIZED INDEXES
+  @@index([academicYear])
+  @@index([isActive, isCurrent])
+  @@index([startDate, endDate])
+  @@index([isCurrent])
+}
+
+// ==================== HOLIDAY MANAGEMENT ====================
+
+model Holiday {
+  id          String   @id @default(uuid())
+  
+  academicConfig AcademicConfiguration @relation(fields: [academicConfigId], references: [id], onDelete: Cascade)
+  academicConfigId String
+  
+  name        String
+  description String?
+  
+  startDate   DateTime
+  endDate     DateTime
+  
+  type        HolidayType
+  
+  // Recurrence
+  isRecurring Boolean @default(false)
+  recurrencePattern String?
+  
+  // Affects specific classes or all
+  affectsAllClasses Boolean @default(true)
+  affectedClassRooms String[] @default([])
+  
+  // Status
+  isActive    Boolean @default(true)
+  isCancelled Boolean @default(false)
+  cancelledAt DateTime?
+  cancellationReason String?
+  
+  // Metadata
+  createdBy   String
+  updatedBy   String?
+  
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+  
+  // ✅ OPTIMIZED INDEXES
+  @@index([academicConfigId, startDate(sort: Asc)])
+  @@index([startDate, endDate])
+  @@index([type, startDate])
+  @@index([isActive, isCancelled, startDate])
+  @@index([startDate(sort: Asc)])
+  @@index([academicConfigId, type, isActive])
 }

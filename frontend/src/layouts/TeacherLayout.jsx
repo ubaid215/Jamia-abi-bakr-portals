@@ -4,6 +4,16 @@ import { useAuth } from '../contexts/AuthContext';
 import TeacherSidebar from '../components/sidebars/TeacherSidebar';
 import { LogOut, User, Menu } from 'lucide-react';
 
+// Layout-level providers (scoped to teacher routes only)
+import { TeacherProvider } from '../contexts/TeacherContext';
+import { AttendanceProvider } from '../contexts/AttendanceContext';
+import { HifzProvider } from '../contexts/HifzContext';
+import { HifzReportProvider } from '../contexts/HifzReportContext';
+import { ClassProvider } from '../contexts/ClassContext';
+import { ProgressProvider } from '../contexts/ProgressContext';
+import { ActivityProvider } from '../contexts/ActivityContext';
+import { RegularProgressProvider } from '../contexts/RegularProgressContext';
+
 const TeacherLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
@@ -16,7 +26,7 @@ const TeacherLayout = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <TeacherSidebar 
+      <TeacherSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
@@ -53,7 +63,7 @@ const TeacherLayout = () => {
                     {user?.name}
                   </span>
                 </div>
-                
+
                 {/* Mobile user info */}
                 <div className="sm:hidden flex items-center space-x-2 text-gray-700">
                   <User className="h-4 w-4" />
@@ -76,7 +86,23 @@ const TeacherLayout = () => {
         </header>
 
         <main className="flex-1 overflow-auto p-4 sm:p-6">
-          <Outlet />
+          <TeacherProvider>
+            <ClassProvider>
+              <AttendanceProvider>
+                <HifzProvider>
+                  <HifzReportProvider>
+                    <ProgressProvider>
+                      <RegularProgressProvider>
+                        <ActivityProvider>
+                          <Outlet />
+                        </ActivityProvider>
+                      </RegularProgressProvider>
+                    </ProgressProvider>
+                  </HifzReportProvider>
+                </HifzProvider>
+              </AttendanceProvider>
+            </ClassProvider>
+          </TeacherProvider>
         </main>
 
         {/* Mobile floating menu button - shown when sidebar is closed */}

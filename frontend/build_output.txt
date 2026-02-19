@@ -1,0 +1,66 @@
+﻿[36mvite v7.1.12 [32mbuilding for production...[36m[39m
+transforming...
+[32mΓ£ô[39m 96 modules transformed.
+node.exe : [31mΓ£ù[39m Build 
+failed in 1.56s
+At C:\Program 
+Files\nodejs\npx.ps1:29 char:3
++   & $NODE_EXE $NPX_CLI_JS $args
++   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+    + CategoryInfo          : NotSpe 
+   cified: ([31mΓ£ù[39m Build fai  
+  led in 1.56s:String) [], RemoteE   
+ xception
+    + FullyQualifiedErrorId : Native 
+   CommandError
+ 
+[31merror during build:
+[31m[vite:esbuild] Transform failed 
+with 1 error:
+D:/Astana/Madrisa-portals/frontend/sr
+c/pages/parent/Communications.jsx:5:3
+4: ERROR: Expected "]" but found 
+"nications"[31m
+file: [36mD:/Astana/Madrisa-portals/
+frontend/src/pages/parent/Communicati
+ons.jsx:5:34[31m
+[33m
+[33mExpected "]" but found 
+"nications"[33m
+3  |  
+4  |  export default function 
+Communications() {
+5  |    const [communications, 
+setCommu nications] = useState([]);
+   |                                 
+   ^
+6  |    const [pagination, 
+setPagination] = useState(null);
+7  |    const [loading, setLoading] 
+= useState(true);
+[31m
+    at failureErrorWithLog (D:\Astana
+\Madrisa-portals\frontend\node_module
+s\esbuild\lib\main.js:1467:15)
+    at D:\Astana\Madrisa-portals\fron
+tend\node_modules\esbuild\lib\main.js
+:736:50
+    at responseCallbacks.<computed> (
+D:\Astana\Madrisa-portals\frontend\no
+de_modules\esbuild\lib\main.js:603:9)
+    at handleIncomingPacket (D:\Astan
+a\Madrisa-portals\frontend\node_modul
+es\esbuild\lib\main.js:658:12)
+    at Socket.readFromStdout (D:\Asta
+na\Madrisa-portals\frontend\node_modu
+les\esbuild\lib\main.js:581:7)
+    at Socket.emit 
+(node:events:518:28)
+    at addChunk (node:internal/stream
+s/readable:561:12)
+    at readableAddChunkPushByteMode (
+node:internal/streams/readable:512:3)
+    at Readable.push (node:internal/s
+treams/readable:392:5)
+    at Pipe.onStreamRead (node:intern
+al/stream_base_commons:189:23)[39m

@@ -5,6 +5,20 @@ import SuperAdminSidebar from "../components/sidebars/SuperAdminSidebar";
 import AdminSidebar from "../components/sidebars/AdminSidebar";
 import { LogOut, User, Menu } from "lucide-react";
 
+// Layout-level providers (scoped to admin routes only)
+import { AdminProvider } from "../contexts/AdminContext";
+import { ClassProvider } from "../contexts/ClassContext";
+import { SubjectProvider } from "../contexts/SubjectContext";
+import { EnrollmentProvider } from "../contexts/EnrollmentContext";
+import { AttendanceProvider } from "../contexts/AttendanceContext";
+import { ProgressProvider } from "../contexts/ProgressContext";
+import { RegularProgressProvider } from "../contexts/RegularProgressContext";
+import { HifzProvider } from "../contexts/HifzContext";
+import { HifzReportProvider } from "../contexts/HifzReportContext";
+import { PDFProvider } from "../contexts/PDFContext";
+import { PasswordResetProvider } from "../contexts/PasswordResetContext";
+import { ActivityProvider } from "../contexts/ActivityContext";
+
 const AdminLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
@@ -79,9 +93,33 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        {/* Page Content */}
+        {/* Page Content — wrapped with admin-scoped providers */}
         <main className="flex-1 overflow-auto p-4 sm:p-6">
-          <Outlet />
+          <AdminProvider>
+            <ClassProvider>
+              <SubjectProvider>
+                <EnrollmentProvider>
+                  <AttendanceProvider>
+                    <ProgressProvider>
+                      <RegularProgressProvider>
+                        <HifzProvider>
+                          <HifzReportProvider>
+                            <PDFProvider>
+                              <PasswordResetProvider>
+                                <ActivityProvider>
+                                  <Outlet />
+                                </ActivityProvider>
+                              </PasswordResetProvider>
+                            </PDFProvider>
+                          </HifzReportProvider>
+                        </HifzProvider>
+                      </RegularProgressProvider>
+                    </ProgressProvider>
+                  </AttendanceProvider>
+                </EnrollmentProvider>
+              </SubjectProvider>
+            </ClassProvider>
+          </AdminProvider>
         </main>
       </div>
     </div>

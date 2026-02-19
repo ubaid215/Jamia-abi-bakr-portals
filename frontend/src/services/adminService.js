@@ -150,6 +150,12 @@ const adminService = {
     return response.data;
   },
 
+  generateCustomReport: async (filters = {}) => {
+  const response = await api.get('/admin/custom-report', { params: filters });
+  return response.data;
+},
+
+
   transferStudent: async (transferData) => {
     const response = await api.post('/enrollment/transfer-student', transferData);
     return response.data;

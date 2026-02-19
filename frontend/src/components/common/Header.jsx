@@ -2,6 +2,7 @@ import React from 'react';
 import { Bell, Search, Menu } from 'lucide-react';
 import Avatar from '../ui/Avatar';
 import { useAuth } from '../../contexts/AuthContext';
+import NotificationBell from './NotificationBell';
 
 const Header = ({ pageTitle, onMenuToggle }) => {
   // eslint-disable-next-line no-unused-vars
@@ -36,10 +37,7 @@ const Header = ({ pageTitle, onMenuToggle }) => {
       </div>
 
       {/* Notifications */}
-      <button className="relative p-1.5 sm:p-2 rounded-lg hover:bg-gray-100 transition-colors">
-        <Bell className="w-4 h-4 sm:w-5 sm:h-5 text-gray-600" />
-        <span className="absolute top-1 right-1 w-1.5 h-1.5 sm:w-2 sm:h-2 bg-amber-500 rounded-full"></span>
-      </button>
+      <NotificationBell/>
 
       {/* User Profile */}
       <div className="flex items-center space-x-2 sm:space-x-3">

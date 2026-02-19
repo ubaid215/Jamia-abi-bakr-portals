@@ -2,12 +2,27 @@ const express = require('express');
 const router = express.Router();
 const adminController = require('../controllers/adminController');
 const authController = require('../controllers/authController');
-const { 
-  authenticateToken, 
-  requireSuperAdmin, 
+const {
+  authenticateToken,
+  requireSuperAdmin,
   requireAdmin
 } = require('../middlewares/auth');
 const { upload } = require('../middlewares/upload'); // Import the upload instance
+const { validate } = require('../middlewares/validateRequest');
+const {
+  createAdminSchema,
+  updateUserStatusSchema,
+  updateTeacherSchema,
+  updateStudentSchema,
+  paginationSchema,
+  studentListSchema
+} = require('../schemas/admin.schema');
+const {
+  assignTeacherToClassSchema,
+  assignStudentToClassSchema,
+  bulkAssignStudentsSchema,
+  promoteStudentsSchema
+} = require('../schemas/enrollment.schema');
 
 // ============================================
 // PUBLIC ROUTES - MUST BE FIRST!
@@ -19,8 +34,8 @@ router.get('/public/profile-image/:userId', adminController.serveProfileImage);
 // ============================================
 // SUPER ADMIN ONLY ROUTES
 // ============================================
-router.post('/admins', authenticateToken, requireSuperAdmin, adminController.createAdmin);
-router.put('/users/:id/status', authenticateToken, requireSuperAdmin, adminController.updateUserStatus);
+router.post('/admins', authenticateToken, requireSuperAdmin, validate(createAdminSchema), adminController.createAdmin);
+router.put('/users/:id/status', authenticateToken, requireSuperAdmin, validate(updateUserStatusSchema), adminController.updateUserStatus);
 router.delete('/users/:id', authenticateToken, requireSuperAdmin, adminController.deleteUser);
 
 // ============================================
@@ -31,28 +46,28 @@ router.delete('/users/:id', authenticateToken, requireSuperAdmin, adminControlle
 router.get('/stats', authenticateToken, requireAdmin, adminController.getSystemStats);
 
 // Teacher management
-router.get('/teachers', authenticateToken, requireAdmin, adminController.getAllTeachers);
+router.get('/teachers', authenticateToken, requireAdmin, validate(paginationSchema), adminController.getAllTeachers);
 router.get('/teachers/:id', authenticateToken, requireAdmin, adminController.getTeacherDetails);
 router.get('/teachers/:id/documents', authenticateToken, requireAdmin, adminController.getTeacherWithDocuments);
-router.put('/teachers/:id', authenticateToken, requireAdmin, adminController.updateTeacher); // NEW: Update teacher
+router.put('/teachers/:id', authenticateToken, requireAdmin, validate(updateTeacherSchema), adminController.updateTeacher);
 router.delete('/teachers/:id', authenticateToken, requireAdmin, adminController.deleteTeacher);
 
 // Student management
-router.get('/students', authenticateToken, requireAdmin, adminController.getAllStudents);
+router.get('/students', authenticateToken, requireAdmin, validate(studentListSchema), adminController.getAllStudents);
 router.get(
-  '/students/:id', 
-  authenticateToken, 
-  requireAdmin, 
+  '/students/:id',
+  authenticateToken,
+  requireAdmin,
   adminController.getStudentDetails.bind(adminController)
 );
 router.get('/students/:id/documents', authenticateToken, requireAdmin, adminController.getStudentWithDocuments);
-router.put('/students/:id', authenticateToken, requireAdmin, adminController.updateStudent); // NEW: Update student
+router.put('/students/:id', authenticateToken, requireAdmin, validate(updateStudentSchema), adminController.updateStudent);
 router.delete('/students/:id', authenticateToken, requireAdmin, adminController.deleteStudent);
 
 // Student profile image upload
-router.put('/students/:id/profile-image', 
-  authenticateToken, 
-  requireAdmin, 
+router.put('/students/:id/profile-image',
+  authenticateToken,
+  requireAdmin,
   upload.single('profileImage'), // Now this will work
   adminController.updateStudentProfileImage
 );
@@ -61,7 +76,7 @@ router.put('/students/:id/profile-image',
 router.get('/students/:studentId/enrollment-history', authenticateToken, requireAdmin, adminController.getStudentEnrollmentHistory);
 
 // Batch student promotion
-router.post('/students/promote', authenticateToken, requireAdmin, adminController.promoteStudents);
+router.post('/students/promote', authenticateToken, requireAdmin, validate(promoteStudentsSchema), adminController.promoteStudents);
 
 // User management
 router.get('/users', authenticateToken, requireAdmin, adminController.getUsers);
@@ -78,13 +93,13 @@ router.put('/leave-requests/:id', authenticateToken, requireAdmin, adminControll
 // ============================================
 
 // Assign teacher to class
-router.post('/assign-teacher-to-class', authenticateToken, requireAdmin, adminController.assignTeacherToClass);
+router.post('/assign-teacher-to-class', authenticateToken, requireAdmin, validate(assignTeacherToClassSchema), adminController.assignTeacherToClass);
 
 // Assign student to class (single)
-router.post('/assign-student-to-class', authenticateToken, requireAdmin, adminController.assignStudentToClass);
+router.post('/assign-student-to-class', authenticateToken, requireAdmin, validate(assignStudentToClassSchema), adminController.assignStudentToClass);
 
 // Bulk assign students to class
-router.post('/bulk-assign-students-to-class', authenticateToken, requireAdmin, adminController.bulkAssignStudentsToClass);
+router.post('/bulk-assign-students-to-class', authenticateToken, requireAdmin, validate(bulkAssignStudentsSchema), adminController.bulkAssignStudentsToClass);
 
 // Remove teacher from class
 router.delete('/classes/:classRoomId/remove-teacher', authenticateToken, requireAdmin, adminController.removeTeacherFromClass);
@@ -111,29 +126,29 @@ router.get('/users/:userId/documents-info/:userType', authenticateToken, require
 // ============================================
 // DOCUMENT UPLOAD ROUTES
 // ============================================
-router.post('/students/:id/documents', 
-  authenticateToken, 
-  requireAdmin, 
+router.post('/students/:id/documents',
+  authenticateToken,
+  requireAdmin,
   upload.single('document'),
   adminController.uploadStudentDocument
 );
 
-router.post('/teachers/:id/documents', 
-  authenticateToken, 
-  requireAdmin, 
+router.post('/teachers/:id/documents',
+  authenticateToken,
+  requireAdmin,
   upload.single('document'),
   adminController.uploadTeacherDocument
 );
 
-router.delete('/students/:studentId/documents/:type', 
-  authenticateToken, 
-  requireAdmin, 
+router.delete('/students/:studentId/documents/:type',
+  authenticateToken,
+  requireAdmin,
   adminController.deleteStudentDocument
 );
 
-router.delete('/teachers/:teacherId/documents/:type', 
-  authenticateToken, 
-  requireAdmin, 
+router.delete('/teachers/:teacherId/documents/:type',
+  authenticateToken,
+  requireAdmin,
   adminController.deleteTeacherDocument
 );
 

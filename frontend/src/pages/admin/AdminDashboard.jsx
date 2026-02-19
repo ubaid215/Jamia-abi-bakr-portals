@@ -74,10 +74,10 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (stats) {
       setDashboardStats({
-        totalStudents: stats.stats.byRole.students || 0,
-        totalTeachers: stats.stats.byRole.teachers || 0,
-        totalClasses: stats.stats.academic.totalClasses || 0,
-        todayAttendance: stats.stats.academic.todayAttendance || 0,
+        totalStudents: stats?.stats?.byRole?.students || 0,
+        totalTeachers: stats?.stats?.byRole?.teachers || 0,
+        totalClasses: stats?.stats?.academic?.totalClasses || 0,
+        todayAttendance: stats?.stats?.academic?.todayAttendance || 0,
       });
     }
   }, [stats]);
@@ -263,9 +263,8 @@ const AdminDashboard = () => {
                     {stat.value}
                   </p>
                   <div
-                    className={`flex items-center mt-2 ${
-                      stat.trend === "up" ? "text-green-600" : "text-red-600"
-                    }`}
+                    className={`flex items-center mt-2 ${stat.trend === "up" ? "text-green-600" : "text-red-600"
+                      }`}
                   >
                     <TrendingUp className="h-4 w-4 mr-1" />
                     <span className="text-sm font-medium">{stat.change}</span>
@@ -324,15 +323,14 @@ const AdminDashboard = () => {
               >
                 <div className="flex items-center space-x-4">
                   <div
-                    className={`p-2 rounded-lg ${
-                      task.type === "approval"
+                    className={`p-2 rounded-lg ${task.type === "approval"
                         ? "bg-blue-100 text-blue-600"
                         : task.type === "report"
-                        ? "bg-green-100 text-green-600"
-                        : task.type === "schedule"
-                        ? "bg-purple-100 text-purple-600"
-                        : "bg-yellow-100 text-yellow-600"
-                    }`}
+                          ? "bg-green-100 text-green-600"
+                          : task.type === "schedule"
+                            ? "bg-purple-100 text-purple-600"
+                            : "bg-yellow-100 text-yellow-600"
+                      }`}
                   >
                     {task.type === "approval" && (
                       <UserCheck className="h-5 w-5" />
@@ -352,13 +350,12 @@ const AdminDashboard = () => {
                 </div>
                 <div className="flex items-center space-x-3">
                   <span
-                    className={`px-3 py-1 rounded-full text-xs font-semibold ${
-                      task.priority === "High"
+                    className={`px-3 py-1 rounded-full text-xs font-semibold ${task.priority === "High"
                         ? "bg-red-100 text-red-800"
                         : task.priority === "Medium"
-                        ? "bg-yellow-100 text-yellow-800"
-                        : "bg-green-100 text-green-800"
-                    }`}
+                          ? "bg-yellow-100 text-yellow-800"
+                          : "bg-green-100 text-green-800"
+                      }`}
                   >
                     {task.priority}
                   </span>
@@ -397,10 +394,10 @@ const AdminDashboard = () => {
             <div className="text-2xl font-bold text-[#D97706]">
               {stats?.stats?.byRole?.teachers
                 ? Math.floor(
-                    (stats.stats.byRole.teachers /
-                      Math.max(stats.stats.totalUsers, 1)) *
-                      100
-                  )
+                  (stats?.stats?.byRole?.teachers /
+                    Math.max(stats?.stats?.totalUsers || 1, 1)) *
+                  100
+                )
                 : 0}
               %
             </div>
@@ -435,19 +432,19 @@ const AdminDashboard = () => {
                   Overall Attendance
                 </span>
                 <span className="text-lg font-bold text-green-600">
-                  {attendanceOverview.summary.overallAttendancePercentage}%
+                  {attendanceOverview?.summary?.overallAttendancePercentage || 0}%
                 </span>
               </div>
               <div className="grid grid-cols-2 gap-4">
                 <div className="text-center p-3 bg-green-50 rounded-lg">
                   <div className="text-xl font-bold text-green-600">
-                    {attendanceOverview.summary.presentCount}
+                    {attendanceOverview?.summary?.presentCount || 0}
                   </div>
                   <div className="text-sm text-green-800">Present</div>
                 </div>
                 <div className="text-center p-3 bg-red-50 rounded-lg">
                   <div className="text-xl font-bold text-red-600">
-                    {attendanceOverview.summary.absentCount}
+                    {attendanceOverview?.summary?.absentCount || 0}
                   </div>
                   <div className="text-sm text-red-800">Absent</div>
                 </div>

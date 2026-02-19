@@ -1,9 +1,20 @@
 require('dotenv').config();
+
+// Validate environment BEFORE any other imports
+const config = require('./config/config');
+
 const express = require('express');
 const cors = require('cors');
 const helmet = require('helmet');
 const morgan = require('morgan');
+const compression = require('compression');
+const rateLimit = require('express-rate-limit');
 const path = require("path");
+
+const logger = require('./utils/logger');
+const { errorHandler } = require('./middlewares/errorHandler');
+const { redisHealthCheck } = require('./db/redisClient');
+const prisma = require('./db/prismaClient');
 
 // Import routes
 const authRoutes = require('./routes/authRoute');
@@ -18,8 +29,10 @@ const pdfRoute = require('./routes/pdfRoute');
 const studentRoute = require('./routes/studentRoute');
 const hifzRoutes = require('./routes/hifzRoutes');
 
+// Import new modular routes
+const apiRoutes = require('./routes/index');
+
 const app = express();
-const PORT = process.env.PORT || 5000;
 
 // ============================================
 // CORS Configuration for Production
@@ -39,11 +52,11 @@ const corsOptions = {
     if (!origin) {
       return callback(null, true);
     }
-    
+
     if (allowedOrigins.indexOf(origin) !== -1) {
       callback(null, true);
     } else {
-      console.warn(`Blocked by CORS: ${origin}`);
+      logger.warn({ origin }, 'CORS: blocked request from unauthorized origin');
       callback(new Error('Not allowed by CORS'));
     }
   },
@@ -55,10 +68,10 @@ const corsOptions = {
 };
 
 // ============================================
-// Middleware
+// Middleware Stack
 // ============================================
 
-// Security headers with production CSP
+// 1. Security headers with strict CSP
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -78,35 +91,103 @@ app.use(helmet({
     maxAge: 31536000,
     includeSubDomains: true,
     preload: true
-  }
+  },
+  // Additional hardening
+  referrerPolicy: { policy: 'strict-origin-when-cross-origin' },
+  xContentTypeOptions: true,
+  xDnsPrefetchControl: { allow: false },
+  xFrameOptions: { action: 'deny' },
 }));
 
-// Trust proxy (important for Nginx reverse proxy)
-app.set('trust proxy', true);
+// 2. Trust proxy (important for Nginx reverse proxy + rate limiting)
+app.set('trust proxy', 1); // Trust first proxy only
 
-// Apply CORS middleware to all routes
+// 3. CORS
 app.use(cors(corsOptions));
 
-// Request logging
-if (process.env.NODE_ENV === 'production') {
+// 4. Response compression (gzip)
+app.use(compression());
+
+// 5. Request logging
+if (config.isProd) {
   app.use(morgan('combined'));
 } else {
   app.use(morgan('dev'));
 }
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// 6. Body parsing — REDUCED from 50MB to 5MB
+app.use(express.json({ limit: '5mb' }));
+app.use(express.urlencoded({ extended: true, limit: '5mb' }));
+
+// 7. Request timing middleware
+app.use((req, res, next) => {
+  const start = Date.now();
+  res.on('finish', () => {
+    const duration = Date.now() - start;
+    if (duration > 1000) {
+      logger.warn({
+        method: req.method,
+        url: req.originalUrl,
+        statusCode: res.statusCode,
+        duration: `${duration}ms`,
+      }, 'Slow request detected');
+    }
+  });
+  next();
+});
+
+// ============================================
+// Rate Limiting
+// ============================================
+
+// Auth endpoints — 5 attempts per 15 minutes
+const authLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 15, // 15 requests per window (login, register, forgot-password etc.)
+  message: {
+    error: 'Too many requests',
+    message: 'Too many authentication attempts. Please try again in 15 minutes.',
+    retryAfter: '15 minutes',
+  },
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip, // Rate limit by IP
+});
+
+// Login endpoint — stricter limit
+const loginLimiter = rateLimit({
+  windowMs: 15 * 60 * 1000,
+  max: 5, // Only 5 login attempts per 15 minutes
+  message: {
+    error: 'Too many login attempts',
+    message: 'Account temporarily locked. Please try again in 15 minutes.',
+    retryAfter: '15 minutes',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+  keyGenerator: (req) => req.ip,
+});
+
+// General API rate limiter
+const apiLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 100, // 100 requests per minute
+  message: {
+    error: 'Rate limit exceeded',
+    message: 'Too many requests. Please slow down.',
+  },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
 
 // ============================================
 // Static File Serving
 // ============================================
-
-// Serve uploaded files
 const uploadsPath = path.join(__dirname, 'uploads');
 app.use('/uploads', express.static(uploadsPath, {
   maxAge: '1y',
-  setHeaders: (res, path) => {
-    if (path.endsWith('.pdf')) {
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.pdf')) {
       res.setHeader('Content-Type', 'application/pdf');
     }
   }
@@ -115,6 +196,15 @@ app.use('/uploads', express.static(uploadsPath, {
 // ============================================
 // API Routes
 // ============================================
+
+// Apply rate limiters to auth routes
+app.use('/api/auth/login', loginLimiter);
+app.use('/api/auth', authLimiter);
+
+// Apply general rate limiter to all API routes
+app.use('/api', apiLimiter);
+
+// Legacy routes
 app.use('/api/auth', authRoutes);
 app.use('/api/enrollment', enrollmentRoutes);
 app.use('/api/admin', adminRoutes);
@@ -127,37 +217,55 @@ app.use('/api/students', studentRoute);
 app.use('/api/pdf', pdfRoute);
 app.use('/api/hifz', hifzRoutes);
 
+// New modular routes
+app.use('/api', apiRoutes);
+
 // ============================================
 // Health & Info Routes
 // ============================================
 
-// Health check
-app.get('/health', (req, res) => {
-  res.json({
-    status: 'OK',
+// Enhanced health check with DB and Redis connectivity
+app.get('/health', async (req, res) => {
+  let dbStatus = 'unknown';
+  let dbLatency = null;
+
+  try {
+    const dbStart = Date.now();
+    await prisma.$queryRaw`SELECT 1`;
+    dbLatency = `${Date.now() - dbStart}ms`;
+    dbStatus = 'connected';
+  } catch (err) {
+    dbStatus = 'disconnected';
+    logger.error({ err }, 'Health check: DB connection failed');
+  }
+
+  const redisStatus = await redisHealthCheck();
+
+  const healthy = dbStatus === 'connected';
+
+  res.status(healthy ? 200 : 503).json({
+    status: healthy ? 'OK' : 'DEGRADED',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development',
+    environment: config.NODE_ENV,
     version: '1.0.0',
-    uptime: process.uptime(),
-    memory: process.memoryUsage(),
+    uptime: `${Math.floor(process.uptime())}s`,
+    memory: {
+      rss: `${Math.round(process.memoryUsage().rss / 1024 / 1024)}MB`,
+      heapUsed: `${Math.round(process.memoryUsage().heapUsed / 1024 / 1024)}MB`,
+    },
     services: {
-      auth: 'active',
-      enrollment: 'active',
-      admin: 'active',
-      classes: 'active',
-      subjects: 'active',
-      attendance: 'active',
-      progress: 'active'
-    }
+      database: { status: dbStatus, latency: dbLatency },
+      redis: redisStatus,
+    },
   });
 });
 
 // API documentation route
-app.get('/api', (req, res) => {
+app.get('/api-docs', (req, res) => {
   res.json({
     message: 'Khanqah Saifia Management System API',
     version: '1.0.0',
-    environment: process.env.NODE_ENV || 'development',
+    environment: config.NODE_ENV,
     endpoints: {
       auth: '/api/auth',
       enrollment: '/api/enrollment',
@@ -165,131 +273,66 @@ app.get('/api', (req, res) => {
       classes: '/api/classes',
       subjects: '/api/subjects',
       attendance: '/api/attendance',
-      progress: '/api/progress',
       regularProgress: '/api/regular-progress',
       teachers: '/api/teachers',
       students: '/api/students',
-      hifzReports: '/api/hifz-reports'
+      hifzReports: '/api/hifz',
+      activities: '/api/activities',
+      pdf: '/api/pdf',
     },
-    publicEndpoints: {
-      profileImages: '/uploads/profile-images/',
-      documents: '/uploads/documents/'
-    },
-    staticFiles: '/uploads',
-    documentation: 'https://jamia.khanqahsaifia.com/docs'
+    documentation: 'https://jamia.khanqahsaifia.com/docs',
   });
 });
 
 // ============================================
-// Error Handling Middleware
+// Error Handling
 // ============================================
 
 // 404 handler
 app.use((req, res) => {
-  res.status(404).json({ 
+  res.status(404).json({
     error: 'Not Found',
     message: `Cannot ${req.method} ${req.path}`,
-    availableEndpoints: '/api'
+    availableEndpoints: '/api-docs',
   });
 });
 
-// Global error handler
-app.use((error, req, res, next) => {
-  console.error('Unhandled error:', error.message || error);
-  
-  // CORS error handling
-  if (error.message.includes('CORS')) {
-    return res.status(403).json({ 
-      error: 'CORS policy violation',
-      message: 'Origin not allowed',
-      allowedOrigins: allowedOrigins
-    });
-  }
-  
-  // Multer file upload errors
-  if (error.code === 'LIMIT_FILE_SIZE') {
-    return res.status(400).json({
-      error: 'File too large',
-      message: 'Maximum file size is 50MB'
-    });
-  }
-
-  if (error.code === 'LIMIT_UNEXPECTED_FILE') {
-    return res.status(400).json({
-      error: 'Too many files',
-      message: error.message
-    });
-  }
-  
-  // Prisma errors
-  if (error.code && error.code.startsWith('P')) {
-    console.error('Database error:', error);
-    return res.status(500).json({ 
-      error: 'Database operation failed',
-      code: error.code,
-      ...(process.env.NODE_ENV === 'development' && { details: error.meta })
-    });
-  }
-  
-  // JWT errors
-  if (error.name === 'JsonWebTokenError') {
-    return res.status(401).json({ error: 'Invalid token' });
-  }
-  
-  if (error.name === 'TokenExpiredError') {
-    return res.status(401).json({ error: 'Token expired' });
-  }
-  
-  // Generic error
-  const status = error.status || 500;
-  const response = {
-    error: error.message || 'Internal server error'
-  };
-  
-  // Add stack trace in development only
-  if (process.env.NODE_ENV !== 'production') {
-    response.stack = error.stack;
-  }
-  
-  res.status(status).json(response);
-});
+// Centralized error handler (from middlewares/errorHandler.js)
+app.use(errorHandler);
 
 // ============================================
 // Start Server
 // ============================================
-const server = app.listen(PORT, '127.0.0.1', () => {
-  console.log('\n🚀 ============================================');
-  console.log(`   Khanqah Saifia Management System API`);
-  console.log('============================================ 🚀\n');
-  console.log(`🌐 Server: http://127.0.0.1:${PORT}`);
-  console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`);
-  console.log(`🔗 Health: http://127.0.0.1:${PORT}/health`);
-  console.log(`📚 API Info: http://127.0.0.1:${PORT}/api`);
-  console.log(`📁 Static Files: http://127.0.0.1:${PORT}/uploads`);
-  console.log('\n📋 Available API Endpoints:');
-  console.log(`   🔐 Auth:       /api/auth`);
-  console.log(`   🎓 Enrollment: /api/enrollment`);
-  console.log(`   👑 Admin:      /api/admin`);
-  console.log(`   🏫 Classes:    /api/classes`);
-  console.log(`   📖 Subjects:   /api/subjects`);
-  console.log(`   ✅ Attendance: /api/attendance`);
-  console.log(`   📊 Progress:   /api/progress`);
-  console.log(`   👨‍🏫 Teachers:   /api/teachers`);
-  console.log(`   👨‍🎓 Students:   /api/students`);
-  console.log(`   📈 Reports:    /api/hifz-reports`);
-  console.log('\n🔓 Public Endpoints:');
-  console.log(`   🖼️  Profile Images: /uploads/profile-images/`);
-  console.log(`   📄 Documents: /uploads/documents/`);
-  console.log('\n✅ Server ready to accept connections\n');
+const server = app.listen(config.PORT, '127.0.0.1', () => {
+  logger.info(`🚀 Server running at http://127.0.0.1:${config.PORT}`);
+  logger.info(`📊 Environment: ${config.NODE_ENV}`);
+  logger.info(`🔗 Health: http://127.0.0.1:${config.PORT}/health`);
+  logger.info(`📚 API Docs: http://127.0.0.1:${config.PORT}/api-docs`);
+  logger.info(`🔒 Rate limiting: login=5/15min, auth=15/15min, api=100/min`);
+  logger.info(`📦 Body limit: 5MB | Compression: enabled`);
+  if (config.redisEnabled) {
+    logger.info(`🗄️  Redis: ${config.REDIS_URL}`);
+  } else {
+    logger.info('⚠️  Redis: disabled (set REDIS_URL to enable caching)');
+  }
+  logger.info('✅ Server ready to accept connections');
 });
 
 // Handle graceful shutdown
-process.on('SIGTERM', () => {
-  console.log('SIGTERM signal received: closing HTTP server');
+const shutdown = (signal) => {
+  logger.info(`${signal} received: shutting down gracefully`);
   server.close(() => {
-    console.log('HTTP server closed');
+    logger.info('HTTP server closed');
     process.exit(0);
   });
-});
+  // Force shutdown after 10s
+  setTimeout(() => {
+    logger.error('Forced shutdown after timeout');
+    process.exit(1);
+  }, 10000);
+};
+
+process.on('SIGTERM', () => shutdown('SIGTERM'));
+process.on('SIGINT', () => shutdown('SIGINT'));
 
 module.exports = app;

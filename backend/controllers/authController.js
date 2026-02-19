@@ -1,7 +1,10 @@
 const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const prisma = require('../db/prismaClient');
-const { JWT_SECRET } = require('../middlewares/auth');
+const config = require('../config/config');
+const logger = require('../utils/logger');
+const { invalidateUserCache } = require('../middlewares/auth');
+const JWT_SECRET = config.JWT_SECRET;
 
 const saltRounds = 12;
 
@@ -12,7 +15,7 @@ class AuthController {
       const { email, password } = req.body;
 
       if (!email || !password) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Email and password are required',
           code: 'MISSING_CREDENTIALS'
         });
@@ -37,7 +40,7 @@ class AuthController {
       });
 
       if (!user) {
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: 'Invalid email or password',
           code: 'INVALID_CREDENTIALS'
         });
@@ -45,7 +48,7 @@ class AuthController {
 
       // Check if user is active (BOTH active status and not terminated)
       if (user.status !== 'ACTIVE') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: `Account is ${user.status.toLowerCase()}. Please contact administrator.`,
           code: 'ACCOUNT_INACTIVE',
           status: user.status
@@ -56,7 +59,7 @@ class AuthController {
       const isValidPassword = await bcrypt.compare(password, user.passwordHash);
       if (!isValidPassword) {
         // Optional: Track failed login attempts here
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: 'Invalid email or password',
           code: 'INVALID_CREDENTIALS'
         });
@@ -65,7 +68,7 @@ class AuthController {
       // Update online status and last login time
       await prisma.user.update({
         where: { id: user.id },
-        data: { 
+        data: {
           isOnline: true,
           updatedAt: new Date()
         }
@@ -112,8 +115,8 @@ class AuthController {
         requiresPasswordChange: user.forcePasswordReset || false
       });
     } catch (error) {
-      console.error('Login error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Login error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -123,18 +126,18 @@ class AuthController {
   // Manual registration (for flexibility - uses provided credentials)
   async register(req, res) {
     try {
-      const { 
-        email, 
-        password, 
-        name, 
-        phone, 
-        role, 
-        profileData 
+      const {
+        email,
+        password,
+        name,
+        phone,
+        role,
+        profileData
       } = req.body;
 
       // Validate required fields
       if (!email || !password || !name || !role) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Email, password, name, and role are required',
           code: 'MISSING_FIELDS'
         });
@@ -143,7 +146,7 @@ class AuthController {
       // Validate role
       const validRoles = ['SUPER_ADMIN', 'ADMIN', 'TEACHER', 'STUDENT', 'PARENT'];
       if (!validRoles.includes(role)) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Invalid role specified',
           code: 'INVALID_ROLE',
           validRoles
@@ -156,7 +159,7 @@ class AuthController {
       });
 
       if (existingUser) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'User already exists with this email',
           code: 'USER_EXISTS'
         });
@@ -165,7 +168,7 @@ class AuthController {
       // Validate password strength
       const passwordValidation = this.validatePasswordStrength(password);
       if (!passwordValidation.valid) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Password does not meet requirements',
           code: 'WEAK_PASSWORD',
           requirements: passwordValidation.requirements
@@ -184,13 +187,23 @@ class AuthController {
           phone: phone || null,
           role,
           profileImage: profileData?.profileImage || null,
-          passwordChangedAt: new Date(), // Set initial password change time
-          forcePasswordReset: role === 'STUDENT' || role === 'TEACHER' // Force reset for certain roles if needed
+          passwordChangedAt: new Date(),
+          forcePasswordReset: role === 'STUDENT' || role === 'TEACHER'
         },
-        include: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          role: true,
+          profileImage: true,
+          status: true,
+          forcePasswordReset: true,
+          passwordChangedAt: true,
+          createdAt: true,
           teacherProfile: true,
           studentProfile: true,
-          parentProfile: true
+          parentProfile: true,
         }
       });
 
@@ -209,8 +222,8 @@ class AuthController {
         { expiresIn: '24h' }
       );
 
-      // Prepare response data (exclude password)
-      const { passwordHash: _, ...userData } = user;
+      // User data is already safe — passwordHash was never selected
+      const userData = user;
 
       res.status(201).json({
         message: 'User created successfully',
@@ -220,17 +233,16 @@ class AuthController {
       });
 
     } catch (error) {
-      console.error('Registration error:', error);
-      
-      // Handle Prisma unique constraint errors
+      logger.error({ err: error }, 'Registration error');
+
       if (error.code === 'P2002') {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'A user with this email already exists',
           code: 'DUPLICATE_EMAIL'
         });
       }
-      
-      res.status(500).json({ 
+
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -238,46 +250,53 @@ class AuthController {
   }
 
   // Reset user password (admin function) - generates new password
-async resetUserPassword(req, res) {
-  try {
-    const { userId } = req.params;
-    
-    // Use optional chaining and default values
-    const { forceLogout = true, notifyUser = false } = req.body || {};
-    
-    // Check if user exists
-    const user = await prisma.user.findUnique({
-      where: { id: userId }
-    });
+  async resetUserPassword(req, res) {
+    try {
+      const { userId } = req.params;
 
-    if (!user) {
-      return res.status(404).json({ error: 'User not found' });
-    }
+      // Use optional chaining and default values
+      const { forceLogout = true, notifyUser = false } = req.body || {};
 
-    // Generate new strong password
-    const { generateStrongPassword } = require('../utils/passwordGenerator');
-    const newPassword = generateStrongPassword();
-    const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+      // Check if user exists
+      const user = await prisma.user.findUnique({
+        where: { id: userId }
+      });
 
-    // Update password
-    await prisma.user.update({
-      where: { id: userId },
-      data: { passwordHash: newPasswordHash }
-    });
-
-    res.json({
-      message: 'Password reset successfully',
-      credentials: {
-        email: user.email,
-        newPassword // Show only once after reset
+      if (!user) {
+        return res.status(404).json({ error: 'User not found' });
       }
-    });
 
-  } catch (error) {
-    console.error('Reset password error:', error);
-    res.status(500).json({ error: 'Internal server error' });
+      // Generate new strong password
+      const { generateStrongPassword } = require('../utils/passwordGenerator');
+      const newPassword = generateStrongPassword();
+      const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
+
+      // Update password and invalidate cache
+      await prisma.user.update({
+        where: { id: userId },
+        data: {
+          passwordHash: newPasswordHash,
+          passwordChangedAt: new Date(),
+          forcePasswordReset: true,
+        }
+      });
+
+      // Invalidate Redis cache so stale auth data is not used
+      await invalidateUserCache(userId);
+
+      res.json({
+        message: 'Password reset successfully',
+        credentials: {
+          email: user.email,
+          newPassword // Show only once after reset
+        }
+      });
+
+    } catch (error) {
+      logger.error({ err: error }, 'Reset password error');
+      res.status(500).json({ error: 'Internal server error' });
+    }
   }
-}
 
   // Terminate user account (admin function)
   async terminateUserAccount(req, res) {
@@ -291,7 +310,7 @@ async resetUserPassword(req, res) {
       });
 
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'User not found',
           code: 'USER_NOT_FOUND'
         });
@@ -299,7 +318,7 @@ async resetUserPassword(req, res) {
 
       // Prevent terminating own account
       if (user.id === req.user.id) {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Cannot terminate your own account',
           code: 'SELF_TERMINATION_NOT_ALLOWED'
         });
@@ -307,7 +326,7 @@ async resetUserPassword(req, res) {
 
       // Prevent terminating super admin (only super admin can do this)
       if (user.role === 'SUPER_ADMIN' && req.user.role !== 'SUPER_ADMIN') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: 'Only super admin can terminate another super admin',
           code: 'INSUFFICIENT_PERMISSIONS'
         });
@@ -324,10 +343,15 @@ async resetUserPassword(req, res) {
         }
       });
 
-      // Log the termination
-      console.log(`User ${userId} (${user.email}) terminated by admin ${req.user.id}. Reason: ${reason || 'Not specified'}`);
+      // Invalidate Redis cache immediately
+      await invalidateUserCache(userId);
 
-      res.json({ 
+      logger.info(
+        { userId, email: user.email, adminId: req.user.id, reason: reason || 'Not specified' },
+        'User account terminated'
+      );
+
+      res.json({
         message: 'User account terminated successfully',
         code: 'ACCOUNT_TERMINATED',
         note: 'User can no longer login to the system',
@@ -340,8 +364,8 @@ async resetUserPassword(req, res) {
       });
 
     } catch (error) {
-      console.error('Terminate user error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Terminate user error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -360,7 +384,7 @@ async resetUserPassword(req, res) {
       });
 
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'User not found',
           code: 'USER_NOT_FOUND'
         });
@@ -376,7 +400,7 @@ async resetUserPassword(req, res) {
         const { generateStrongPassword } = require('../utils/passwordGenerator');
         const newPassword = generateStrongPassword();
         const newPasswordHash = await bcrypt.hash(newPassword, saltRounds);
-        
+
         updateData.passwordHash = newPasswordHash;
         updateData.passwordChangedAt = new Date();
         updateData.forcePasswordReset = true;
@@ -387,15 +411,18 @@ async resetUserPassword(req, res) {
         data: updateData
       });
 
-      res.json({ 
+      // Invalidate Redis cache after status change
+      await invalidateUserCache(userId);
+
+      res.json({
         message: 'User account reactivated successfully',
         code: 'ACCOUNT_REACTIVATED',
         note: resetPassword ? 'User will need to reset password on next login' : 'User can login with existing credentials'
       });
 
     } catch (error) {
-      console.error('Reactivate user error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Reactivate user error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -407,19 +434,19 @@ async resetUserPassword(req, res) {
     try {
       await prisma.user.update({
         where: { id: req.user.id },
-        data: { 
+        data: {
           isOnline: false,
           updatedAt: new Date()
         }
       });
 
-      res.json({ 
+      res.json({
         message: 'Logout successful',
         code: 'LOGOUT_SUCCESS'
       });
     } catch (error) {
-      console.error('Logout error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Logout error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -431,7 +458,18 @@ async resetUserPassword(req, res) {
     try {
       const user = await prisma.user.findUnique({
         where: { id: req.user.id },
-        include: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          role: true,
+          profileImage: true,
+          status: true,
+          isOnline: true,
+          forcePasswordReset: true,
+          createdAt: true,
+          updatedAt: true,
           teacherProfile: true,
           studentProfile: {
             include: {
@@ -442,26 +480,25 @@ async resetUserPassword(req, res) {
               }
             }
           },
-          parentProfile: true
+          parentProfile: true,
         }
       });
 
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'User not found',
           code: 'USER_NOT_FOUND'
         });
       }
 
-      // Exclude password from response
-      const { passwordHash, ...userData } = user;
-      res.json({ 
-        user: userData,
+      // passwordHash was never fetched — safe by design
+      res.json({
+        user,
         code: 'PROFILE_FETCHED'
       });
     } catch (error) {
-      console.error('Get profile error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Get profile error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -481,7 +518,18 @@ async resetUserPassword(req, res) {
           profileImage: profileImage || undefined,
           updatedAt: new Date()
         },
-        include: {
+        select: {
+          id: true,
+          email: true,
+          name: true,
+          phone: true,
+          role: true,
+          profileImage: true,
+          status: true,
+          isOnline: true,
+          forcePasswordReset: true,
+          createdAt: true,
+          updatedAt: true,
           teacherProfile: true,
           studentProfile: {
             include: {
@@ -492,20 +540,19 @@ async resetUserPassword(req, res) {
               }
             }
           },
-          parentProfile: true
+          parentProfile: true,
         }
       });
 
-      // Exclude password from response
-      const { passwordHash, ...userData } = updatedUser;
-      res.json({ 
-        message: 'Profile updated successfully', 
-        user: userData,
+      // passwordHash was never fetched — safe by design
+      res.json({
+        message: 'Profile updated successfully',
+        user: updatedUser,
         code: 'PROFILE_UPDATED'
       });
     } catch (error) {
-      console.error('Update profile error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Update profile error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -518,7 +565,7 @@ async resetUserPassword(req, res) {
       const { currentPassword, newPassword } = req.body;
 
       if (!currentPassword || !newPassword) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Current password and new password are required',
           code: 'MISSING_PASSWORDS'
         });
@@ -527,7 +574,7 @@ async resetUserPassword(req, res) {
       // Validate new password strength
       const passwordValidation = this.validatePasswordStrength(newPassword);
       if (!passwordValidation.valid) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'New password does not meet requirements',
           code: 'WEAK_PASSWORD',
           requirements: passwordValidation.requirements
@@ -540,7 +587,7 @@ async resetUserPassword(req, res) {
       });
 
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'User not found',
           code: 'USER_NOT_FOUND'
         });
@@ -549,7 +596,7 @@ async resetUserPassword(req, res) {
       // Verify current password
       const isValidPassword = await bcrypt.compare(currentPassword, user.passwordHash);
       if (!isValidPassword) {
-        return res.status(401).json({ 
+        return res.status(401).json({
           error: 'Current password is incorrect',
           code: 'INVALID_CURRENT_PASSWORD'
         });
@@ -558,7 +605,7 @@ async resetUserPassword(req, res) {
       // Prevent reusing old passwords
       const isOldPassword = await bcrypt.compare(newPassword, user.passwordHash);
       if (isOldPassword) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'New password cannot be the same as old password',
           code: 'PASSWORD_REUSE_NOT_ALLOWED'
         });
@@ -570,22 +617,25 @@ async resetUserPassword(req, res) {
       // Update password with timestamp and clear reset flag
       await prisma.user.update({
         where: { id: req.user.id },
-        data: { 
+        data: {
           passwordHash: newPasswordHash,
           passwordChangedAt: new Date(),
-          forcePasswordReset: false, // Clear the reset flag
+          forcePasswordReset: false,
           updatedAt: new Date()
         }
       });
 
-      res.json({ 
+      // Invalidate Redis cache so token validation picks up new passwordChangedAt
+      await invalidateUserCache(req.user.id);
+
+      res.json({
         message: 'Password changed successfully',
         code: 'PASSWORD_CHANGED',
         note: 'You may need to login again on other devices'
       });
     } catch (error) {
-      console.error('Change password error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Change password error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -610,14 +660,14 @@ async resetUserPassword(req, res) {
       });
 
       if (!user) {
-        return res.status(404).json({ 
+        return res.status(404).json({
           error: 'Session invalid - user not found',
           code: 'INVALID_SESSION'
         });
       }
 
       if (user.status !== 'ACTIVE') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: `Account is ${user.status.toLowerCase()}`,
           code: 'ACCOUNT_INACTIVE',
           status: user.status
@@ -639,8 +689,8 @@ async resetUserPassword(req, res) {
         requiresPasswordChange: user.forcePasswordReset || false
       });
     } catch (error) {
-      console.error('Check session error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Check session error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });
@@ -659,10 +709,10 @@ async resetUserPassword(req, res) {
     };
 
     const valid = password.length >= requirements.minLength &&
-                  password.length <= requirements.maxLength &&
-                  requirements.hasUppercase &&
-                  requirements.hasLowercase &&
-                  requirements.hasNumbers;
+      password.length <= requirements.maxLength &&
+      requirements.hasUppercase &&
+      requirements.hasLowercase &&
+      requirements.hasNumbers;
 
     return {
       valid,
@@ -683,7 +733,7 @@ async resetUserPassword(req, res) {
       const { email } = req.body;
 
       if (!email) {
-        return res.status(400).json({ 
+        return res.status(400).json({
           error: 'Email is required',
           code: 'MISSING_EMAIL'
         });
@@ -703,7 +753,7 @@ async resetUserPassword(req, res) {
 
       // Check if user is active
       if (user.status !== 'ACTIVE') {
-        return res.status(403).json({ 
+        return res.status(403).json({
           error: `Account is ${user.status.toLowerCase()}. Please contact administrator.`,
           code: 'ACCOUNT_INACTIVE'
         });
@@ -734,8 +784,8 @@ async resetUserPassword(req, res) {
       });
 
     } catch (error) {
-      console.error('Forgot password error:', error);
-      res.status(500).json({ 
+      logger.error({ err: error }, 'Forgot password error');
+      res.status(500).json({
         error: 'Internal server error',
         code: 'SERVER_ERROR'
       });

@@ -1,9 +1,13 @@
 const jwt = require('jsonwebtoken');
 const prisma = require('../db/prismaClient');
+const { cacheGet, cacheSet, cacheDel } = require('../db/redisClient');
+const logger = require('../utils/logger');
 
-const JWT_SECRET = process.env.JWT_SECRET || 'your-super-secret-jwt-key';
+// Import JWT_SECRET from centralized config — NO FALLBACK
+const config = require('../config/config');
+const JWT_SECRET = config.JWT_SECRET;
 
-// Authentication middleware - Enhanced with password change tracking
+// Authentication middleware — optimized with Redis caching
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
   const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
@@ -14,77 +18,69 @@ const authenticateToken = async (req, res, next) => {
 
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
-    
-    // Get user with additional security fields
-    const user = await prisma.user.findUnique({
-      where: { id: decoded.userId },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        name: true,
-        phone: true,
-        profileImage: true,
-        status: true,
-        passwordChangedAt: true, // Track password changes
-        forcePasswordReset: true, // Check if password reset is required
-        createdAt: true,
-        teacherProfile: {
-          select: {
-            id: true,
-            bio: true,
-            specialization: true
-          }
-        },
-        studentProfile: {
-          select: {
-            id: true,
-            admissionNo: true
-          }
-        },
-        parentProfile: {
-          select: {
-            id: true
-          }
-        }
-      }
-    });
+
+    // 1. Try Redis cache first (TTL: 5 minutes)
+    const cacheKey = `user:${decoded.userId}`;
+    let user = await cacheGet(cacheKey);
 
     if (!user) {
-      return res.status(401).json({ error: 'User not found' });
+      // 2. Cache miss — fetch ONLY essential fields (no profile includes)
+      user = await prisma.user.findUnique({
+        where: { id: decoded.userId },
+        select: {
+          id: true,
+          email: true,
+          role: true,
+          name: true,
+          phone: true,
+          profileImage: true,
+          status: true,
+          passwordChangedAt: true,
+          forcePasswordReset: true,
+          createdAt: true,
+        },
+      });
+
+      if (!user) {
+        logger.warn({ userId: decoded.userId }, 'Auth: user not found');
+        return res.status(401).json({ error: 'User not found' });
+      }
+
+      // 3. Cache the user data (5 min TTL)
+      await cacheSet(cacheKey, user, 300);
     }
 
     // Check if user is active
     if (user.status !== 'ACTIVE') {
-      return res.status(403).json({ 
-        error: `Account is ${user.status.toLowerCase()}. Please contact administrator.` 
+      logger.warn({ userId: user.id, status: user.status }, 'Auth: inactive user attempt');
+      return res.status(403).json({
+        error: `Account is ${user.status.toLowerCase()}. Please contact administrator.`,
       });
     }
 
     // Check if password was changed after token was issued
     if (user.passwordChangedAt) {
-      const pwdChangedAt = Math.floor(user.passwordChangedAt.getTime() / 1000);
-      
-      // If token doesn't have pwdChangedAt or it doesn't match current timestamp
+      const pwdChangedAt = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
+
       if (!decoded.pwdChangedAt || decoded.pwdChangedAt !== pwdChangedAt) {
-        return res.status(401).json({ 
-          error: 'Session expired. Please login again.' 
+        logger.warn({ userId: user.id }, 'Auth: token invalidated by password change');
+        return res.status(401).json({
+          error: 'Session expired. Please login again.',
         });
       }
     }
 
-    // Check if user needs to reset password (force password reset)
-    // Allow access to change-password endpoint even if reset is required
+    // Check if user needs to reset password
     const allowedPaths = [
       '/api/auth/change-password',
       '/auth/change-password',
       '/api/auth/logout',
-      '/auth/logout'
+      '/auth/logout',
     ];
-    
+
     if (user.forcePasswordReset && !allowedPaths.includes(req.path)) {
-      return res.status(403).json({ 
-        error: 'Password reset required. Please change your password.' 
+      return res.status(403).json({
+        error: 'Password reset required. Please change your password.',
       });
     }
 
@@ -95,11 +91,18 @@ const authenticateToken = async (req, res, next) => {
       return res.status(403).json({ error: 'Token expired. Please login again.' });
     }
     if (error.name === 'JsonWebTokenError') {
+      logger.warn({ error: error.message }, 'Auth: invalid token');
       return res.status(403).json({ error: 'Invalid token' });
     }
+    logger.error({ err: error }, 'Auth: token verification failed');
     return res.status(500).json({ error: 'Token verification failed' });
   }
 };
+
+// Cache invalidation — call when user role/status/password changes
+async function invalidateUserCache(userId) {
+  await cacheDel(`user:${userId}`);
+}
 
 // Role-based authorization middleware
 const requireRole = (allowedRoles) => {
@@ -109,10 +112,12 @@ const requireRole = (allowedRoles) => {
     }
 
     if (!allowedRoles.includes(req.user.role)) {
-      return res.status(403).json({ 
+      logger.warn(
+        { userId: req.user.id, role: req.user.role, required: allowedRoles },
+        'Auth: insufficient permissions'
+      );
+      return res.status(403).json({
         error: 'Insufficient permissions',
-        requiredRoles: allowedRoles,
-        userRole: req.user.role
       });
     }
 
@@ -141,6 +146,7 @@ const requireParentOrAdmin = requireRole(['SUPER_ADMIN', 'ADMIN', 'PARENT']);
 
 module.exports = {
   authenticateToken,
+  invalidateUserCache,
   requireRole,
   requireSuperAdmin,
   requireAdmin,
@@ -151,5 +157,5 @@ module.exports = {
   requireTeacherOnly,
   requireStudentTeacherOrAdmin,
   requireParentOrAdmin,
-  JWT_SECRET
+  // JWT_SECRET intentionally NOT exported — use config/config.js directly
 };

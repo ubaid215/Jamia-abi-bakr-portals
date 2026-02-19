@@ -4,6 +4,13 @@ import { useAuth } from '../contexts/AuthContext';
 import StudentSidebar from '../components/sidebars/StudentSidebar';
 import { LogOut, User, Menu, Home } from 'lucide-react';
 
+// Layout-level providers (scoped to student routes only)
+import { StudentProvider } from '../contexts/StudentContext';
+import { AttendanceProvider } from '../contexts/AttendanceContext';
+import { ProgressProvider } from '../contexts/ProgressContext';
+import { HifzProvider } from '../contexts/HifzContext';
+import { ClassProvider } from '../contexts/ClassContext';
+
 const StudentLayout = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
@@ -16,7 +23,7 @@ const StudentLayout = () => {
 
   return (
     <div className="flex h-screen bg-gray-50">
-      <StudentSidebar 
+      <StudentSidebar
         isOpen={sidebarOpen}
         onClose={() => setSidebarOpen(false)}
         onToggle={() => setSidebarOpen(!sidebarOpen)}
@@ -34,11 +41,11 @@ const StudentLayout = () => {
                 >
                   <Menu className="h-4 w-4 sm:h-5 sm:w-5 text-amber-700" />
                 </button>
-                
+
                 <div className="w-8 h-8 sm:w-10 sm:h-10 bg-gradient-to-br from-amber-500 to-amber-700 rounded-full flex items-center justify-center flex-shrink-0">
                   <User className="h-4 w-4 sm:h-5 sm:w-5 text-white" />
                 </div>
-                
+
                 <div className="min-w-0">
                   <h1 className="text-sm sm:text-base lg:text-lg font-bold text-amber-900 truncate">
                     {user?.name?.split(' ')[0] || 'Student'}
@@ -58,7 +65,7 @@ const StudentLayout = () => {
                 >
                   <Home className="h-4 w-4 sm:h-5 sm:w-5 text-amber-700" />
                 </button>
-                
+
                 {/* Logout button */}
                 <button
                   onClick={handleLogout}
@@ -74,7 +81,17 @@ const StudentLayout = () => {
         </header>
 
         <main className="flex-1 overflow-auto p-3 sm:p-4 lg:p-6">
-          <Outlet />
+          <StudentProvider>
+            <AttendanceProvider>
+              <ProgressProvider>
+                <HifzProvider>
+                  <ClassProvider>
+                    <Outlet />
+                  </ClassProvider>
+                </HifzProvider>
+              </ProgressProvider>
+            </AttendanceProvider>
+          </StudentProvider>
         </main>
 
         {/* Mobile menu button */}
@@ -86,7 +103,7 @@ const StudentLayout = () => {
             <Menu className="h-4 w-4" />
           </button>
         )}
-        
+
       </div>
     </div>
   );

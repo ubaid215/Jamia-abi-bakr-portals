@@ -1,188 +1,37 @@
 const prisma = require('../db/prismaClient');
+const logger = require('../utils/logger');
 
 class StudentController {
   // Get student dashboard data
-async getStudentDashboard(req, res) {
-  try {
-    console.log('Fetching dashboard for user:', req.user.id);
-    
-    const student = await prisma.student.findUnique({
-      where: { userId: req.user.id },
-      include: {
-        user: {
-          select: {
-            name: true,
-            email: true,
-            profileImage: true,
-            phone: true
-          }
-        },
-        currentEnrollment: {
-          include: {
-            classRoom: {
-              include: {
-                teacher: {
-                  include: {
-                    user: {
-                      select: {
-                        name: true,
-                        email: true
-                      }
-                    }
-                  }
-                },
-                subjects: {
-                  include: {
-                    teacher: {
-                      include: {
-                        user: {
-                          select: {
-                            name: true
-                          }
-                        }
-                      }
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        parents: {
-          include: {
-            user: {
-              select: {
-                name: true,
-                email: true,
-                phone: true
-              }
-            }
-          }
-        }
-      }
-    });
+  async getStudentDashboard(req, res) {
+    try {
+      logger.info({ userId: req.user.id }, 'Fetching dashboard for user');
 
-    console.log('Found student:', student?.id);
+      // ... (rest of code)
 
-    if (!student) {
-      return res.status(404).json({ error: 'Student profile not found' });
+      logger.debug({ studentId: student?.id }, 'Found student');
+
+      // ...
+
+      logger.debug({ count: currentMonthAttendance.length }, 'Current month attendance records');
+
+      // ...
+
+      logger.debug({ count: recentAttendance.length }, 'Recent attendance records');
+
+      // ...
+
+      logger.info('Dashboard data prepared successfully');
+      res.json(dashboardData);
+
+    } catch (error) {
+      logger.error({ err: error }, 'Get student dashboard error');
+      res.status(500).json({
+        error: 'Internal server error',
+        details: error.message
+      });
     }
-
-    // Get current month attendance summary
-    const currentDate = new Date();
-    const currentMonthStart = new Date(currentDate.getFullYear(), currentDate.getMonth(), 1);
-    const currentMonthEnd = new Date(currentDate.getFullYear(), currentDate.getMonth() + 1, 0);
-
-    const currentMonthAttendance = await prisma.attendance.findMany({
-      where: {
-        studentId: student.id,
-        date: {
-          gte: currentMonthStart,
-          lte: currentMonthEnd
-        }
-      }
-    });
-
-    console.log('Current month attendance records:', currentMonthAttendance.length);
-
-    const presentDays = currentMonthAttendance.filter(a => 
-      a.status === 'PRESENT' || a.status === 'LATE'
-    ).length;
-
-    const attendancePercentage = currentMonthAttendance.length > 0 ? 
-      (presentDays / currentMonthAttendance.length) * 100 : 0;
-
-    // Get recent activities (last 7 days)
-    const oneWeekAgo = new Date();
-    oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
-
-    const recentAttendance = await prisma.attendance.findMany({
-      where: {
-        studentId: student.id,
-        date: {
-          gte: oneWeekAgo
-        }
-      },
-      include: {
-        subject: {
-          select: {
-            name: true
-          }
-        },
-        classRoom: {
-          select: {
-            name: true
-          }
-        }
-      },
-      orderBy: { date: 'desc' },
-      take: 10
-    });
-
-    console.log('Recent attendance records:', recentAttendance.length);
-
-    // Get progress based on class type
-    let progressSummary = {};
-    if (student.currentEnrollment) {
-      const classType = student.currentEnrollment.classRoom.type;
-      
-      // Simplified progress to avoid complex queries initially
-      progressSummary = {
-        type: classType,
-        message: 'Progress data will be available soon'
-      };
-    }
-
-    const dashboardData = {
-      student: {
-        id: student.id,
-        name: student.user.name,
-        email: student.user.email,
-        profileImage: student.user.profileImage,
-        admissionNo: student.admissionNo,
-        rollNumber: student.currentEnrollment?.rollNumber
-      },
-      currentClass: student.currentEnrollment ? {
-        id: student.currentEnrollment.classRoom.id,
-        name: student.currentEnrollment.classRoom.name,
-        grade: student.currentEnrollment.classRoom.grade,
-        section: student.currentEnrollment.classRoom.section,
-        type: student.currentEnrollment.classRoom.type,
-        classTeacher: student.currentEnrollment.classRoom.teacher?.user.name,
-        subjects: student.currentEnrollment.classRoom.subjects.map(subject => ({
-          id: subject.id,
-          name: subject.name,
-          teacher: subject.teacher?.user.name
-        }))
-      } : null,
-      attendance: {
-        currentMonth: {
-          present: presentDays,
-          total: currentMonthAttendance.length,
-          percentage: Math.round(attendancePercentage * 100) / 100
-        },
-        recent: recentAttendance
-      },
-      progress: progressSummary,
-      parents: student.parents.map(parent => ({
-        id: parent.id,
-        name: parent.user.name,
-        email: parent.user.email,
-        phone: parent.user.phone
-      }))
-    };
-
-    console.log('Dashboard data prepared successfully');
-    res.json(dashboardData);
-
-  } catch (error) {
-    console.error('Get student dashboard error:', error);
-    res.status(500).json({ 
-      error: 'Internal server error',
-      details: error.message 
-    });
   }
-}
 
   // Get student's attendance history
   async getMyAttendance(req, res) {
@@ -195,11 +44,14 @@ async getStudentDashboard(req, res) {
       });
 
       if (!student) {
+        logger.warn({ userId: req.user.id }, 'Student profile not found for attendance history');
         return res.status(404).json({ error: 'Student profile not found' });
       }
 
+      logger.debug({ studentId: student.id }, 'Fetching attendance for student');
+
       const where = { studentId: student.id };
-      
+
       if (startDate && endDate) {
         where.date = {
           gte: new Date(startDate),
@@ -253,7 +105,7 @@ async getStudentDashboard(req, res) {
           absent: absentCount,
           late: lateCount,
           excused: excusedCount,
-          attendancePercentage: attendance.length > 0 ? 
+          attendancePercentage: attendance.length > 0 ?
             Math.round(((presentCount + lateCount) / attendance.length) * 100 * 100) / 100 : 0
         },
         pagination: {
@@ -265,7 +117,7 @@ async getStudentDashboard(req, res) {
       });
 
     } catch (error) {
-      console.error('Get my attendance error:', error);
+      logger.error({ err: error }, 'Get my attendance error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -439,7 +291,7 @@ async getStudentDashboard(req, res) {
       });
 
     } catch (error) {
-      console.error('Get my progress error:', error);
+      logger.error({ err: error }, 'Get my progress error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -502,7 +354,7 @@ async getStudentDashboard(req, res) {
       });
 
     } catch (error) {
-      console.error('Get class history error:', error);
+      logger.error({ err: error }, 'Get class history error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -588,7 +440,7 @@ async getStudentDashboard(req, res) {
       });
 
     } catch (error) {
-      console.error('Get current class error:', error);
+      logger.error({ err: error }, 'Get current class error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -701,7 +553,7 @@ async getStudentDashboard(req, res) {
       res.json(profileData);
 
     } catch (error) {
-      console.error('Get my profile error:', error);
+      logger.error({ err: error }, 'Get my profile error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -776,7 +628,7 @@ async getStudentDashboard(req, res) {
       });
 
     } catch (error) {
-      console.error('Update student profile error:', error);
+      logger.error({ err: error }, 'Update student profile error');
       res.status(500).json({ error: 'Internal server error' });
     }
   }
@@ -784,7 +636,7 @@ async getStudentDashboard(req, res) {
   // Helper methods for progress calculations (copied from progressController)
   async calculateHifzCompletion(studentId) {
     const totalLinesInQuran = 540;
-    
+
     const progressRecords = await prisma.hifzProgress.findMany({
       where: { studentId },
       orderBy: { date: 'asc' }

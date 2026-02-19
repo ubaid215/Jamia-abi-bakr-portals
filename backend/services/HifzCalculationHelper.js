@@ -46,8 +46,7 @@ class HifzCalculationHelper {
     );
 
     if (overlaps.length > 0) {
-      console.warn(`⚠️ Warning: Overlapping Paras detected: ${overlaps.join(', ')}`);
-      console.warn('These Paras are counted in "Already Memorized" only.');
+      console.warn(`Overlapping Paras detected: ${overlaps.join(', ')}`);
     }
 
     // Calculate lines from already memorized Paras
@@ -307,97 +306,6 @@ class HifzCalculationHelper {
     };
   }
 }
-
-// ============================================================================
-// EXAMPLE USAGE & TEST CASES
-// ============================================================================
-
-console.log('╔════════════════════════════════════════════════════════════════╗');
-console.log('║     Hifz Progress Calculator (16-line Mushaf Edition)         ║');
-console.log('║     Total Lines in Quran: 9,664 (604 pages × 16 lines)       ║');
-console.log('╚════════════════════════════════════════════════════════════════╝\n');
-
-// Test Case 1: Student who memorized 5 Paras before joining
-console.log('━━━ STUDENT 1: Joined with 5 Paras Already Memorized ━━━');
-const student1 = HifzCalculationHelper.calculateTotalMemorized(
-  [1, 2, 3, 4, 5],  // Already memorized
-  [6, 7],           // Completed during training
-  8,                // Current Para
-  45                // 45% progress in Para 8
-);
-
-const summary1 = HifzCalculationHelper.generateProgressSummary(student1, 10);
-console.log(JSON.stringify(summary1, null, 2));
-
-const milestones1 = HifzCalculationHelper.getMilestones(student1.totalMemorizedParas);
-console.log('\nMilestone Status:');
-console.log(`Last Achieved: ${milestones1.lastAchieved?.description || 'None yet'}`);
-console.log(`Next: ${milestones1.nextMilestone?.description} (${milestones1.parasToNextMilestone} Paras away)`);
-
-console.log('\n' + '─'.repeat(70) + '\n');
-
-// Test Case 2: Beginner student
-console.log('━━━ STUDENT 2: Starting from Scratch ━━━');
-const student2 = HifzCalculationHelper.calculateTotalMemorized(
-  [],     // No prior memorization
-  [1, 2], // Completed 2 Paras
-  3,      // Current Para
-  75      // 75% progress
-);
-
-const summary2 = HifzCalculationHelper.generateProgressSummary(student2, 12);
-console.log(JSON.stringify(summary2, null, 2));
-
-console.log('\n' + '─'.repeat(70) + '\n');
-
-// Test Case 3: Advanced student (near completion)
-console.log('━━━ STUDENT 3: Advanced (Near Completion) ━━━');
-const student3 = HifzCalculationHelper.calculateTotalMemorized(
-  [1, 2, 3, 4, 5, 6, 7, 8, 9, 10], // 10 Paras before
-  [11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25], // 15 more
-  26, // Current Para
-  30  // 30% progress
-);
-
-const summary3 = HifzCalculationHelper.generateProgressSummary(student3, 15);
-console.log(JSON.stringify(summary3, null, 2));
-
-const milestones3 = HifzCalculationHelper.getMilestones(student3.totalMemorizedParas);
-console.log('\nMilestone Status:');
-console.log(`Last Achieved: ${milestones3.lastAchieved?.description}`);
-console.log(`Next: ${milestones3.nextMilestone?.description} (${milestones3.parasToNextMilestone} Paras away)`);
-
-// Target date calculation
-const targetDate = new Date();
-targetDate.setMonth(targetDate.getMonth() + 6); // 6 months from now
-const requiredPace = HifzCalculationHelper.calculateRequiredPace(
-  student3.remainingLines, 
-  targetDate
-);
-console.log('\nTo complete in 6 months:');
-console.log(requiredPace.message);
-console.log(`Difficulty: ${requiredPace.difficulty}`);
-
-console.log('\n' + '─'.repeat(70) + '\n');
-
-// Test Case 4: Validation - Overlapping Paras (should warn)
-console.log('━━━ TEST: Overlapping Paras Detection ━━━');
-const studentOverlap = HifzCalculationHelper.calculateTotalMemorized(
-  [1, 2, 3, 4, 5],  // Already memorized
-  [4, 5, 6, 7],     // Overlaps with already memorized (4, 5)
-  8,
-  20
-);
-console.log(`Overlaps detected: ${studentOverlap.overlaps.join(', ') || 'None'}`);
-console.log(`Valid completed Paras: ${studentOverlap.validCompletedParas.join(', ')}`);
-
-console.log('\n' + '═'.repeat(70) + '\n');
-
-// Para validation example
-console.log('━━━ VALIDATION EXAMPLE ━━━');
-const canWork = HifzCalculationHelper.canWorkOnPara(3, [1, 2, 3, 4, 5], 6);
-console.log(`Can work on Para 3: ${canWork.allowed}`);
-console.log(`Reason: ${canWork.reason || 'Allowed'}`);
 
 // Export for use in Node.js
 if (typeof module !== 'undefined' && module.exports) {

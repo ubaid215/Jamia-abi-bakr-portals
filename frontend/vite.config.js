@@ -8,14 +8,16 @@ export default defineConfig({
     tailwindcss(),
   ],
   build: {
-    chunkSizeWarningLimit: 2000, // optional: increase limit
+    // Removed: chunkSizeWarningLimit: 2000 (was masking oversized chunks)
     rollupOptions: {
       output: {
-        manualChunks(id) {
-          // Split node_modules by package name
-          if (id.includes('node_modules')) {
-            return id.toString().split('node_modules/')[1].split('/')[0].toString()
-          }
+        manualChunks: {
+          // Core React runtime — shared by all pages
+          'vendor-react': ['react', 'react-dom', 'react-router-dom'],
+          // React Query — shared by all data-fetching components
+          'vendor-query': ['@tanstack/react-query'],
+          // Charts — only loaded by pages that import recharts
+          'vendor-charts': ['recharts'],
         }
       }
     }

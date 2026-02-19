@@ -21,6 +21,11 @@ const ACTION_TYPES = {
   SET_ATTENDANCE_TRENDS: "SET_ATTENDANCE_TRENDS",
   SET_CLASS_ATTENDANCE_COMPARISON: "SET_CLASS_ATTENDANCE_COMPARISON",
   SET_STUDENT_ENROLLMENT_HISTORY: "SET_STUDENT_ENROLLMENT_HISTORY",
+  SET_TRACKING_STATS: "SET_TRACKING_STATS",
+  SET_PENDING_REPORTS: "SET_PENDING_REPORTS",
+  SET_AT_RISK_STUDENTS: "SET_AT_RISK_STUDENTS",
+  SET_SYSTEM_HEALTH: "SET_SYSTEM_HEALTH",
+  SET_JOBS_LIST: "SET_JOBS_LIST",
   SET_ERROR: "SET_ERROR",
   UPDATE_USER: "UPDATE_USER",
   UPDATE_TEACHER: "UPDATE_TEACHER",
@@ -45,6 +50,11 @@ const initialState = {
   attendanceTrends: null,
   classAttendanceComparison: null,
   studentEnrollmentHistory: null,
+  trackingStats: null,
+  pendingReports: [],
+  atRiskStudents: [],
+  systemHealth: null,
+  jobsList: [],
   loading: false,
   error: null,
 };
@@ -82,11 +92,26 @@ const adminReducer = (state, action) => {
     case ACTION_TYPES.SET_CLASS_ATTENDANCE_COMPARISON:
       return { ...state, classAttendanceComparison: action.payload };
 
-    case ACTION_TYPES.SET_ERROR:
-      return { ...state, error: action.payload, loading: false };
-
     case ACTION_TYPES.SET_STUDENT_ENROLLMENT_HISTORY:
       return { ...state, studentEnrollmentHistory: action.payload };
+
+    case ACTION_TYPES.SET_TRACKING_STATS:
+      return { ...state, trackingStats: action.payload };
+
+    case ACTION_TYPES.SET_PENDING_REPORTS:
+      return { ...state, pendingReports: Array.isArray(action.payload) ? action.payload : [] };
+
+    case ACTION_TYPES.SET_AT_RISK_STUDENTS:
+      return { ...state, atRiskStudents: Array.isArray(action.payload) ? action.payload : [] };
+
+    case ACTION_TYPES.SET_SYSTEM_HEALTH:
+      return { ...state, systemHealth: action.payload };
+
+    case ACTION_TYPES.SET_JOBS_LIST:
+      return { ...state, jobsList: Array.isArray(action.payload) ? action.payload : [] };
+
+    case ACTION_TYPES.SET_ERROR:
+      return { ...state, error: action.payload, loading: false };
 
     case ACTION_TYPES.UPDATE_USER:
       return {
@@ -246,7 +271,9 @@ export const AdminProvider = ({ children }) => {
     dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
   };
 
-  // Admin Management (Super Admin only)
+  // ============================================
+  // ADMIN MANAGEMENT (Super Admin only)
+  // ============================================
   const createAdmin = useCallback(async (adminData) => {
     setLoading(true);
     try {
@@ -288,7 +315,9 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  // User Management
+  // ============================================
+  // USER MANAGEMENT
+  // ============================================
   const fetchUsers = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
@@ -308,6 +337,33 @@ export const AdminProvider = ({ children }) => {
     } catch (error) {
       setError(error.response?.data?.message || "Failed to fetch users");
       dispatch({ type: ACTION_TYPES.SET_USERS, payload: [] });
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getUserById = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const user = await adminService.getUserById(id);
+      return user;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch user");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const updateUser = useCallback(async (id, userData) => {
+    setLoading(true);
+    try {
+      const updatedUser = await adminService.updateUser(id, userData);
+      dispatch({ type: ACTION_TYPES.UPDATE_USER, payload: updatedUser });
+      return updatedUser;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to update user");
       throw error;
     } finally {
       setLoading(false);
@@ -342,7 +398,22 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  // Teacher Management
+  const resetUserPassword = useCallback(async (userId) => {
+    setLoading(true);
+    try {
+      const result = await adminService.resetUserPassword(userId);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to reset password");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // TEACHER MANAGEMENT
+  // ============================================
   const fetchTeachers = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
@@ -373,7 +444,19 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  // NEW: Update teacher
+  const getTeacherWithDocuments = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const response = await adminService.getTeacherWithDocuments(id);
+      return response;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch teacher documents");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const updateTeacher = useCallback(async (id, teacherData) => {
     setLoading(true);
     try {
@@ -414,24 +497,62 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  const registerTeacher = useCallback(
-    async (teacherData) => {
-      setLoading(true);
-      try {
-        const newTeacher = await adminService.registerTeacher(teacherData);
-        await fetchTeachers();
-        return newTeacher;
-      } catch (error) {
-        setError(error.response?.data?.message || "Failed to register teacher");
-        throw error;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchTeachers]
-  );
+  const registerTeacher = useCallback(async (teacherData) => {
+    setLoading(true);
+    try {
+      const newTeacher = await adminService.registerTeacher(teacherData);
+      await fetchTeachers();
+      return newTeacher;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to register teacher");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchTeachers]);
 
-  // Student Management
+  const uploadTeacherDocument = useCallback(async (teacherId, formData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.uploadTeacherDocument(teacherId, formData);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to upload document");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const deleteTeacherDocument = useCallback(async (teacherId, documentType) => {
+    setLoading(true);
+    try {
+      const result = await adminService.deleteTeacherDocument(teacherId, documentType);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to delete document");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getTeacherActivity = useCallback(async (teacherId, params = {}) => {
+    setLoading(true);
+    try {
+      const activity = await adminService.getTeacherActivity(teacherId, params);
+      return activity;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch teacher activity");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // STUDENT MANAGEMENT
+  // ============================================
   const fetchStudents = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
@@ -462,7 +583,19 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  // NEW: Update student
+  const getStudentWithDocuments = useCallback(async (id) => {
+    setLoading(true);
+    try {
+      const response = await adminService.getStudentWithDocuments(id);
+      return response;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch student documents");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
   const updateStudent = useCallback(async (id, studentData) => {
     setLoading(true);
     try {
@@ -477,7 +610,6 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  // NEW: Update student academic info
   const updateStudentAcademicInfo = useCallback(async (id, academicData) => {
     setLoading(true);
     try {
@@ -492,6 +624,19 @@ export const AdminProvider = ({ children }) => {
       return result;
     } catch (error) {
       setError(error.response?.data?.message || "Failed to update student academic info");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const updateStudentProfileImage = useCallback(async (studentId, formData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.updateStudentProfileImage(studentId, formData);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to update profile image");
       throw error;
     } finally {
       setLoading(false);
@@ -524,68 +669,94 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  const registerStudent = useCallback(
-    async (studentData) => {
-      setLoading(true);
-      try {
-        const newStudent = await adminService.registerStudent(studentData);
-        await fetchStudents();
-        return newStudent;
-      } catch (error) {
-        setError(error.response?.data?.message || "Failed to register student");
-        throw error;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchStudents]
-  );
+  const registerStudent = useCallback(async (studentData) => {
+    setLoading(true);
+    try {
+      const newStudent = await adminService.registerStudent(studentData);
+      await fetchStudents();
+      return newStudent;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to register student");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchStudents]);
 
-  // Get student enrollment history
-  const fetchStudentEnrollmentHistory = useCallback(
-    async (studentId, filters = {}) => {
-      setLoading(true);
-      try {
-        const history = await adminService.getStudentEnrollmentHistory(
-          studentId,
-          filters
-        );
-        dispatch({
-          type: ACTION_TYPES.SET_STUDENT_ENROLLMENT_HISTORY,
-          payload: history,
-        });
-        return history;
-      } catch (error) {
-        setError(
-          error.response?.data?.message || "Failed to fetch enrollment history"
-        );
-        throw error;
-      } finally {
-        setLoading(false);
-      }
-    },
-    []
-  );
+  const uploadStudentDocument = useCallback(async (studentId, formData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.uploadStudentDocument(studentId, formData);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to upload document");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // Batch promote students
-  const promoteStudents = useCallback(
-    async (promotionData) => {
-      setLoading(true);
-      try {
-        const result = await adminService.promoteStudents(promotionData);
-        await fetchStudents();
-        return result;
-      } catch (error) {
-        setError(error.response?.data?.message || "Failed to promote students");
-        throw error;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchStudents]
-  );
+  const deleteStudentDocument = useCallback(async (studentId, documentType) => {
+    setLoading(true);
+    try {
+      const result = await adminService.deleteStudentDocument(studentId, documentType);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to delete document");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
 
-  // Class Management
+  const fetchStudentEnrollmentHistory = useCallback(async (studentId, filters = {}) => {
+    setLoading(true);
+    try {
+      const history = await adminService.getStudentEnrollmentHistory(studentId, filters);
+      dispatch({
+        type: ACTION_TYPES.SET_STUDENT_ENROLLMENT_HISTORY,
+        payload: history,
+      });
+      return history;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch enrollment history");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const promoteStudents = useCallback(async (promotionData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.promoteStudents(promotionData);
+      await fetchStudents();
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to promote students");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchStudents]);
+
+  const getAtRiskStudents = useCallback(async (params = {}) => {
+    setLoading(true);
+    try {
+      const students = await adminService.getAtRiskStudents(params);
+      dispatch({ type: ACTION_TYPES.SET_AT_RISK_STUDENTS, payload: students });
+      return students;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch at-risk students");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // CLASS MANAGEMENT
+  // ============================================
   const fetchClasses = useCallback(async () => {
     setLoading(true);
     try {
@@ -638,25 +809,74 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  const assignTeacherToClass = useCallback(async (classId, teacherId) => {
+  const assignTeacherToClass = useCallback(async (assignmentData) => {
     setLoading(true);
     try {
-      const result = await adminService.assignTeacherToClass(
-        classId,
-        teacherId
-      );
+      const result = await adminService.assignTeacherToClass(assignmentData);
       return result;
     } catch (error) {
-      setError(
-        error.response?.data?.message || "Failed to assign teacher to class"
-      );
+      setError(error.response?.data?.message || "Failed to assign teacher to class");
       throw error;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Subject Management
+  const removeTeacherFromClass = useCallback(async (classRoomId) => {
+    setLoading(true);
+    try {
+      const result = await adminService.removeTeacherFromClass(classRoomId);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to remove teacher from class");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const assignStudentToClass = useCallback(async (assignmentData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.assignStudentToClass(assignmentData);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to assign student to class");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const bulkAssignStudentsToClass = useCallback(async (bulkData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.bulkAssignStudentsToClass(bulkData);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to bulk assign students");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const removeStudentFromClass = useCallback(async (enrollmentId) => {
+    setLoading(true);
+    try {
+      const result = await adminService.removeStudentFromClass(enrollmentId);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to remove student from class");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // SUBJECT MANAGEMENT
+  // ============================================
   const fetchSubjects = useCallback(async () => {
     setLoading(true);
     try {
@@ -686,59 +906,50 @@ export const AdminProvider = ({ children }) => {
   const assignTeacherToSubject = useCallback(async (subjectId, teacherId) => {
     setLoading(true);
     try {
-      const result = await adminService.assignTeacherToSubject(
-        subjectId,
-        teacherId
-      );
+      const result = await adminService.assignTeacherToSubject(subjectId, teacherId);
       return result;
     } catch (error) {
-      setError(
-        error.response?.data?.message || "Failed to assign teacher to subject"
-      );
+      setError(error.response?.data?.message || "Failed to assign teacher to subject");
       throw error;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Enrollment Management
-  const enrollStudentInClass = useCallback(
-    async (enrollmentData) => {
-      setLoading(true);
-      try {
-        const enrollment = await adminService.enrollStudentInClass(
-          enrollmentData
-        );
-        await fetchStudents();
-        return enrollment;
-      } catch (error) {
-        setError(error.response?.data?.message || "Failed to enroll student");
-        throw error;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchStudents]
-  );
+  // ============================================
+  // ENROLLMENT MANAGEMENT
+  // ============================================
+  const enrollStudentInClass = useCallback(async (enrollmentData) => {
+    setLoading(true);
+    try {
+      const enrollment = await adminService.enrollStudentInClass(enrollmentData);
+      await fetchStudents();
+      return enrollment;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to enroll student");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchStudents]);
 
-  const transferStudent = useCallback(
-    async (transferData) => {
-      setLoading(true);
-      try {
-        const result = await adminService.transferStudent(transferData);
-        await fetchStudents();
-        return result;
-      } catch (error) {
-        setError(error.response?.data?.message || "Failed to transfer student");
-        throw error;
-      } finally {
-        setLoading(false);
-      }
-    },
-    [fetchStudents]
-  );
+  const transferStudent = useCallback(async (transferData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.transferStudent(transferData);
+      await fetchStudents();
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to transfer student");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, [fetchStudents]);
 
-  // Leave Management
+  // ============================================
+  // LEAVE MANAGEMENT
+  // ============================================
   const fetchLeaveRequests = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
@@ -749,9 +960,7 @@ export const AdminProvider = ({ children }) => {
       });
       return leaveRequests;
     } catch (error) {
-      setError(
-        error.response?.data?.message || "Failed to fetch leave requests"
-      );
+      setError(error.response?.data?.message || "Failed to fetch leave requests");
       throw error;
     } finally {
       setLoading(false);
@@ -761,26 +970,23 @@ export const AdminProvider = ({ children }) => {
   const updateLeaveRequestStatus = useCallback(async (leaveId, leaveData) => {
     setLoading(true);
     try {
-      const updatedRequest = await adminService.updateLeaveRequest(
-        leaveId,
-        leaveData
-      );
+      const updatedRequest = await adminService.updateLeaveRequest(leaveId, leaveData);
       dispatch({
         type: ACTION_TYPES.UPDATE_LEAVE_REQUEST,
         payload: updatedRequest,
       });
       return updatedRequest;
     } catch (error) {
-      setError(
-        error.response?.data?.message || "Failed to update leave request"
-      );
+      setError(error.response?.data?.message || "Failed to update leave request");
       throw error;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // System Stats
+  // ============================================
+  // SYSTEM STATS
+  // ============================================
   const fetchSystemStats = useCallback(async () => {
     setLoading(true);
     try {
@@ -795,7 +1001,9 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  // Attendance Overview Methods
+  // ============================================
+  // ATTENDANCE OVERVIEW
+  // ============================================
   const fetchAttendanceOverview = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
@@ -806,9 +1014,7 @@ export const AdminProvider = ({ children }) => {
       });
       return overview;
     } catch (error) {
-      setError(
-        error.response?.data?.message || "Failed to fetch attendance overview"
-      );
+      setError(error.response?.data?.message || "Failed to fetch attendance overview");
       throw error;
     } finally {
       setLoading(false);
@@ -822,9 +1028,7 @@ export const AdminProvider = ({ children }) => {
       dispatch({ type: ACTION_TYPES.SET_ATTENDANCE_TRENDS, payload: trends });
       return trends;
     } catch (error) {
-      setError(
-        error.response?.data?.message || "Failed to fetch attendance trends"
-      );
+      setError(error.response?.data?.message || "Failed to fetch attendance trends");
       throw error;
     } finally {
       setLoading(false);
@@ -834,78 +1038,262 @@ export const AdminProvider = ({ children }) => {
   const fetchClassAttendanceComparison = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
-      const comparison = await adminService.getClassAttendanceComparison(
-        filters
-      );
+      const comparison = await adminService.getClassAttendanceComparison(filters);
       dispatch({
         type: ACTION_TYPES.SET_CLASS_ATTENDANCE_COMPARISON,
         payload: comparison,
       });
       return comparison;
     } catch (error) {
-      setError(
-        error.response?.data?.message ||
-          "Failed to fetch class attendance comparison"
-      );
+      setError(error.response?.data?.message || "Failed to fetch class attendance comparison");
       throw error;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Legacy attendance overview (for backward compatibility)
   const fetchLegacyAttendanceOverview = useCallback(async (filters = {}) => {
     setLoading(true);
     try {
-      const attendance = await adminService.getLegacyAttendanceOverview(
-        filters
-      );
+      const attendance = await adminService.getLegacyAttendanceOverview(filters);
       return attendance;
     } catch (error) {
-      setError(
-        error.response?.data?.message || "Failed to fetch attendance overview"
-      );
+      setError(error.response?.data?.message || "Failed to fetch attendance overview");
       throw error;
     } finally {
       setLoading(false);
     }
   }, []);
 
-  // Clear error
+  // ============================================
+  // DAILY ACTIVITY TRACKING SYSTEM
+  // ============================================
+  const getTrackingDashboardStats = useCallback(async () => {
+    setLoading(true);
+    try {
+      const stats = await adminService.getTrackingDashboardStats();
+      dispatch({ type: ACTION_TYPES.SET_TRACKING_STATS, payload: stats });
+      return stats;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch tracking stats");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getPendingReports = useCallback(async () => {
+    setLoading(true);
+    try {
+      const reports = await adminService.getPendingReports();
+      dispatch({ type: ACTION_TYPES.SET_PENDING_REPORTS, payload: reports });
+      return reports;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch pending reports");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const bulkGenerateWeeklyReports = useCallback(async (reportData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.bulkGenerateWeeklyReports(reportData);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to generate weekly reports");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const bulkRefreshSnapshots = useCallback(async () => {
+    setLoading(true);
+    try {
+      const result = await adminService.bulkRefreshSnapshots();
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to refresh snapshots");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getSystemHealth = useCallback(async () => {
+    setLoading(true);
+    try {
+      const health = await adminService.getSystemHealth();
+      dispatch({ type: ACTION_TYPES.SET_SYSTEM_HEALTH, payload: health });
+      return health;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch system health");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const cleanupOldData = useCallback(async (params = {}) => {
+    setLoading(true);
+    try {
+      const result = await adminService.cleanupOldData(params);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to cleanup old data");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const getUrgentNotifications = useCallback(async () => {
+    setLoading(true);
+    try {
+      const notifications = await adminService.getUrgentNotifications();
+      return notifications;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch urgent notifications");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const broadcastNotification = useCallback(async (broadcastData) => {
+    setLoading(true);
+    try {
+      const result = await adminService.broadcastNotification(broadcastData);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to broadcast notification");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // JOB MANAGEMENT
+  // ============================================
+  const getJobsList = useCallback(async () => {
+    setLoading(true);
+    try {
+      const jobs = await adminService.getJobsList();
+      dispatch({ type: ACTION_TYPES.SET_JOBS_LIST, payload: jobs });
+      return jobs;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch jobs list");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  const runJob = useCallback(async (jobName) => {
+    setLoading(true);
+    try {
+      const result = await adminService.runJob(jobName);
+      return result;
+    } catch (error) {
+      setError(error.response?.data?.message || `Failed to run job: ${jobName}`);
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // FILE OPERATIONS
+  // ============================================
+  const getProfileImage = useCallback(async (userId) => {
+    try {
+      const image = await adminService.getProfileImage(userId);
+      return image;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch profile image");
+      throw error;
+    }
+  }, []);
+
+  const getPublicProfileImage = useCallback(async (userId) => {
+    try {
+      const image = await adminService.getPublicProfileImage(userId);
+      return image;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to fetch public profile image");
+      throw error;
+    }
+  }, []);
+
+  const exportUserDocumentsInfo = useCallback(async (userId, userType) => {
+    setLoading(true);
+    try {
+      const info = await adminService.exportUserDocumentsInfo(userId, userType);
+      return info;
+    } catch (error) {
+      setError(error.response?.data?.message || "Failed to export documents info");
+      throw error;
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  // ============================================
+  // ERROR HANDLING
+  // ============================================
   const clearError = useCallback(() => {
     dispatch({ type: ACTION_TYPES.SET_ERROR, payload: null });
   }, []);
 
   const value = {
     ...state,
-    // Admin management (Super Admin only)
+    // Admin management
     createAdmin,
     fetchAdmins,
     // User management
     fetchUsers,
+    getUserById,
+    updateUser,
     updateUserStatus,
     deleteUser,
+    resetUserPassword,
     // Teacher management
     fetchTeachers,
     getTeacherDetails,
+    getTeacherWithDocuments,
     updateTeacher,
     deleteTeacher,
     registerTeacher,
+    uploadTeacherDocument,
+    deleteTeacherDocument,
+    getTeacherActivity,
     // Student management
     fetchStudents,
     getStudentDetails,
+    getStudentWithDocuments,
     updateStudent,
     updateStudentAcademicInfo,
+    updateStudentProfileImage,
     deleteStudent,
     registerStudent,
+    uploadStudentDocument,
+    deleteStudentDocument,
     fetchStudentEnrollmentHistory,
     promoteStudents,
+    getAtRiskStudents,
     // Class management
     fetchClasses,
     createClass,
     updateClass,
     deleteClass,
     assignTeacherToClass,
+    removeTeacherFromClass,
+    assignStudentToClass,
+    bulkAssignStudentsToClass,
+    removeStudentFromClass,
     // Subject management
     fetchSubjects,
     createSubject,
@@ -923,6 +1311,22 @@ export const AdminProvider = ({ children }) => {
     fetchAttendanceTrends,
     fetchClassAttendanceComparison,
     fetchLegacyAttendanceOverview,
+    // Daily Activity Tracking
+    getTrackingDashboardStats,
+    getPendingReports,
+    bulkGenerateWeeklyReports,
+    bulkRefreshSnapshots,
+    getSystemHealth,
+    cleanupOldData,
+    getUrgentNotifications,
+    broadcastNotification,
+    // Job Management
+    getJobsList,
+    runJob,
+    // File operations
+    getProfileImage,
+    getPublicProfileImage,
+    exportUserDocumentsInfo,
     // Error handling
     clearError,
   };
