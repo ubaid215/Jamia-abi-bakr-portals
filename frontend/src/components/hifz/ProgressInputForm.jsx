@@ -1,464 +1,283 @@
-// src/components/hifz/components/ProgressInputForm.jsx
-import React, { useState, useEffect } from "react";
+// components/hifz/HifzDailyReportForm.jsx
+import { useState, useEffect } from "react";
+import { useParams } from "react-router-dom";
 import {
-  Plus,
-  BookOpen,
-  Percent,
-  ChevronLeft,
-  ChevronRight,
-  CheckCircle,
   Save,
+  RotateCcw,
   AlertCircle,
   TrendingUp,
   TrendingDown,
-  Calendar,
+  Minus,
+  BookOpen,
   UserCheck,
-  FileText,
+  Calendar,
+  ChevronLeft,
+  ChevronRight,
+  CheckCircle,
+  Percent,
 } from "lucide-react";
-import { calculateParaLogic } from "../../utils/paraCalculations";
-// import hifzServices from "../../services/hifzServices";
+import { useHifz } from "../../contexts/HifzContext";
+import { useAuth } from "../../contexts/AuthContext";
 
-const ProgressInputForm = ({
-  selectedStudent,
-  hifzStatus,
-  calculatedCurrentPara,
-  paraVisualization,
-  handleMarkParaCompleted,
-  isSubmitting,
-  setSubmitting,
-  hifzLoading,
-  saveProgress,
-  fetchAnalytics,
-}) => {
-  const [progressForm, setProgressForm] = useState({
-    date: new Date().toISOString().split("T")[0],
-    sabaq: "",
-    sabaqLines: 0,
-    sabaqMistakes: 0,
-    sabqi: "",
-    sabqiLines: 0,
-    sabqiMistakes: 0,
-    manzil: "",
-    manzilLines: 0,
-    manzilMistakes: 0,
-    attendance: "PRESENT",
-    currentPara: calculatedCurrentPara,
-    currentParaProgress: 0,
-    notes: "",
-    remarks: "",
-  });
+// ─────────────────────────────────────────────────────────────
+// Helpers
+// ─────────────────────────────────────────────────────────────
+const deriveCondition = (attendance, sM, sqM, mM) => {
+  if (attendance !== "PRESENT") return "N/A";
+  const s = parseInt(sM) || 0;
+  const sq = parseInt(sqM) || 0;
+  const m = parseInt(mM) || 0;
+  if (s > 2 || sq > 2 || m > 3) return "Below Average";
+  if (s > 0 || sq > 1 || m > 1) return "Medium";
+  if (s === 0 && sq === 0 && m === 0) return "Excellent";
+  return "Good";
+};
 
-  // Update current para when calculatedCurrentPara changes
+const conditionStyle = (c) => {
+  switch (c) {
+    case "Excellent": return "bg-green-100 text-green-800 border-green-300";
+    case "Good": return "bg-blue-100  text-blue-800  border-blue-300";
+    case "Medium": return "bg-yellow-100 text-yellow-800 border-yellow-300";
+    case "Below Average": return "bg-red-100   text-red-800   border-red-300";
+    default: return "bg-gray-100   text-gray-500  border-gray-300";
+  }
+};
+
+const INITIAL_FORM = {
+  date: new Date().toISOString().split("T")[0],
+  sabaq: "",
+  sabaqLines: 0,
+  sabaqMistakes: 0,
+  sabqi: "",
+  sabqiMistakes: 0,
+  manzil: "",
+  manzilMistakes: 0,
+  attendance: "PRESENT",
+  currentPara: 1,
+  currentParaProgress: 0,
+  notes: "",
+  remarks: "",
+};
+
+// ─────────────────────────────────────────────────────────────
+// Component
+// ─────────────────────────────────────────────────────────────
+/**
+ * Props (optional — falls back to useParams if not provided)
+ *   studentId        {string}
+ *   hifzStatus       {object}   – from parent (currentPara, completedParas, alreadyMemorizedParas)
+ *   onSaveSuccess    {Function} – called after a successful save
+ */
+const ProgressInputForm = ({ studentId: propStudentId, hifzStatus, onSaveSuccess }) => {
+  const { id: paramId } = useParams();
+  const studentId = propStudentId || paramId;
+
+  const { user } = useAuth();
+  const {
+    createReport,
+    editReport,
+    actionLoading,
+    error,
+    successMessage,
+    clearError,
+    canWrite, // Extract canWrite here
+  } = useHifz();
+
+  const canCreate = canWrite; // Use standard contextual permission
+  const canUpdate = canWrite; // Use standard contextual permission
+
+  const [form, setForm] = useState(INITIAL_FORM);
+  const [editReportId, setEditReportId] = useState(null);
+
+  // Derived
+  const isPresent = form.attendance === "PRESENT";
+  const condition = deriveCondition(form.attendance, form.sabaqMistakes, form.sabqiMistakes, form.manzilMistakes);
+  const totalMistakes = (parseInt(form.sabaqMistakes) || 0) + (parseInt(form.sabqiMistakes) || 0) + (parseInt(form.manzilMistakes) || 0);
+  const canSubmit = editReportId ? canUpdate : canCreate;
+
+  // All memorized paras (already + completed)
+  const allMemorized = [
+    ...(hifzStatus?.alreadyMemorizedParas || []),
+    ...(hifzStatus?.completedParas || []),
+  ];
+
+  // Sync currentPara from hifzStatus
   useEffect(() => {
-    if (calculatedCurrentPara) {
-      setProgressForm((prev) => ({
-        ...prev,
-        currentPara: calculatedCurrentPara,
-        // Auto-generate descriptions based on para
-        sabaq: prev.sabaq || `Para ${calculatedCurrentPara} New Lesson`,
-        sabqi:
-          prev.sabqi ||
-          `Para ${Math.max(1, calculatedCurrentPara - 1)} Revision`,
-        manzil:
-          prev.manzil ||
-          `Para ${Math.max(1, calculatedCurrentPara - 7)} Older Revision`,
-      }));
+    if (hifzStatus?.currentPara) {
+      setForm((prev) => ({ ...prev, currentPara: hifzStatus.currentPara }));
     }
-  }, [calculatedCurrentPara]);
+  }, [hifzStatus?.currentPara]);
 
-  const handleInputChange = (field, value) => {
-    setProgressForm((prev) => ({
+  // ── Handlers ──────────────────────────────────────────────
+  const set = (field, value) => {
+    const numericFields = [
+      "sabaqLines", "sabaqMistakes", "sabqiMistakes",
+      "manzilMistakes", "currentPara", "currentParaProgress",
+    ];
+    setForm((prev) => ({
       ...prev,
-      [field]:
-        field.includes("Mistakes") ||
-        field.includes("Lines") ||
-        field.includes("Para") ||
-        field.includes("Progress")
-          ? Number(value) || 0
-          : value,
+      [field]: numericFields.includes(field) ? (Number(value) || 0) : value,
     }));
   };
 
-  // Calculate total mistakes
-  const calculateTotalMistakes = () => {
-    return (
-      progressForm.sabaqMistakes +
-      progressForm.sabqiMistakes +
-      progressForm.manzilMistakes
-    );
+  const resetForm = () => {
+    setForm({
+      ...INITIAL_FORM,
+      currentPara: hifzStatus?.currentPara || 1,
+    });
+    setEditReportId(null);
   };
 
-  // Calculate total lines
-  const calculateTotalLines = () => {
-    return (
-      progressForm.sabaqLines +
-      progressForm.sabqiLines +
-      progressForm.manzilLines
-    );
+  // eslint-disable-next-line no-unused-vars
+  const loadForEdit = (report) => {
+    if (!canUpdate) return alert("You do not have permission to update reports.");
+    setEditReportId(report.id);
+    setForm({
+      date: report.date ? new Date(report.date).toISOString().split("T")[0] : "",
+      sabaq: report.sabaq || "",
+      sabaqLines: report.sabaqLines || 0,
+      sabaqMistakes: report.sabaqMistakes || 0,
+      sabqi: report.sabqi || "",
+      sabqiMistakes: report.sabqiMistakes || 0,
+      manzil: report.manzil || "",
+      manzilMistakes: report.manzilMistakes || 0,
+      attendance: report.attendance || "PRESENT",
+      currentPara: report.currentPara || 1,
+      currentParaProgress: report.currentParaProgress || 0,
+      notes: report.notes || "",
+      remarks: report.remarks || "",
+    });
+    // scroll to form
+    document.getElementById("hifz-report-form")?.scrollIntoView({ behavior: "smooth" });
   };
 
-  // Calculate condition using backend logic
-  const calculateCondition = () => {
-    if (progressForm.attendance !== "PRESENT") {
-      return "N/A";
-    }
-
-    const totalMistakes = calculateTotalMistakes();
-
-    // Backend condition logic from HifzProgressController
-    if (
-      progressForm.sabaqMistakes > 2 ||
-      progressForm.sabqiMistakes > 2 ||
-      progressForm.manzilMistakes > 3
-    ) {
-      return "Below Average";
-    } else if (
-      progressForm.sabaqMistakes > 0 ||
-      progressForm.sabqiMistakes > 1 ||
-      progressForm.manzilMistakes > 1
-    ) {
-      return "Medium";
-    } else if (totalMistakes === 0) {
-      return "Excellent";
-    } else {
-      return "Good";
-    }
-  };
-
-  // Get condition color
-  const getConditionColor = (condition) => {
-    switch (condition) {
-      case "Excellent":
-        return "bg-green-100 text-green-800 border-green-300";
-      case "Good":
-        return "bg-blue-100 text-blue-800 border-blue-300";
-      case "Medium":
-        return "bg-yellow-100 text-yellow-800 border-yellow-300";
-      case "Below Average":
-        return "bg-red-100 text-red-800 border-red-300";
-      case "Need Focus":
-        return "bg-orange-100 text-orange-800 border-orange-300";
-      default:
-        return "bg-gray-100 text-gray-800 border-gray-300";
-    }
-  };
-
-  // Validate form
-  const validateForm = () => {
-    const errors = [];
-
-    // Check if date is valid
-    if (!progressForm.date) {
-      errors.push("Date is required");
-    }
-
-    // Check if date is not in future
-
-    const selectedDate = new Date(progressForm.date);
-    selectedDate.setHours(0, 0, 0, 0); // ✅ MISSING LINE
-
-    const today = new Date();
-    today.setHours(0, 0, 0, 0);
-
-    if (selectedDate.getTime() > today.getTime()) {
-      errors.push("Date cannot be in the future");
-    }
-
-    if (progressForm.attendance === "PRESENT") {
-      // Lines validation
-      if (
-        progressForm.sabaqLines < 0 ||
-        progressForm.sabqiLines < 0 ||
-        progressForm.manzilLines < 0
-      ) {
-        errors.push("Line counts cannot be negative");
-      }
-
-      // Mistakes validation
-      if (
-        progressForm.sabaqMistakes < 0 ||
-        progressForm.sabqiMistakes < 0 ||
-        progressForm.manzilMistakes < 0
-      ) {
-        errors.push("Mistake counts cannot be negative");
-      }
-
-      // At least one line should be filled
-      if (
-        progressForm.sabaqLines === 0 &&
-        progressForm.sabqiLines === 0 &&
-        progressForm.manzilLines === 0
-      ) {
-        errors.push(
-          "At least one line count is required for present attendance"
-        );
-      }
-
-      // Current para validation
-      if (
-        !progressForm.currentPara ||
-        progressForm.currentPara < 1 ||
-        progressForm.currentPara > 30
-      ) {
-        errors.push("Current para must be between 1 and 30");
-      }
-
-      // Para progress validation
-      if (
-        progressForm.currentParaProgress < 0 ||
-        progressForm.currentParaProgress > 100
-      ) {
-        errors.push("Para progress must be between 0 and 100");
-      }
-    }
-
-    return errors;
-  };
-
-  const handleSubmitProgress = async (e) => {
+  const handleSubmit = async (e) => {
     e.preventDefault();
+    if (!canSubmit) return alert("You do not have permission to perform this action.");
 
-    if (!selectedStudent) {
-      alert("Please select a student first.");
-      return;
-    }
-
-    // Get the correct student ID
-    const studentId = selectedStudent.student?.id || selectedStudent.id;
-
-    // Validate form
-    const formErrors = validateForm();
-    if (formErrors.length > 0) {
-      alert(`Please fix the following errors:\n\n${formErrors.join("\n")}`);
-      return;
-    }
-
-    // Prepare submission data
-    const submissionData = {
-      date: progressForm.date,
-      sabaq: progressForm.sabaq || `Para ${progressForm.currentPara}`,
-      sabaqLines: progressForm.sabaqLines,
-      sabaqMistakes: progressForm.sabaqMistakes,
-      sabqi:
-        progressForm.sabqi ||
-        `Para ${Math.max(1, progressForm.currentPara - 1)}`,
-      sabqiLines: progressForm.sabqiLines,
-      sabqiMistakes: progressForm.sabqiMistakes,
-      manzil:
-        progressForm.manzil ||
-        `Para ${Math.max(1, progressForm.currentPara - 7)}`,
-      manzilLines: progressForm.manzilLines,
-      manzilMistakes: progressForm.manzilMistakes,
-      attendance: progressForm.attendance,
-      currentPara: progressForm.currentPara,
-      currentParaProgress: progressForm.currentParaProgress,
-      notes: progressForm.notes,
-      remarks: progressForm.remarks,
+    const payload = {
+      date: form.date,
+      attendance: form.attendance,
+      sabaq: isPresent ? form.sabaq : "",
+      sabaqLines: isPresent ? form.sabaqLines : 0,
+      sabaqMistakes: isPresent ? form.sabaqMistakes : 0,
+      sabqi: isPresent ? form.sabqi : "",
+      sabqiMistakes: isPresent ? form.sabqiMistakes : 0,
+      manzil: isPresent ? form.manzil : "",
+      manzilMistakes: isPresent ? form.manzilMistakes : 0,
+      currentPara: form.currentPara,
+      currentParaProgress: form.currentParaProgress,
+      notes: form.notes,
+      remarks: form.remarks,
     };
 
-    // Set submitting state
-    if (setSubmitting) {
-      setSubmitting(true);
+    let result;
+    if (editReportId) {
+      result = await editReport(studentId, editReportId, payload);
+    } else {
+      result = await createReport(studentId, payload);
     }
 
-    try {
-      console.log("📤 Submitting progress:", {
-        studentId,
-        data: submissionData,
-      });
-
-      // 🔥 FIXED: Pass TWO parameters - studentId and submissionData
-      const result = await saveProgress(studentId, submissionData);
-
-      console.log("✅ Save progress result:", result);
-
-      if (result.success) {
-        // Reset form but keep current para
-        setProgressForm({
-          date: new Date().toISOString().split("T")[0],
-          sabaq: "",
-          sabaqLines: 0,
-          sabaqMistakes: 0,
-          sabqi: "",
-          sabqiLines: 0,
-          sabqiMistakes: 0,
-          manzil: "",
-          manzilLines: 0,
-          manzilMistakes: 0,
-          attendance: "PRESENT",
-          currentPara: progressForm.currentPara,
-          currentParaProgress: 0,
-          notes: "",
-          remarks: "",
-        });
-
-        alert("✅ Daily progress recorded successfully!");
-
-        // Refresh analytics
-        if (fetchAnalytics) {
-          await fetchAnalytics(studentId, 30);
-        }
-      } else {
-        throw new Error(result.error || "Failed to save progress");
-      }
-    } catch (error) {
-      console.error("❌ Error recording progress:", error);
-      alert(`Error: ${error.message}`);
-    } finally {
-      // Reset submitting state
-      if (setSubmitting) {
-        setSubmitting(false);
-      }
+    if (result.success) {
+      resetForm();
+      onSaveSuccess?.();
     }
   };
 
-  // Quick input buttons
-  const quickLines = [5, 10, 15, 20];
-  const quickMistakes = [0, 1, 2, 3, 5];
+  // ── Permission banners ────────────────────────────────────
+  if (!canCreate && !canUpdate) {
+    return (
+      <div className="p-4 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+        You do not have permission to create or update reports.
+      </div>
+    );
+  }
 
-  // Helper to format date for display
-  const formatDate = (dateString) => {
-    const date = new Date(dateString);
-    return date.toLocaleDateString("en-US", {
-      weekday: "long",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
-
-  // Calculate if today's date already has a report
-  const isTodayReported = () => {
-    // This would check if a report already exists for today
-    // You would need to implement this based on your data
-    return false;
-  };
-
+  // ── Render ────────────────────────────────────────────────
   return (
-    <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-4 sm:p-6">
-      <div className="flex items-center justify-between mb-6">
-        <h2 className="text-base sm:text-lg font-semibold text-gray-900 flex items-center">
-          <Plus className="h-4 w-4 sm:h-5 sm:w-5 mr-2 text-gold" />
-          Record Daily Progress
+    <div
+      id="hifz-report-form"
+      className="bg-white rounded-xl shadow-sm border border-gray-200 p-4 sm:p-6"
+    >
+      {/* Header */}
+      <div className="flex items-center justify-between mb-5">
+        <h2 className="text-base sm:text-lg font-semibold text-gray-900">
+          {editReportId ? "✏️ Update Report" : "📋 Record Daily Progress"}
         </h2>
-
-        <div className="flex items-center space-x-4">
-          <div className="text-right">
-            <div className="text-xs font-medium text-gray-500">
-              Current Para
-            </div>
-            <div className="text-lg font-bold text-gold">
-              Para {progressForm.currentPara}
-            </div>
+        <div className="flex gap-4 text-right text-sm">
+          <div>
+            <div className="text-xs text-gray-400">Current Para</div>
+            <div className="font-bold text-amber-600">Para {form.currentPara}</div>
           </div>
-          <div className="text-right">
-            <div className="text-xs font-medium text-gray-500">Memorized</div>
-            <div className="text-lg font-bold text-green-600">
-              {paraVisualization.totalMemorized}/30
-            </div>
+          <div>
+            <div className="text-xs text-gray-400">Memorized</div>
+            <div className="font-bold text-green-600">{allMemorized.length}/30</div>
           </div>
         </div>
       </div>
 
-      {/* Summary Preview */}
-      <div className="mb-6 p-4 bg-blue-50 rounded-lg border border-blue-200">
-        <div className="flex items-center justify-between mb-2">
-          <div className="flex items-center">
-            <FileText className="h-4 w-4 text-blue-500 mr-2" />
-            <span className="text-sm font-medium text-blue-900">
-              Today's Summary
-            </span>
-          </div>
-          <div className="text-sm text-blue-700">
-            {formatDate(progressForm.date)}
-            {isTodayReported() && (
-              <span className="ml-2 px-2 py-0.5 text-xs bg-yellow-100 text-yellow-800 rounded">
-                Already Reported
-              </span>
-            )}
-          </div>
+      {/* Error / success banners */}
+      {error && (
+        <div className="mb-4 flex items-start gap-2 p-3 bg-red-50 border border-red-200 rounded-lg text-red-700 text-sm">
+          <AlertCircle size={16} className="mt-0.5 shrink-0" />
+          <span>{error}</span>
+          <button onClick={clearError} className="ml-auto text-red-400 hover:text-red-600">✕</button>
         </div>
+      )}
+      {successMessage && (
+        <div className="mb-4 p-3 bg-green-50 border border-green-200 rounded-lg text-green-700 text-sm flex items-center gap-2">
+          <CheckCircle size={16} />
+          {successMessage}
+        </div>
+      )}
 
-        <div className="grid grid-cols-2 gap-3 mt-3">
-          <div className="text-center p-2 bg-white rounded border">
-            <div className="text-xs text-gray-600">Total Lines</div>
-            <div className="text-lg font-bold text-blue-700">
-              {calculateTotalLines()}
-            </div>
-          </div>
-          <div className="text-center p-2 bg-white rounded border">
-            <div className="text-xs text-gray-600">Total Mistakes</div>
-            <div className="text-lg font-bold text-red-700">
-              {calculateTotalMistakes()}
-            </div>
-          </div>
+      {/* Live condition preview */}
+      <div className={`mb-5 p-3 rounded-lg border flex items-center justify-between ${conditionStyle(condition)}`}>
+        <div className="flex items-center gap-2 font-medium text-sm">
+          {condition === "Excellent" && <TrendingUp size={16} />}
+          {condition === "Below Average" && <TrendingDown size={16} />}
+          {(condition === "Medium" || condition === "Good") && <Minus size={16} />}
+          Condition: {condition}
         </div>
-
-        <div
-          className={`mt-3 p-3 rounded-lg border ${getConditionColor(
-            calculateCondition()
-          )}`}
-        >
-          <div className="flex items-center justify-between">
-            <div className="flex items-center">
-              {calculateCondition() === "Excellent" && (
-                <TrendingUp className="h-4 w-4 mr-2 text-green-600" />
-              )}
-              {calculateCondition() === "Below Average" && (
-                <TrendingDown className="h-4 w-4 mr-2 text-red-600" />
-              )}
-              {calculateCondition() === "Medium" ||
-              calculateCondition() === "Good" ? (
-                <AlertCircle className="h-4 w-4 mr-2 text-yellow-600" />
-              ) : null}
-              <span className="font-medium">
-                Condition: {calculateCondition()}
-              </span>
-            </div>
-            <div className="text-sm opacity-75">
-              {progressForm.attendance === "PRESENT"
-                ? "Auto-calculated based on mistakes"
-                : "N/A - Student absent"}
-            </div>
-          </div>
-        </div>
+        {isPresent && (
+          <span className="text-xs opacity-75">
+            Mistakes: {totalMistakes} &nbsp;|&nbsp; Lines: {form.sabaqLines}
+          </span>
+        )}
       </div>
 
-      <form onSubmit={handleSubmitProgress} className="space-y-6">
-        {/* Section 1: Basic Information */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-gray-900 border-b pb-2 flex items-center">
-            <Calendar className="h-4 w-4 mr-2 text-gray-500" />
-            Basic Information
+      <form onSubmit={handleSubmit} className="space-y-6">
+
+        {/* ── Section 1: Basic Info ── */}
+        <div>
+          <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3 flex items-center gap-1">
+            <Calendar size={13} /> Basic Information
           </h3>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-700 flex items-center">
-                <Calendar className="h-3 w-3 mr-1" />
-                Date *
-              </label>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            {/* Date */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 block">Date *</label>
               <input
                 type="date"
                 required
-                value={progressForm.date}
-                onChange={(e) => handleInputChange("date", e.target.value)}
+                value={form.date}
                 max={new Date().toISOString().split("T")[0]}
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+                onChange={(e) => set("date", e.target.value)}
+                disabled={!canSubmit}
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
               />
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-700 flex items-center">
-                <UserCheck className="h-3 w-3 mr-1" />
-                Attendance
+            {/* Attendance */}
+            <div>
+              <label className="text-xs font-medium text-gray-700 mb-1 flex items-center gap-1">
+                <UserCheck size={12} /> Attendance
               </label>
               <select
-                value={progressForm.attendance}
-                onChange={(e) =>
-                  handleInputChange("attendance", e.target.value)
-                }
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
+                value={form.attendance}
+                onChange={(e) => set("attendance", e.target.value)}
+                disabled={!canSubmit}
+                className="w-full text-sm px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:bg-gray-50 disabled:cursor-not-allowed"
               >
                 <option value="PRESENT">Present</option>
                 <option value="ABSENT">Absent</option>
@@ -469,527 +288,331 @@ const ProgressInputForm = ({
           </div>
         </div>
 
-        {/* Only show progress fields if present */}
-        {progressForm.attendance === "PRESENT" && (
-          <>
-            {/* Section 2: Sabaq (New Lesson) */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b pb-2 flex items-center">
-                <BookOpen className="h-4 w-4 mr-2 text-green-500" />
-                Sabaq (New Lesson)
-              </h3>
+        {/* ── Section 2: Sabaq / Sabqi / Manzil ── */}
+        {isPresent && (
+          <div className="space-y-4 animate-fadeIn">
+            <h3 className="text-xs font-semibold text-gray-500 uppercase tracking-wider flex items-center gap-1">
+              <BookOpen size={13} /> Lesson Details
+            </h3>
 
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-700">
-                    Sabaq Description
-                  </label>
-                  <input
-                    type="text"
-                    value={progressForm.sabaq}
-                    onChange={(e) => handleInputChange("sabaq", e.target.value)}
-                    placeholder="e.g., Surah Al-Baqarah 1-10, Para 4 Ayat 1-15"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                  />
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+
+              {/* Sabaq */}
+              <div className="rounded-xl border border-emerald-100 overflow-hidden shadow-sm">
+                <div className="bg-emerald-50 px-4 py-2.5 border-b border-emerald-100 flex items-center justify-between">
+                  <span className="font-semibold text-emerald-900 text-sm flex items-center gap-1.5">
+                    <BookOpen size={14} className="text-emerald-600" /> Sabaq
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-emerald-600 bg-white px-2 py-0.5 rounded border border-emerald-100">
+                    New Lesson
+                  </span>
                 </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-700">
-                      Lines Memorized
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={progressForm.sabaqLines}
-                        onChange={(e) =>
-                          handleInputChange("sabaqLines", e.target.value)
-                        }
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                      />
-                      <div className="flex space-x-1">
-                        {quickLines.map((lines) => (
-                          <button
-                            key={lines}
-                            type="button"
-                            onClick={() =>
-                              handleInputChange("sabaqLines", lines)
-                            }
-                            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
-                          >
-                            +{lines}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-700">
-                      Mistakes
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={progressForm.sabaqMistakes}
-                        onChange={(e) =>
-                          handleInputChange("sabaqMistakes", e.target.value)
-                        }
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                      />
-                      <div className="flex space-x-1">
-                        {quickMistakes.map((mistakes) => (
-                          <button
-                            key={mistakes}
-                            type="button"
-                            onClick={() =>
-                              handleInputChange("sabaqMistakes", mistakes)
-                            }
-                            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
-                          >
-                            {mistakes}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 3: Sabqi (Recent Revision) */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b pb-2 flex items-center">
-                <BookOpen className="h-4 w-4 mr-2 text-blue-500" />
-                Sabqi (Recent Revision)
-              </h3>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-700">
-                    Sabqi Description
-                  </label>
-                  <input
-                    type="text"
-                    value={progressForm.sabqi}
-                    onChange={(e) => handleInputChange("sabqi", e.target.value)}
-                    placeholder="e.g., Para 3 revision, Yesterday's sabaq"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-700">
-                      Lines Revised
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="text"
-                        value={progressForm.sabqiLines}
-                        onChange={(e) =>
-                          handleInputChange("sabqiLines", e.target.value)
-                        }
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                      />
-                      <div className="flex space-x-1">
-                        {quickLines.map((lines) => (
-                          <button
-                            key={lines}
-                            type="button"
-                            onClick={() =>
-                              handleInputChange("sabqiLines", lines)
-                            }
-                            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
-                          >
-                            +{lines}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-700">
-                      Mistakes
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={progressForm.sabqiMistakes}
-                        onChange={(e) =>
-                          handleInputChange("sabqiMistakes", e.target.value)
-                        }
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                      />
-                      <div className="flex space-x-1">
-                        {quickMistakes.map((mistakes) => (
-                          <button
-                            key={mistakes}
-                            type="button"
-                            onClick={() =>
-                              handleInputChange("sabqiMistakes", mistakes)
-                            }
-                            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
-                          >
-                            {mistakes}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 4: Manzil (Older Revision) */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b pb-2 flex items-center">
-                <BookOpen className="h-4 w-4 mr-2 text-purple-500" />
-                Manzil (Older Revision)
-              </h3>
-
-              <div className="space-y-3">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-700">
-                    Manzil Description
-                  </label>
-                  <input
-                    type="text"
-                    value={progressForm.manzil}
-                    onChange={(e) =>
-                      handleInputChange("manzil", e.target.value)
-                    }
-                    placeholder="e.g., Para 1-2 revision, Weekly revision"
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                  />
-                </div>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-700">
-                      Lines Revised
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={progressForm.manzilLines}
-                        onChange={(e) =>
-                          handleInputChange("manzilLines", e.target.value)
-                        }
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                      />
-                      <div className="flex space-x-1">
-                        {quickLines.map((lines) => (
-                          <button
-                            key={lines}
-                            type="button"
-                            onClick={() =>
-                              handleInputChange("manzilLines", lines)
-                            }
-                            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
-                          >
-                            +{lines}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium text-gray-700">
-                      Mistakes
-                    </label>
-                    <div className="flex items-center space-x-2">
-                      <input
-                        type="number"
-                        min="0"
-                        value={progressForm.manzilMistakes}
-                        onChange={(e) =>
-                          handleInputChange("manzilMistakes", e.target.value)
-                        }
-                        className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                      />
-                      <div className="flex space-x-1">
-                        {quickMistakes.map((mistakes) => (
-                          <button
-                            key={mistakes}
-                            type="button"
-                            onClick={() =>
-                              handleInputChange("manzilMistakes", mistakes)
-                            }
-                            className="px-2 py-1 text-xs bg-gray-100 hover:bg-gray-200 rounded border"
-                          >
-                            {mistakes}
-                          </button>
-                        ))}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-
-            {/* Section 5: Para Progress */}
-            <div className="space-y-4">
-              <h3 className="text-sm font-semibold text-gray-900 border-b pb-2 flex items-center">
-                <Percent className="h-4 w-4 mr-2 text-amber-500" />
-                Para Progress Tracking
-              </h3>
-
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-700 flex items-center">
-                    <BookOpen className="h-3 w-3 mr-1" />
-                    Current Para *
-                  </label>
-                  <div className="flex items-center space-x-2">
-                    <select
-                      required
-                      value={progressForm.currentPara}
-                      onChange={(e) =>
-                        handleInputChange("currentPara", e.target.value)
-                      }
-                      className="flex-1 px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                    >
-                      <option value="">Select Para</option>
-                      {Array.from({ length: 30 }, (_, i) => {
-                        const paraNumber = i + 1;
-                        const isMemorized =
-                          paraVisualization.allMemorized.includes(paraNumber);
-                        const isCurrent = paraNumber === calculatedCurrentPara;
-
-                        return (
-                          <option
-                            key={paraNumber}
-                            value={paraNumber}
-                            disabled={isMemorized}
-                            className={
-                              isMemorized ? "text-gray-400 bg-gray-100" : ""
-                            }
-                          >
-                            Para {paraNumber}
-                            {isMemorized ? " ✓ Memorized" : ""}
-                            {isCurrent ? " (Current)" : ""}
-                          </option>
-                        );
-                      })}
-                    </select>
-                    <div className="flex space-x-1">
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleInputChange(
-                            "currentPara",
-                            Math.max(1, progressForm.currentPara - 1)
-                          )
-                        }
-                        disabled={
-                          progressForm.currentPara <= 1 ||
-                          paraVisualization.allMemorized.includes(
-                            progressForm.currentPara - 1
-                          )
-                        }
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <ChevronLeft className="h-4 w-4" />
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleInputChange(
-                            "currentPara",
-                            Math.min(30, progressForm.currentPara + 1)
-                          )
-                        }
-                        disabled={
-                          progressForm.currentPara >= 30 ||
-                          paraVisualization.allMemorized.includes(
-                            progressForm.currentPara + 1
-                          )
-                        }
-                        className="p-2 text-gray-600 hover:bg-gray-100 rounded disabled:opacity-50 disabled:cursor-not-allowed"
-                      >
-                        <ChevronRight className="h-4 w-4" />
-                      </button>
-                    </div>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium text-gray-700 flex items-center">
-                    <Percent className="h-3 w-3 mr-1" />
-                    Para Progress (%)
-                  </label>
-                  <div className="flex items-center space-x-3">
+                <div className="p-4 space-y-3 bg-white">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Description</label>
                     <input
-                      type="range"
-                      min="0"
-                      max="100"
-                      step="5"
-                      value={progressForm.currentParaProgress}
-                      onChange={(e) =>
-                        handleInputChange("currentParaProgress", e.target.value)
-                      }
-                      className="flex-1 h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer"
+                      type="text"
+                      value={form.sabaq}
+                      onChange={(e) => set("sabaq", e.target.value)}
+                      placeholder="e.g. Surah Al-Baqarah v1–5"
+                      disabled={!canSubmit}
+                      className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:bg-gray-50"
                     />
-                    <div className="w-16 text-center">
-                      <span className="text-lg font-bold text-amber-600">
-                        {progressForm.currentParaProgress}%
-                      </span>
-                    </div>
                   </div>
-                  <div className="flex justify-between text-xs text-gray-500 mt-1">
-                    <span>0%</span>
-                    <span>50%</span>
-                    <span>100%</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Para Quick Actions */}
-              <div className="mt-4 p-4 bg-amber-50 rounded-lg border border-amber-200">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center">
-                    <CheckCircle className="h-5 w-5 text-green-600 mr-2" />
+                  <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <div className="text-sm font-medium text-amber-900">
-                        Para {progressForm.currentPara} Progress
+                      <label className="text-xs text-gray-500 mb-1 block">Lines</label>
+                      <div className="relative">
+                        <input
+                          type="number"
+                          min="0"
+                          value={form.sabaqLines}
+                          onChange={(e) => set("sabaqLines", e.target.value)}
+                          disabled={!canSubmit}
+                          className="w-full text-sm font-bold text-center px-3 py-2 border border-gray-200 rounded-lg bg-gray-50 focus:outline-none focus:ring-2 focus:ring-emerald-400 disabled:cursor-not-allowed"
+                        />
                       </div>
-                      <div className="text-xs text-amber-700">
-                        {progressForm.currentParaProgress}% complete
+                      <div className="flex gap-1 mt-1.5">
+                        {[5, 10, 15].map((v) => (
+                          <button key={v} type="button" onClick={() => set("sabaqLines", v)}
+                            disabled={!canSubmit}
+                            className="flex-1 text-[10px] bg-gray-50 hover:bg-emerald-50 text-gray-500 hover:text-emerald-700 border border-gray-200 hover:border-emerald-200 rounded py-1 transition-colors disabled:opacity-40">
+                            {v}L
+                          </button>
+                        ))}
+                      </div>
+                    </div>
+                    <div>
+                      <label className="text-xs text-gray-500 mb-1 block">Mistakes</label>
+                      <input
+                        type="number"
+                        min="0"
+                        value={form.sabaqMistakes}
+                        onChange={(e) => set("sabaqMistakes", e.target.value)}
+                        disabled={!canSubmit}
+                        className={`w-full text-sm font-bold text-center px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-300 disabled:cursor-not-allowed ${form.sabaqMistakes > 0 ? "bg-red-50 border-red-200 text-red-600" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                      />
+                      <div className="flex gap-1 mt-1.5">
+                        {[0, 1, 2].map((v) => (
+                          <button key={v} type="button" onClick={() => set("sabaqMistakes", v)}
+                            disabled={!canSubmit}
+                            className="flex-1 text-[10px] bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded py-1 transition-colors disabled:opacity-40">
+                            {v}M
+                          </button>
+                        ))}
                       </div>
                     </div>
                   </div>
-                  <button
-                    type="button"
-                    onClick={() =>
-                      handleMarkParaCompleted(progressForm.currentPara)
-                    }
-                    disabled={
-                      progressForm.currentParaProgress < 100 ||
-                      paraVisualization.allMemorized.includes(
-                        progressForm.currentPara
-                      )
-                    }
-                    className="px-4 py-2 text-sm bg-green-600 text-white rounded hover:bg-green-700 disabled:opacity-50 disabled:cursor-not-allowed flex items-center"
-                  >
-                    <CheckCircle className="h-4 w-4 mr-2" />
-                    Mark Complete
-                  </button>
                 </div>
               </div>
+
+              {/* Sabqi */}
+              <div className="rounded-xl border border-blue-100 overflow-hidden shadow-sm">
+                <div className="bg-blue-50 px-4 py-2.5 border-b border-blue-100 flex items-center justify-between">
+                  <span className="font-semibold text-blue-900 text-sm flex items-center gap-1.5">
+                    <BookOpen size={14} className="text-blue-600" /> Sabqi
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-blue-600 bg-white px-2 py-0.5 rounded border border-blue-100">
+                    Revision
+                  </span>
+                </div>
+                <div className="p-4 space-y-3 bg-white">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Description</label>
+                    <input
+                      type="text"
+                      value={form.sabqi}
+                      onChange={(e) => set("sabqi", e.target.value)}
+                      placeholder="e.g. Para 2"
+                      disabled={!canSubmit}
+                      className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-400 disabled:bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Mistakes</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.sabqiMistakes}
+                      onChange={(e) => set("sabqiMistakes", e.target.value)}
+                      disabled={!canSubmit}
+                      className={`w-full text-sm font-bold text-center px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-300 disabled:cursor-not-allowed ${form.sabqiMistakes > 0 ? "bg-red-50 border-red-200 text-red-600" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                    />
+                    <div className="flex gap-1 mt-1.5">
+                      {[0, 1, 2].map((v) => (
+                        <button key={v} type="button" onClick={() => set("sabqiMistakes", v)}
+                          disabled={!canSubmit}
+                          className="flex-1 text-[10px] bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded py-1 transition-colors disabled:opacity-40">
+                          {v}M
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Manzil */}
+              <div className="rounded-xl border border-purple-100 overflow-hidden shadow-sm">
+                <div className="bg-purple-50 px-4 py-2.5 border-b border-purple-100 flex items-center justify-between">
+                  <span className="font-semibold text-purple-900 text-sm flex items-center gap-1.5">
+                    <BookOpen size={14} className="text-purple-600" /> Manzil
+                  </span>
+                  <span className="text-[10px] font-bold uppercase tracking-wider text-purple-600 bg-white px-2 py-0.5 rounded border border-purple-100">
+                    Old Revision
+                  </span>
+                </div>
+                <div className="p-4 space-y-3 bg-white">
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Description</label>
+                    <input
+                      type="text"
+                      value={form.manzil}
+                      onChange={(e) => set("manzil", e.target.value)}
+                      placeholder="e.g. Para 1–5"
+                      disabled={!canSubmit}
+                      className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-purple-400 disabled:bg-gray-50"
+                    />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 mb-1 block">Mistakes</label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={form.manzilMistakes}
+                      onChange={(e) => set("manzilMistakes", e.target.value)}
+                      disabled={!canSubmit}
+                      className={`w-full text-sm font-bold text-center px-3 py-2 border rounded-lg focus:outline-none focus:ring-2 focus:ring-red-300 disabled:cursor-not-allowed ${form.manzilMistakes > 0 ? "bg-red-50 border-red-200 text-red-600" : "bg-gray-50 border-gray-200 text-gray-700"}`}
+                    />
+                    <div className="flex gap-1 mt-1.5">
+                      {[0, 1, 2].map((v) => (
+                        <button key={v} type="button" onClick={() => set("manzilMistakes", v)}
+                          disabled={!canSubmit}
+                          className="flex-1 text-[10px] bg-gray-50 hover:bg-red-50 text-gray-500 hover:text-red-600 border border-gray-200 hover:border-red-200 rounded py-1 transition-colors disabled:opacity-40">
+                          {v}M
+                        </button>
+                      ))}
+                    </div>
+                  </div>
+                </div>
+              </div>
+
             </div>
-          </>
-        )}
 
-        {/* Section 6: Notes and Remarks */}
-        <div className="space-y-4">
-          <h3 className="text-sm font-semibold text-gray-900 border-b pb-2 flex items-center">
-            <FileText className="h-4 w-4 mr-2 text-gray-500" />
-            Additional Information
-          </h3>
+            {/* ── Para Progress ── */}
+            <div className="bg-gradient-to-r from-amber-50 to-orange-50 rounded-xl border border-amber-100 p-5">
+              <h3 className="text-xs font-semibold text-amber-800 uppercase tracking-wider mb-4 flex items-center gap-1.5">
+                <Percent size={13} /> Para Progress Tracking
+              </h3>
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 sm:gap-4">
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-700">
-                Teacher Notes
-              </label>
-              <textarea
-                value={progressForm.notes}
-                onChange={(e) => handleInputChange("notes", e.target.value)}
-                placeholder="Observation, improvements, encouragement..."
-                rows="3"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-              />
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-6 items-center">
+                {/* Para selector */}
+                <div className="space-y-3">
+                  <div>
+                    <label className="text-xs font-semibold text-amber-800 mb-1.5 block uppercase tracking-wider">
+                      Current Para
+                    </label>
+                    <div className="flex gap-2">
+                      <select
+                        value={form.currentPara}
+                        onChange={(e) => set("currentPara", e.target.value)}
+                        disabled={!canSubmit}
+                        className="flex-1 text-sm px-3 py-2 border border-amber-200 rounded-lg bg-white font-medium text-gray-700 focus:outline-none focus:ring-2 focus:ring-amber-400 disabled:cursor-not-allowed"
+                      >
+                        {Array.from({ length: 30 }, (_, i) => {
+                          const n = i + 1;
+                          const done = allMemorized.includes(n);
+                          return (
+                            <option key={n} value={n} disabled={done}>
+                              Para {n} {done ? "✓" : ""}
+                            </option>
+                          );
+                        })}
+                      </select>
+                      <div className="flex border border-amber-200 rounded-lg overflow-hidden bg-white">
+                        <button type="button"
+                          onClick={() => set("currentPara", Math.max(1, form.currentPara - 1))}
+                          disabled={!canSubmit}
+                          className="px-3 hover:bg-amber-100 text-amber-700 border-r border-amber-100 disabled:opacity-40">
+                          <ChevronLeft size={16} />
+                        </button>
+                        <button type="button"
+                          onClick={() => set("currentPara", Math.min(30, form.currentPara + 1))}
+                          disabled={!canSubmit}
+                          className="px-3 hover:bg-amber-100 text-amber-700 disabled:opacity-40">
+                          <ChevronRight size={16} />
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                  <div className="flex items-center justify-between p-3 bg-white/60 rounded-lg border border-amber-100 text-xs">
+                    <span className="font-medium text-amber-800">Total Memorized</span>
+                    <span className="font-bold text-amber-700">{allMemorized.length}/30 Paras</span>
+                  </div>
+                </div>
+
+                {/* Completion slider */}
+                <div className="space-y-2">
+                  <div className="flex justify-between items-end mb-1">
+                    <label className="text-xs font-semibold text-amber-800 uppercase tracking-wider">Completion</label>
+                    <span className="text-2xl font-bold text-amber-600">{form.currentParaProgress}%</span>
+                  </div>
+                  <input
+                    type="range"
+                    min="0" max="100" step="5"
+                    value={form.currentParaProgress}
+                    onChange={(e) => set("currentParaProgress", e.target.value)}
+                    disabled={!canSubmit}
+                    className="w-full h-3 rounded-lg appearance-none cursor-pointer accent-amber-500 bg-amber-100 disabled:opacity-50"
+                  />
+                  <div className="flex justify-between text-[10px] font-medium text-amber-700/60 uppercase">
+                    <span>Start</span><span>Half</span><span>Complete</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* 100% completion CTA */}
+              {form.currentParaProgress === 100 && (
+                <div className="mt-4 p-3 bg-green-50 border border-green-200 rounded-lg flex items-center gap-2 text-green-800 text-sm font-medium">
+                  <CheckCircle size={16} className="text-green-600" />
+                  Para {form.currentPara} marked 100% — submit to record completion.
+                </div>
+              )}
             </div>
 
-            <div className="space-y-1">
-              <label className="text-xs font-medium text-gray-700">
-                Remarks
-              </label>
-              <textarea
-                value={progressForm.remarks}
-                onChange={(e) => handleInputChange("remarks", e.target.value)}
-                placeholder="Special remarks, issues, or follow-up needed..."
-                rows="3"
-                className="w-full px-3 py-2 text-sm border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-              />
+            {/* ── Notes ── */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 pt-4 border-t border-gray-100">
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  Teacher Notes
+                </label>
+                <textarea
+                  rows={2}
+                  value={form.notes}
+                  onChange={(e) => set("notes", e.target.value)}
+                  disabled={!canSubmit}
+                  placeholder="Internal notes..."
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:bg-gray-50 disabled:cursor-not-allowed resize-none"
+                />
+              </div>
+              <div>
+                <label className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1.5 block">
+                  Remarks for Parent
+                </label>
+                <textarea
+                  rows={2}
+                  value={form.remarks}
+                  onChange={(e) => set("remarks", e.target.value)}
+                  disabled={!canSubmit}
+                  placeholder="Shared with parents..."
+                  className="w-full text-sm px-3 py-2 border border-gray-200 rounded-lg focus:outline-none focus:ring-2 focus:ring-gray-300 disabled:bg-gray-50 disabled:cursor-not-allowed resize-none"
+                />
+              </div>
             </div>
           </div>
-        </div>
+        )}
 
-        {/* Submit Section */}
-        <div className="pt-4 border-t">
-          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
-            <div className="text-sm text-gray-600">
-              <div className="flex items-center">
-                <AlertCircle className="h-4 w-4 mr-2 text-amber-500" />
-                <span>
-                  Condition:{" "}
-                  <span className="font-semibold">{calculateCondition()}</span>
-                  {progressForm.attendance === "PRESENT" &&
-                    ` • Total Lines: ${calculateTotalLines()} • Total Mistakes: ${calculateTotalMistakes()}`}
-                </span>
-              </div>
-            </div>
+        {/* ── Actions ── */}
+        <div className="pt-4 border-t border-gray-100 flex flex-col sm:flex-row items-center justify-between gap-4">
+          <div className="text-sm text-gray-500 flex items-center gap-1.5">
+            <AlertCircle size={14} className="text-amber-500" />
+            Condition: <span className="font-semibold text-gray-700">{condition}</span>
+            {isPresent && (
+              <span className="ml-2 text-gray-400">
+                · Lines: {form.sabaqLines} · Mistakes: {totalMistakes}
+              </span>
+            )}
+          </div>
 
-            <div className="flex gap-2">
-              <button
-                type="button"
-                onClick={() => {
-                  // Reset form
-                  setProgressForm({
-                    date: new Date().toISOString().split("T")[0],
-                    sabaq: "",
-                    sabaqLines: 0,
-                    sabaqMistakes: 0,
-                    sabqi: "",
-                    sabqiLines: 0,
-                    sabqiMistakes: 0,
-                    manzil: "",
-                    manzilLines: 0,
-                    manzilMistakes: 0,
-                    attendance: "PRESENT",
-                    currentPara: calculatedCurrentPara,
-                    currentParaProgress: 0,
-                    notes: "",
-                    remarks: "",
-                  });
-                }}
-                className="px-4 py-2.5 border border-gray-300 text-gray-700 rounded-md hover:bg-gray-50 text-sm font-medium"
-              >
-                Reset Form
-              </button>
+          <div className="flex gap-2">
+            <button
+              type="button"
+              onClick={resetForm}
+              disabled={actionLoading}
+              className="px-4 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50 text-sm font-medium flex items-center gap-1.5 disabled:opacity-50"
+            >
+              <RotateCcw size={14} /> Reset
+            </button>
 
-              <button
-                type="submit"
-                disabled={
-                  isSubmitting || !selectedStudent || hifzLoading.progress
-                }
-                className={`px-6 py-2.5 rounded-md font-medium text-sm flex items-center justify-center min-w-[120px] ${
-                  isSubmitting || !selectedStudent || hifzLoading.progress
-                    ? "bg-gray-300 text-gray-500 cursor-not-allowed"
-                    : "bg-gradient-to-r from-amber-500 to-yellow-600 text-white hover:from-amber-600 hover:to-yellow-700 shadow-sm"
+            <button
+              type="submit"
+              disabled={actionLoading || !canSubmit}
+              className={`px-6 py-2 rounded-lg font-medium text-sm flex items-center gap-1.5 min-w-[130px] justify-center transition-all ${actionLoading || !canSubmit
+                  ? "bg-gray-200 text-gray-400 cursor-not-allowed"
+                  : "bg-gradient-to-r from-amber-500 to-yellow-500 text-white hover:from-amber-600 hover:to-yellow-600 shadow-sm hover:shadow-md"
                 }`}
-              >
-                {isSubmitting || hifzLoading.progress ? (
-                  <>
-                    <div className="animate-spin rounded-full h-4 w-4 border-b-2 border-white mr-2"></div>
-                    Saving...
-                  </>
-                ) : (
-                  <>
-                    <Save className="h-4 w-4 mr-2" />
-                    Save Daily Progress
-                  </>
-                )}
-              </button>
-            </div>
+            >
+              {actionLoading ? (
+                <>
+                  <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                  Saving…
+                </>
+              ) : (
+                <>
+                  <Save size={14} />
+                  {editReportId ? "Update Report" : "Save Report"}
+                </>
+              )}
+            </button>
           </div>
         </div>
       </form>
@@ -997,4 +620,6 @@ const ProgressInputForm = ({
   );
 };
 
+// Expose loadForEdit via ref for parent-driven edit triggering
+export { ProgressInputForm };
 export default ProgressInputForm;

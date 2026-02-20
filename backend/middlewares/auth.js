@@ -76,17 +76,26 @@ const authenticateToken = async (req, res, next) => {
       '/auth/change-password',
       '/api/auth/logout',
       '/auth/logout',
+      '/api/auth/profile', // Allow fetching profile (needed for frontend context)
     ];
 
     // Normalize path to handle router nesting and query parameters
     // req.originalUrl contains the full path (e.g., /api/auth/change-password)
     const currentPath = req.originalUrl.split('?')[0];
 
-    if (user.forcePasswordReset && !allowedPaths.includes(currentPath)) {
-      return res.status(403).json({
-        error: 'Password reset required. Please change your password.',
-      });
-    }
+    // Loose matching to avoid trailing slash or prefix issues
+    const isAllowed = allowedPaths.some(path => currentPath.includes(path)) ||
+      currentPath.includes('/change-password') ||
+      currentPath.includes('/profile') ||
+      currentPath.includes('/logout');
+
+    // Force Password Reset Logic - DISABLED BY USER REQUEST
+    // if (user.forcePasswordReset && !isAllowed) {
+    //   logger.warn({ userId: user.id, path: currentPath }, 'Auth: blocked by forcePasswordReset');
+    //   return res.status(403).json({
+    //     error: 'Password reset required. Please change your password.',
+    //   });
+    // }
 
     req.user = user;
     next();

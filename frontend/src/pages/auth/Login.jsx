@@ -31,10 +31,11 @@ const Login = () => {
       toast.success(`Welcome back, ${user.name}!`);
 
       // Redirect based on user role and status
-      if (user.forcePasswordReset === true) {
-        navigate('/change-password', { replace: true });
-        return;
-      }
+      // Force Password Reset - DISABLED BY USER REQUEST
+      // if (user.forcePasswordReset === true) {
+      //   navigate('/change-password', { replace: true });
+      //   return;
+      // }
 
       switch (user.role) {
         case 'SUPER_ADMIN':

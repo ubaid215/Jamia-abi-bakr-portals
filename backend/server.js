@@ -28,6 +28,8 @@ const teacherRoutes = require('./routes/teacherRoutes');
 const pdfRoute = require('./routes/pdfRoute');
 const studentRoute = require('./routes/studentRoute');
 const hifzRoutes = require('./routes/hifzRoutes');
+const dailyReportRoutes = require("./routes/dailyReportRoutes");
+
 
 // Import new modular routes
 const apiRoutes = require('./routes/index');
@@ -216,6 +218,9 @@ app.use('/api/teachers', teacherRoutes);
 app.use('/api/students', studentRoute);
 app.use('/api/pdf', pdfRoute);
 app.use('/api/hifz', hifzRoutes);
+// ── Daily Reports (Hifz progress) ──
+app.use("/api/reports", dailyReportRoutes);
+
 
 // New modular routes
 app.use('/api', apiRoutes);

@@ -76,18 +76,16 @@ class HifzProgressController {
       // Calculate total lines (only from sabaq now)
       const totalSabaqLines = attendance === 'PRESENT' || attendance === 'Present' ? (parseInt(sabaqLines) || 0) : 0;
 
-      // Condition calculation based on total mistakes
-      let condition = 'Excellent';
-
       if (attendance === 'PRESENT' || attendance === 'Present') {
-        if (totalMistakes === 0) {
-          condition = 'Excellent';
-        } else if (totalMistakes <= 2) {
-          condition = 'Good';
-        } else if (totalMistakes <= 5) {
-          condition = 'Medium';
-        } else {
+        // Condition calculation based on specific thresholds (from reference)
+        if (parsedSabaqMistakes > 2 || parsedSabqiMistakes > 2 || parsedManzilMistakes > 3) {
           condition = 'Below Average';
+        } else if (parsedSabaqMistakes > 0 || parsedSabqiMistakes > 1 || parsedManzilMistakes > 1) {
+          condition = 'Medium';
+        } else if (totalMistakes === 0) {
+          condition = 'Excellent';
+        } else {
+          condition = 'Good'; // e.g. sabqi=1 or manzil=1
         }
       } else {
         condition = 'N/A';
@@ -277,14 +275,15 @@ class HifzProgressController {
 
         totalMistakes = sabaqMistakes + sabqiMistakes + manzilMistakes;
 
-        if (totalMistakes === 0) {
-          condition = 'Excellent';
-        } else if (totalMistakes <= 2) {
-          condition = 'Good';
-        } else if (totalMistakes <= 5) {
-          condition = 'Medium';
-        } else {
+        // Recalculate condition based on specific thresholds
+        if (sabaqMistakes > 2 || sabqiMistakes > 2 || manzilMistakes > 3) {
           condition = 'Below Average';
+        } else if (sabaqMistakes > 0 || sabqiMistakes > 1 || manzilMistakes > 1) {
+          condition = 'Medium';
+        } else if (totalMistakes === 0) {
+          condition = 'Excellent';
+        } else {
+          condition = 'Good';
         }
 
         updateData.condition = condition;
@@ -673,9 +672,12 @@ class HifzProgressController {
       const { studentId } = req.params;
       const { days = 30, calculateAttendanceRate = 'true' } = req.query;
 
-      console.log(`📈 Generating analytics for student ${studentId}, last ${days} days`);
+      // Clean studentId (remove quotes if present)
+      const cleanStudentId = studentId.replace(/^"+|"+$/g, '');
 
-      if (!studentId) {
+      console.log(`📈 Generating analytics for student ${cleanStudentId}, last ${days} days`);
+
+      if (!cleanStudentId) {
         return res.status(400).json({
           success: false,
           message: 'Student ID is required'
@@ -689,7 +691,7 @@ class HifzProgressController {
 
       // Fetch student with progress records
       const student = await prisma.student.findUnique({
-        where: { id: studentId },
+        where: { id: cleanStudentId },
         include: {
           user: { select: { name: true } },
           hifzStatus: true,
@@ -706,9 +708,10 @@ class HifzProgressController {
       });
 
       if (!student) {
+        console.warn(`❌ Student not found with ID: ${cleanStudentId}`);
         return res.status(404).json({
           success: false,
-          message: 'Student not found'
+          message: `Student not found with ID: ${cleanStudentId}`
         });
       }
 
@@ -1748,6 +1751,137 @@ class HifzProgressController {
     } catch (error) {
       console.error('Get milestones error:', error);
       return {};
+    }
+  }
+
+  // Get performance data for all Hifz students (aggregated)
+  async hifzPerformance(req, res) {
+    try {
+      // Find all students in Hifz classes
+      const hifzStudents = await prisma.student.findMany({
+        where: {
+          currentEnrollment: {
+            classRoom: {
+              type: 'HIFZ'
+            }
+          }
+        },
+        select: { id: true }
+      });
+
+      if (hifzStudents.length === 0) {
+        return res.status(404).json({ success: false, message: "No Hifz students found" });
+      }
+
+      const studentIds = hifzStudents.map((s) => s.id);
+
+      // Fetch reports
+      const reports = await prisma.hifzProgress.findMany({
+        where: {
+          studentId: { in: studentIds }
+        },
+        include: {
+          student: {
+            select: {
+              user: { select: { name: true } },
+              admissionNo: true
+            }
+          }
+        },
+        orderBy: { date: 'asc' }
+      });
+
+      res.status(200).json({ success: true, reports });
+    } catch (error) {
+      console.error('Hifz performance error:', error);
+      res.status(500).json({ success: false, message: error.message });
+    }
+  }
+
+  // Get performance data grouped by class
+  async allHifzClassesPerformance(req, res) {
+    try {
+      const { filter, startDate, endDate } = req.query;
+
+      // Find Hifz students with class info
+      const hifzStudents = await prisma.student.findMany({
+        where: {
+          currentEnrollment: {
+            classRoom: {
+              type: 'HIFZ'
+            }
+          }
+        },
+        include: {
+          user: { select: { name: true } },
+          currentEnrollment: {
+            include: { classRoom: true }
+          }
+        }
+      });
+
+      if (hifzStudents.length === 0) {
+        return res.status(404).json({ success: false, message: "No Hifz students found" });
+      }
+
+      const studentIds = hifzStudents.map((s) => s.id);
+
+      // Build query
+      let where = { studentId: { in: studentIds } };
+
+      if (filter === "custom" && startDate && endDate) {
+        where.date = {
+          gte: new Date(startDate),
+          lte: new Date(endDate)
+        };
+      } else if (filter === "weekly") {
+        const oneWeekAgo = new Date();
+        oneWeekAgo.setDate(oneWeekAgo.getDate() - 7);
+        where.date = { gte: oneWeekAgo };
+      } else if (filter === "monthly") {
+        const oneMonthAgo = new Date();
+        oneMonthAgo.setMonth(oneMonthAgo.getMonth() - 1);
+        where.date = { gte: oneMonthAgo };
+      }
+
+      const reports = await prisma.hifzProgress.findMany({
+        where,
+        orderBy: { date: 'asc' }
+      });
+
+      // Group by class
+      const reportsByClass = {};
+
+      // Map students for easy lookup
+      const studentMap = {};
+      hifzStudents.forEach(s => {
+        studentMap[s.id] = {
+          name: s.user.name,
+          className: s.currentEnrollment?.classRoom?.name || 'Unknown'
+        };
+
+        // Initialize class array
+        const className = s.currentEnrollment?.classRoom?.name || 'Unknown';
+        if (!reportsByClass[className]) {
+          reportsByClass[className] = [];
+        }
+      });
+
+      // Distribute reports
+      reports.forEach(report => {
+        const student = studentMap[report.studentId];
+        if (student) {
+          reportsByClass[student.className].push({
+            ...report,
+            studentName: student.name
+          });
+        }
+      });
+
+      res.status(200).json({ success: true, reportsByClass });
+    } catch (error) {
+      console.error('All Hifz classes performance error:', error);
+      res.status(500).json({ success: false, message: error.message });
     }
   }
 }

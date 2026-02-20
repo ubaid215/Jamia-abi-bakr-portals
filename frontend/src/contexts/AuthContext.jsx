@@ -9,62 +9,68 @@ export const AuthProvider = ({ children }) => {
   const [error, setError] = useState(null);
 
   // Check for existing authentication on app start
-useEffect(() => {
-  const initializeAuth = async () => {
-    const token = localStorage.getItem('authToken');
-    const storedUser = localStorage.getItem('user');
+  useEffect(() => {
+    const initializeAuth = async () => {
+      const token = localStorage.getItem('authToken');
+      const storedUser = localStorage.getItem('user');
 
-    if (token && storedUser) {
-      try {
-        // 1. Parse stored user data
-        const parsedUser = JSON.parse(storedUser);
-        
-        // 2. Set user IMMEDIATELY (prevents flash/logout on navigation)
-        setUser(parsedUser);
-        
-        // 3. Verify token in background (non-blocking)
-        authService.getProfile()
-          .then((userData) => {
-            // Update with fresh data if verification succeeds
-            setUser(userData);
-            localStorage.setItem('user', JSON.stringify(userData));
-          })
-          .catch((error) => {
-            console.error('Background token verification failed:', error);
-            
-            // Only logout on auth errors, not network errors
-            if (error.response?.status === 401 || error.response?.status === 403) {
-              const errorMessage = error.response.data?.error || '';
-              const isAuthError = 
-                errorMessage.includes('token') || 
-                errorMessage.includes('expired') || 
-                errorMessage.includes('invalid');
-              
-              if (isAuthError) {
-                console.log('Token invalid, logging out');
-                localStorage.removeItem('authToken');
-                localStorage.removeItem('user');
-                setUser(null);
+      if (token && storedUser) {
+        try {
+          // 1. Parse stored user data
+          const parsedUser = JSON.parse(storedUser);
+
+          // 2. Set user IMMEDIATELY (prevents flash/logout on navigation)
+          setUser(parsedUser);
+
+          // 3. Verify token in background (non-blocking)
+          authService.getProfile()
+            .then((userData) => {
+              // Update with fresh data if verification succeeds
+              setUser(userData);
+              localStorage.setItem('user', JSON.stringify(userData));
+            })
+            .catch((error) => {
+              console.error('Background token verification failed:', error);
+
+              // Only logout on auth errors, not network errors
+              if (error.response?.status === 401 || error.response?.status === 403) {
+                const errorMessage = error.response.data?.error || '';
+
+                // Ignore password reset errors - handled by api.js interceptor
+                if (errorMessage.includes('Password reset required') || errorMessage.includes('password change')) {
+                  return;
+                }
+
+                const isAuthError =
+                  errorMessage.includes('token') ||
+                  errorMessage.includes('expired') ||
+                  errorMessage.includes('invalid');
+
+                if (isAuthError) {
+                  console.log('Token invalid, logging out');
+                  localStorage.removeItem('authToken');
+                  localStorage.removeItem('user');
+                  setUser(null);
+                }
               }
-            }
-            // For other errors, keep using cached user data
-          });
-        
-      } catch (parseError) {
-        // Corrupted localStorage data
-        console.error('Failed to parse stored user:', parseError);
-        localStorage.removeItem('authToken');
-        localStorage.removeItem('user');
-        setUser(null);
-      }
-    }
-    
-    // Set loading to false immediately
-    setLoading(false);
-  };
+              // For other errors, keep using cached user data
+            });
 
-  initializeAuth();
-}, []);
+        } catch (parseError) {
+          // Corrupted localStorage data
+          console.error('Failed to parse stored user:', parseError);
+          localStorage.removeItem('authToken');
+          localStorage.removeItem('user');
+          setUser(null);
+        }
+      }
+
+      // Set loading to false immediately
+      setLoading(false);
+    };
+
+    initializeAuth();
+  }, []);
   // Login function for all users
   const login = useCallback(async (email, password) => {
     setLoading(true);
@@ -72,11 +78,11 @@ useEffect(() => {
     try {
       const response = await authService.login(email, password);
       const { user: userData, token } = response;
-      
+
       setUser(userData);
       localStorage.setItem('user', JSON.stringify(userData));
       localStorage.setItem('authToken', token);
-      
+
       return userData;
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Login failed';
@@ -113,14 +119,14 @@ useEffect(() => {
     } catch (error) {
       const errorMessage = error.response?.data?.message || 'Failed to get profile';
       setError(errorMessage);
-      
+
       // If getting profile fails, user might be logged out
       if (error.response?.status === 401 || error.response?.status === 403) {
         localStorage.removeItem('authToken');
         localStorage.removeItem('user');
         setUser(null);
       }
-      
+
       throw new Error(errorMessage);
     } finally {
       setLoading(false);
@@ -194,7 +200,7 @@ useEffect(() => {
     user,
     loading,
     error,
-    
+
     // Auth status
     isAuthenticated: !!user,
     isSuperAdmin: user?.role === 'SUPER_ADMIN',
@@ -202,7 +208,7 @@ useEffect(() => {
     isTeacher: user?.role === 'TEACHER',
     isStudent: user?.role === 'STUDENT',
     isParent: user?.role === 'PARENT',
-    
+
     // Methods
     login,
     logout,

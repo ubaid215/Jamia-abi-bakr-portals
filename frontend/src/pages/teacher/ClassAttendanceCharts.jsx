@@ -28,7 +28,6 @@ const ClassAttendanceCharts = () => {
 
   const {
     fetchClassAttendanceSummary,
-    fetchAttendance,
     loading: attendanceLoading
   } = useAttendance();
 
@@ -48,8 +47,8 @@ const ClassAttendanceCharts = () => {
   const selectedClassData = classList.find(cls => cls.id === selectedClass);
 
   // Check if class is HIFZ or NAZRA
-  const isSpecialClass = selectedClassData?.type?.toUpperCase().includes('HIFZ') || 
-                        selectedClassData?.type?.toUpperCase().includes('NAZRA');
+  const isSpecialClass = selectedClassData?.type?.toUpperCase().includes('HIFZ') ||
+    selectedClassData?.type?.toUpperCase().includes('NAZRA');
 
   useEffect(() => {
     fetchMyClasses();
@@ -59,7 +58,7 @@ const ClassAttendanceCharts = () => {
     weekStart.setDate(today.getDate() - today.getDay());
     const weekEnd = new Date(today);
     weekEnd.setDate(weekStart.getDate() + 6);
-    
+
     setStartDate(weekStart.toISOString().split('T')[0]);
     setEndDate(weekEnd.toISOString().split('T')[0]);
   }, []);
@@ -73,7 +72,6 @@ const ClassAttendanceCharts = () => {
   useEffect(() => {
     if (selectedClass && startDate && endDate) {
       loadAttendanceData();
-      loadDailyAttendanceData();
     }
   }, [selectedClass, selectedSubject, startDate, endDate]);
 
@@ -88,18 +86,16 @@ const ClassAttendanceCharts = () => {
         return;
       }
 
-      // Load subjects for the class (you might need to implement this in your context)
-      // For now, we'll use a mock implementation
-      const mockSubjects = [
-        { id: 'math', name: 'Mathematics' },
-        { id: 'science', name: 'Science' },
-        { id: 'english', name: 'English' },
-        { id: 'urdu', name: 'Urdu' }
-      ];
-      setSubjects(mockSubjects);
-      
-      if (mockSubjects.length > 0 && !selectedSubject) {
-        setSelectedSubject(mockSubjects[0].id);
+      // Load subjects from the selected class data
+      // The classes object from context already includes nested subjects
+      const classSubjects = selectedClassData.subjects || [];
+
+      // Map to consistent format if needed, or use directly
+      // Assuming structure matches: { id, name, ... }
+      setSubjects(classSubjects);
+
+      if (classSubjects.length > 0 && !selectedSubject) {
+        setSelectedSubject(classSubjects[0].id);
       }
     } catch (error) {
       console.error('Error loading class subjects:', error);
@@ -123,9 +119,16 @@ const ClassAttendanceCharts = () => {
       const summary = await fetchClassAttendanceSummary(selectedClass, filters);
       setAttendanceData(summary);
 
+      // Set daily data from response
+      if (summary.summary?.dailyStats) {
+        setDailyData(summary.summary.dailyStats);
+      } else {
+        setDailyData([]);
+      }
+
       // Calculate student rankings
-      if (summary.studentSummary) {
-        const rankings = summary.studentSummary
+      if (summary.summary?.studentSummary) {
+        const rankings = summary.summary.studentSummary
           .filter(student => student.totalDays > 0)
           .sort((a, b) => b.attendancePercentage - a.attendancePercentage)
           .slice(0, 10);
@@ -136,58 +139,32 @@ const ClassAttendanceCharts = () => {
     }
   };
 
-  const loadDailyAttendanceData = async () => {
-    if (!selectedClass || !startDate || !endDate) return;
+  // loadDailyAttendanceData removed - now handled in loadAttendanceData via API
 
-    try {
-      // Generate mock daily data for demonstration
-      const days = [];
-      const currentDate = new Date(startDate);
-      const end = new Date(endDate);
-      
-      while (currentDate <= end) {
-        const dateStr = currentDate.toISOString().split('T')[0];
-        const present = Math.floor(Math.random() * 20) + 10; // Random between 10-30
-        const absent = Math.floor(Math.random() * 5) + 1; // Random between 1-6
-        const late = Math.floor(Math.random() * 3); // Random between 0-2
-        
-        days.push({
-          date: dateStr,
-          present,
-          absent,
-          late,
-          total: present + absent + late,
-          percentage: Math.round((present / (present + absent + late)) * 100)
-        });
-        
-        currentDate.setDate(currentDate.getDate() + 1);
-      }
-      
-      setDailyData(days);
-    } catch (error) {
-      console.error('Error loading daily attendance data:', error);
-    }
-  };
 
   const handleDateRangeChange = (range) => {
     setDateRange(range);
     const today = new Date();
-    
+
     switch (range) {
       case 'week':
-        { const weekStart = new Date(today);
-        weekStart.setDate(today.getDate() - today.getDay());
-        const weekEnd = new Date(weekStart);
-        weekEnd.setDate(weekStart.getDate() + 6);
-        setStartDate(weekStart.toISOString().split('T')[0]);
-        setEndDate(weekEnd.toISOString().split('T')[0]);
-        break; }
+        {
+          const weekStart = new Date(today);
+          weekStart.setDate(today.getDate() - today.getDay());
+          const weekEnd = new Date(weekStart);
+          weekEnd.setDate(weekStart.getDate() + 6);
+          setStartDate(weekStart.toISOString().split('T')[0]);
+          setEndDate(weekEnd.toISOString().split('T')[0]);
+          break;
+        }
       case 'month':
-        { const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
-        const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
-        setStartDate(monthStart.toISOString().split('T')[0]);
-        setEndDate(monthEnd.toISOString().split('T')[0]);
-        break; }
+        {
+          const monthStart = new Date(today.getFullYear(), today.getMonth(), 1);
+          const monthEnd = new Date(today.getFullYear(), today.getMonth() + 1, 0);
+          setStartDate(monthStart.toISOString().split('T')[0]);
+          setEndDate(monthEnd.toISOString().split('T')[0]);
+          break;
+        }
       case 'custom':
         // Keep current dates for custom selection
         break;
@@ -266,7 +243,7 @@ const ClassAttendanceCharts = () => {
                 strokeDashoffset={-(presentPercentage + latePercentage + absentPercentage) * 2.513}
               />
             </svg>
-            
+
             {/* Center Text */}
             <div className="absolute inset-0 flex items-center justify-center">
               <div className="text-center">
@@ -278,7 +255,7 @@ const ClassAttendanceCharts = () => {
             </div>
           </div>
         </div>
-        
+
         {/* Legend */}
         <div className="grid grid-cols-2 gap-3 mt-6">
           <div className="flex items-center space-x-2">
@@ -323,7 +300,7 @@ const ClassAttendanceCharts = () => {
                   {/* Present Bar */}
                   <div
                     className="w-full bg-green-500 rounded-t"
-                    style={{ 
+                    style={{
                       height: `${(day.present / maxAttendance) * 80}%`,
                       minHeight: '4px'
                     }}
@@ -332,7 +309,7 @@ const ClassAttendanceCharts = () => {
                   {/* Late Bar */}
                   <div
                     className="w-full bg-yellow-500"
-                    style={{ 
+                    style={{
                       height: `${(day.late / maxAttendance) * 80}%`,
                       minHeight: '2px'
                     }}
@@ -341,7 +318,7 @@ const ClassAttendanceCharts = () => {
                   {/* Absent Bar */}
                   <div
                     className="w-full bg-red-500 rounded-b"
-                    style={{ 
+                    style={{
                       height: `${(day.absent / maxAttendance) * 80}%`,
                       minHeight: '2px'
                     }}
@@ -358,7 +335,7 @@ const ClassAttendanceCharts = () => {
             ))}
           </div>
         </div>
-        
+
         {/* X-axis labels */}
         <div className="flex justify-between mt-4 text-xs text-gray-500">
           <span>Start: {new Date(startDate).toLocaleDateString()}</span>
@@ -379,11 +356,10 @@ const ClassAttendanceCharts = () => {
           {studentRankings.map((student, index) => (
             <div key={student.studentId} className="flex items-center justify-between p-3 bg-gray-50 rounded-lg">
               <div className="flex items-center space-x-3">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-medium ${
-                  index === 0 ? 'bg-yellow-500' : 
-                  index === 1 ? 'bg-gray-400' : 
-                  index === 2 ? 'bg-orange-500' : 'bg-gold'
-                }`}>
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center text-white font-medium ${index === 0 ? 'bg-yellow-500' :
+                  index === 1 ? 'bg-gray-400' :
+                    index === 2 ? 'bg-orange-500' : 'bg-gold'
+                  }`}>
                   {index + 1}
                 </div>
                 <div>
@@ -397,7 +373,7 @@ const ClassAttendanceCharts = () => {
               </div>
             </div>
           ))}
-          
+
           {studentRankings.length === 0 && (
             <div className="text-center py-8 text-gray-500">
               No attendance data available for ranking
@@ -478,7 +454,7 @@ const ClassAttendanceCharts = () => {
                 Visualize and analyze class attendance patterns
               </p>
             </div>
-            
+
             <div className="flex items-center space-x-3">
               <button className="flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
                 <Download className="h-4 w-4 mr-2" />
@@ -604,7 +580,7 @@ const ClassAttendanceCharts = () => {
                   <h2 className="text-lg font-semibold text-gray-900">Attendance Overview</h2>
                   {expandedSection === 'overview' ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                 </button>
-                
+
                 {expandedSection === 'overview' && (
                   <div className="px-6 pb-6 border-t border-gray-200">
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6 mt-4">
@@ -624,7 +600,7 @@ const ClassAttendanceCharts = () => {
                   <h2 className="text-lg font-semibold text-gray-900">Attendance Trends</h2>
                   {expandedSection === 'trends' ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                 </button>
-                
+
                 {expandedSection === 'trends' && (
                   <div className="px-6 pb-6 border-t border-gray-200">
                     <div className="mt-4">
@@ -644,7 +620,7 @@ const ClassAttendanceCharts = () => {
                     <h2 className="text-lg font-semibold text-gray-900">Detailed Student Report</h2>
                     {expandedSection === 'details' ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
                   </button>
-                  
+
                   {expandedSection === 'details' && (
                     <div className="px-6 pb-6 border-t border-gray-200">
                       <div className="overflow-x-auto mt-4">
@@ -690,11 +666,10 @@ const ClassAttendanceCharts = () => {
                                   {student.lateDays}
                                 </td>
                                 <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
-                                  <span className={`${
-                                    student.attendancePercentage >= 90 ? 'text-green-600' :
+                                  <span className={`${student.attendancePercentage >= 90 ? 'text-green-600' :
                                     student.attendancePercentage >= 75 ? 'text-yellow-600' :
-                                    'text-red-600'
-                                  }`}>
+                                      'text-red-600'
+                                    }`}>
                                     {student.attendancePercentage}%
                                   </span>
                                 </td>

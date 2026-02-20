@@ -1339,6 +1339,29 @@ class AttendanceController {
         };
       });
 
+      // Calculate daily stats
+      const dailyStats = [];
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+
+      // Clone start date to avoid modifying it
+      for (let d = new Date(start); d <= end; d.setDate(d.getDate() + 1)) {
+        const dateStr = d.toISOString().split('T')[0];
+        // Compare using ISO date string
+        const dayRecords = attendance.filter(a =>
+          new Date(a.date).toISOString().split('T')[0] === dateStr
+        );
+
+        dailyStats.push({
+          date: dateStr,
+          present: dayRecords.filter(a => a.status === 'PRESENT').length,
+          absent: dayRecords.filter(a => a.status === 'ABSENT').length,
+          late: dayRecords.filter(a => a.status === 'LATE').length,
+          excused: dayRecords.filter(a => a.status === 'EXCUSED').length,
+          total: dayRecords.length
+        });
+      }
+
       const totalPossibleDays = enrolledStudents.length * attendance.length;
       const totalPresentDays = attendance.filter(a => a.status === 'PRESENT').length;
       const classAttendancePercentage = totalPossibleDays > 0 ?
@@ -1362,7 +1385,8 @@ class AttendanceController {
           totalStudents: enrolledStudents.length,
           totalAttendanceDays: attendance.length,
           classAttendancePercentage,
-          studentSummary: studentSummary.sort((a, b) => a.rollNumber - b.rollNumber)
+          studentSummary: studentSummary.sort((a, b) => a.rollNumber - b.rollNumber),
+          dailyStats
         }
       });
 

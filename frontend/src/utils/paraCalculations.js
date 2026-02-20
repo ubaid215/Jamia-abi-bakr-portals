@@ -1,18 +1,27 @@
 /* eslint-disable no-unused-vars */
 // src/components/hifz/utils/paraCalculations.js
 
+export const PARA_NAMES = [
+  "1. Alif Lam Meem", "2. Sayaqul", "3. Tilkal Rusull", "4. Lan Tana Loo", "5. Wal Mohsanat",
+  "6. La Yuhibbullah", "7. Wa Iza Samiu", "8. Wa Lau Annana", "9. Qalal Malao", "10. Wa A'lamu",
+  "11. Yatazeroona", "12. Wa Mamin Da'abat", "13. Wa Ma Ubrioo", "14. Rubama", "15. Subhanallazi",
+  "16. Qala Alam", "17. Iqtaraba", "18. Qadd Aflaha", "19. Wa Qalallazina", "20. A'man Khalaqa",
+  "21. Utlu Ma Oohi", "22. Wa Mannyaqnut", "23. Wa Maliya", "24. Faman Azlam", "25. Elahe Yuruddo",
+  "26. Ha'a Meem", "27. Qala Fama Khatbukum", "28. Qadd Sami Allah", "29. Tabarakallazi", "30. Amma Yatasa'aloon"
+];
+
 export const calculateParaLogic = {
   // Get the next para based on completed paras
   getNextPara: (completedParas = [], alreadyMemorizedParas = [], currentPara = 1) => {
     const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
-    
+
     // Find the first gap in paras
     for (let i = 1; i <= 30; i++) {
       if (!allMemorized.includes(i)) {
         return i;
       }
     }
-    
+
     // If all paras are completed, return 31 (completed Quran)
     return 31;
   },
@@ -20,17 +29,17 @@ export const calculateParaLogic = {
   // Check if a para can be worked on
   canWorkOnPara: (para, completedParas = [], alreadyMemorizedParas = []) => {
     const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
-    
+
     // Para must be between 1 and 30
     if (para < 1 || para > 30) {
       return { allowed: false, reason: "Para must be between 1 and 30" };
     }
-    
+
     // Cannot work on already memorized para
     if (allMemorized.includes(para)) {
       return { allowed: false, reason: `Para ${para} is already memorized` };
     }
-    
+
     return { allowed: true, reason: "" };
   },
 
@@ -45,13 +54,13 @@ export const calculateParaLogic = {
   getRemainingParas: (completedParas = [], alreadyMemorizedParas = []) => {
     const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
     const remaining = [];
-    
+
     for (let i = 1; i <= 30; i++) {
       if (!allMemorized.includes(i)) {
         remaining.push(i);
       }
     }
-    
+
     return remaining;
   },
 
@@ -62,7 +71,7 @@ export const calculateParaLogic = {
     }
 
     const allMemorized = [...new Set([...alreadyMemorizedParas, ...completedParas])];
-    
+
     if (allMemorized.includes(completedPara)) {
       return { valid: false, error: `Para ${completedPara} is already memorized` };
     }
@@ -96,27 +105,27 @@ export const calculateParaLogic = {
   },
 
   // Get para visualization data
-getParaVisualization: (hifzStatus, calculatedCurrentPara) => {
-  const completed = hifzStatus?.completedParas || [];
-  const alreadyMemorized = hifzStatus?.alreadyMemorizedParas || [];
-  const allMemorized = [...new Set([...alreadyMemorized, ...completed])];
-  
-  // 🔥 FIX: Get ALL paras, not just remaining
-  const allParas = Array.from({ length: 30 }, (_, i) => i + 1);
-  
-  // Calculate remaining (non-memorized) paras
-  const remaining = allParas.filter(para => !allMemorized.includes(para));
-  
-  return {
-    completed,
-    alreadyMemorized,
-    allMemorized,
-    remaining,
-    // 🔥 ADD: All paras for dropdown
-    allParas,
-    currentPara: calculatedCurrentPara,
-    totalMemorized: allMemorized.length,
-    completionPercentage: (allMemorized.length / 30) * 100
-  };
-},
+  getParaVisualization: (hifzStatus, calculatedCurrentPara) => {
+    const completed = hifzStatus?.completedParas || [];
+    const alreadyMemorized = hifzStatus?.alreadyMemorizedParas || [];
+    const allMemorized = [...new Set([...alreadyMemorized, ...completed])];
+
+    // 🔥 FIX: Get ALL paras, not just remaining
+    const allParas = Array.from({ length: 30 }, (_, i) => i + 1);
+
+    // Calculate remaining (non-memorized) paras
+    const remaining = allParas.filter(para => !allMemorized.includes(para));
+
+    return {
+      completed,
+      alreadyMemorized,
+      allMemorized,
+      remaining,
+      // 🔥 ADD: All paras for dropdown
+      allParas,
+      currentPara: calculatedCurrentPara,
+      totalMemorized: allMemorized.length,
+      completionPercentage: (allMemorized.length / 30) * 100
+    };
+  },
 };

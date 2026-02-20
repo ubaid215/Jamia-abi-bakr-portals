@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Calendar, User, CheckCircle, Clock, Search, Filter } from 'lucide-react';
 import { useActivity } from '../../contexts/ActivityContext';
+import { useAttendance } from '../../contexts/AttendanceContext';
 import StudentSelector from '../../components/shared/StudentSelector';
 import DateRangePicker from '../../components/shared/DateRangePicker';
 
@@ -12,57 +13,56 @@ const AttendanceSelectorModal = ({ isOpen, onClose, onSelect, currentAttendanceI
     classroomStudents
   } = useActivity();
 
+  const {
+    fetchStudentAttendance,
+    loading: attendanceLoading
+  } = useAttendance();
+
   const [dateRange, setDateRange] = useState({
-    startDate: new Date(),
+    startDate: new Date(new Date().setDate(new Date().getDate() - 30)), // Last 30 days default
     endDate: new Date()
   });
   const [searchTerm, setSearchTerm] = useState('');
   const [filterStatus, setFilterStatus] = useState('all');
   const [selectedAttendance, setSelectedAttendance] = useState(null);
-
-  // Mock attendance data - replace with actual API call
   const [attendanceRecords, setAttendanceRecords] = useState([]);
 
   // Load attendance records
   useEffect(() => {
-    if (selectedStudent?.id && isOpen) {
-      // This should be replaced with actual API call
-      const mockAttendance = [
-        {
-          id: 'att-1',
-          date: new Date().toISOString(),
-          status: 'PRESENT',
-          studentId: selectedStudent.id,
-          studentName: selectedStudent.user?.name,
-          classRoomName: selectedClassroom?.name,
-          subjectName: 'Mathematics',
-          remarks: 'On time'
-        },
-        {
-          id: 'att-2',
-          date: new Date(Date.now() - 86400000).toISOString(),
-          status: 'LATE',
-          studentId: selectedStudent.id,
-          studentName: selectedStudent.user?.name,
-          classRoomName: selectedClassroom?.name,
-          subjectName: 'English',
-          remarks: '15 minutes late'
-        },
-        {
-          id: 'att-3',
-          date: new Date(Date.now() - 172800000).toISOString(),
-          status: 'ABSENT',
-          studentId: selectedStudent.id,
-          studentName: selectedStudent.user?.name,
-          classRoomName: selectedClassroom?.name,
-          subjectName: 'Science',
-          remarks: 'Excused - sick'
-        }
-      ];
+    const loadAttendance = async () => {
+      if (selectedStudent?.id && isOpen) {
+        try {
+          const response = await fetchStudentAttendance(selectedStudent.id, {
+            startDate: dateRange.startDate.toISOString(),
+            endDate: dateRange.endDate.toISOString()
+          });
 
-      setAttendanceRecords(mockAttendance);
-    }
-  }, [selectedStudent, selectedClassroom, isOpen]);
+          // API returns object with 'attendance' array
+          if (response && response.attendance) {
+            // Map API response to component format if needed
+            const formattedRecords = response.attendance.map(record => ({
+              id: record.id,
+              date: record.date,
+              status: record.status,
+              studentId: record.studentId,
+              studentName: selectedStudent.user?.name, // Use selected student name
+              classRoomName: record.classRoom?.name || 'Unknown Class',
+              subjectName: record.subject?.name || 'No Subject',
+              remarks: record.remarks
+            }));
+            setAttendanceRecords(formattedRecords);
+          } else {
+            setAttendanceRecords([]);
+          }
+        } catch (error) {
+          console.error('Failed to load student attendance:', error);
+          setAttendanceRecords([]);
+        }
+      }
+    };
+
+    loadAttendance();
+  }, [selectedStudent, isOpen, dateRange, fetchStudentAttendance]);
 
   // Filter attendance records
   const filteredAttendance = attendanceRecords.filter(record => {

@@ -997,6 +997,9 @@ model Attendance {
   status     AttendanceStatus
   remarks    String?
   createdAt  DateTime        @default(now())
+
+
+   hifzProgress HifzProgress? @relation("hifzAttendance") 
   
   // Relation to DailyActivity
   dailyActivities DailyActivity[]
@@ -1161,42 +1164,61 @@ model HifzProgress {
   teacher     Teacher? @relation(fields: [teacherId], references: [id], onDelete: SetNull)
   teacherId   String?
   date        DateTime @default(now())
-  
-  sabaq       String?
-  sabaqLines  Int      @default(0)
-  sabaqMistakes Int    @default(0)
-  
-  sabqi       String?
-  sabqiLines  Int      @default(0)
-  sabqiMistakes Int    @default(0)
-  
-  manzil      String?
-  manzilLines Int      @default(0)
-  manzilMistakes Int   @default(0)
-  
-  totalMistakes Int    @default(0)
-  attendance  AttendanceStatus @default(PRESENT)
-  condition   String?
-  
-  currentPara     Int?
-  currentParaProgress Float @default(0)
-  completedParas  Int[]
-  alreadyMemorizedParas Int[] @default([])
-  startingPara    Int?
-  
+
+  // ✅ SINGLE SOURCE OF TRUTH: Link to central Attendance model
+  // When progress is saved, an Attendance record is auto-created and linked here.
+  // attendance.status drives all attendance logic (no duplicate data).
+  attendance     Attendance? @relation("hifzAttendance", fields: [attendanceId], references: [id], onDelete: SetNull)
+  attendanceId   String?     @unique  // one-to-one: one HifzProgress per Attendance record
+
+  // -----------------------------------------------------------------------
+  // Sabaq: New memorization (lines count as integer — the core metric)
+  // -----------------------------------------------------------------------
+  sabaq         String?    // Description e.g. "Al-Baqarah v1-5" (optional label)
+  sabaqLines    Int        @default(0)  // Number of new lines memorized today ← KEY METRIC
+  sabaqMistakes Int        @default(0)
+
+  // -----------------------------------------------------------------------
+  // Sabqi: Recent revision (text description only — no line count needed)
+  // -----------------------------------------------------------------------
+  sabqi         String?    // e.g. "Para 2" or "Para 1-3"
+  sabqiMistakes Int        @default(0)
+
+  // -----------------------------------------------------------------------
+  // Manzil: Older revision (text description only — no line count needed)
+  // -----------------------------------------------------------------------
+  manzil        String?    // e.g. "Para 1-5"
+  manzilMistakes Int       @default(0)
+
+  // -----------------------------------------------------------------------
+  // Computed fields
+  // -----------------------------------------------------------------------
+  totalMistakes Int        @default(0)  // sabaqMistakes + sabqiMistakes + manzilMistakes
+  condition     String?    // "Excellent" | "Good" | "Medium" | "Below Average" | "N/A"
+
+  // -----------------------------------------------------------------------
+  // Para progress tracking
+  // -----------------------------------------------------------------------
+  currentPara             Int?
+  currentParaProgress     Float  @default(0)
+  completedParas          Int[]  @default([])
+  alreadyMemorizedParas   Int[]  @default([])
+  startingPara            Int?
+
   notes       String?
   remarks     String?
   attachments String?
-  
+
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
-  
-  // ✅ CRITICAL PERFORMANCE INDEXES
+
+  // ✅ PERFORMANCE INDEXES
   @@index([studentId, date(sort: Desc)])
   @@index([teacherId, date(sort: Desc)])
+  @@index([attendanceId])
   @@index([date(sort: Desc)])
   @@index([studentId, currentPara])
-  @@index([attendance, date])
+  @@index([condition, date])
 }
 
 model StudentHifzStatus {
