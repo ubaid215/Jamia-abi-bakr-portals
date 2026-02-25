@@ -1,10 +1,11 @@
 import React, { createContext, useContext, useState, useCallback } from 'react';
 import pdfService from '../services/pdfService';
-import api from '../services/api'; // Add this import
+import api from '../services/api';
 import { toast } from 'react-hot-toast';
 
 const PDFContext = createContext();
 
+// eslint-disable-next-line react-refresh/only-export-components
 export const usePDF = () => {
   const context = useContext(PDFContext);
   if (!context) {
@@ -18,15 +19,12 @@ export const PDFProvider = ({ children }) => {
   const [error, setError] = useState(null);
   const [progress, setProgress] = useState(null);
 
-  // Clear error
   const clearError = useCallback(() => setError(null), []);
 
-  // Generic API call handler
   const handlePDFOperation = useCallback(async (operation, successMessage, progressMessage) => {
     setLoading(true);
     setError(null);
     setProgress(progressMessage);
-
     try {
       await operation();
       toast.success(successMessage);
@@ -43,9 +41,8 @@ export const PDFProvider = ({ children }) => {
     }
   }, []);
 
-  // ==================== PDF GENERATION METHODS ====================
+  // ==================== PDF GENERATION ====================
 
-  // Generate student progress report
   const generateStudentReport = useCallback(async (studentId, options = {}) => {
     return handlePDFOperation(
       () => pdfService.generateStudentProgressReport(studentId, options),
@@ -54,7 +51,6 @@ export const PDFProvider = ({ children }) => {
     );
   }, [handlePDFOperation]);
 
-  // Generate exam mark sheet
   const generateMarkSheet = useCallback(async (classRoomId, options = {}) => {
     return handlePDFOperation(
       () => pdfService.generateExamMarkSheet(classRoomId, options),
@@ -63,7 +59,6 @@ export const PDFProvider = ({ children }) => {
     );
   }, [handlePDFOperation]);
 
-  // Generate attendance sheet
   const generateAttendanceSheet = useCallback(async (classRoomId, options = {}) => {
     return handlePDFOperation(
       () => pdfService.generateAttendanceSheet(classRoomId, options),
@@ -72,7 +67,6 @@ export const PDFProvider = ({ children }) => {
     );
   }, [handlePDFOperation]);
 
-  // Generate custom PDF
   const generateCustomPDF = useCallback(async (pdfData) => {
     return handlePDFOperation(
       () => pdfService.generateCustomPDF(pdfData),
@@ -81,7 +75,6 @@ export const PDFProvider = ({ children }) => {
     );
   }, [handlePDFOperation]);
 
-  // Preview student report
   const previewStudentReport = useCallback(async (studentId, options = {}) => {
     return handlePDFOperation(
       async () => {
@@ -93,25 +86,18 @@ export const PDFProvider = ({ children }) => {
     );
   }, [handlePDFOperation]);
 
-  // Batch generate reports
   const batchGenerateStudentReports = useCallback(async (studentIds, options = {}) => {
     setLoading(true);
     setError(null);
-    
     const results = { successful: [], failed: [] };
 
     for (let i = 0; i < studentIds.length; i++) {
       const studentId = studentIds[i];
       setProgress(`Generating report ${i + 1} of ${studentIds.length}...`);
-
       try {
         await pdfService.generateStudentProgressReport(studentId, options);
         results.successful.push(studentId);
-        
-        // Small delay between downloads
-        if (i < studentIds.length - 1) {
-          await new Promise(resolve => setTimeout(resolve, 500));
-        }
+        if (i < studentIds.length - 1) await new Promise(r => setTimeout(r, 500));
       } catch (err) {
         results.failed.push({ studentId, error: err.message });
       }
@@ -119,23 +105,28 @@ export const PDFProvider = ({ children }) => {
 
     setLoading(false);
     setProgress(null);
-
     if (results.failed.length === 0) {
       toast.success(`Successfully generated ${results.successful.length} reports!`);
     } else {
       toast.warning(`Generated ${results.successful.length} reports. ${results.failed.length} failed.`);
     }
-
     return results;
   }, []);
 
-  // ==================== DATA FETCHING METHODS ====================
+  // ==================== DATA FETCHING ====================
 
-  // Get all students for dropdown
+  /**
+   * FIX: Return the array directly — frontend stores result in setStudents([])
+   *      Old bug: returned response.data.data but backend pagination wraps data in { success, data[], pagination }
+   */
   const getAllStudents = useCallback(async () => {
     try {
-      const response = await api.get('/pdf/students');
-      return response.data.data || [];
+      const response = await api.get('/pdf/students?limit=100');
+      // Handle both { data: [...] } and { data: { data: [...] } } shapes
+      const raw = response.data;
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw.data)) return raw.data;
+      return [];
     } catch (error) {
       console.error('Error fetching students:', error);
       toast.error('Failed to load students');
@@ -143,11 +134,13 @@ export const PDFProvider = ({ children }) => {
     }
   }, []);
 
-  // Get all classrooms for dropdown
   const getAllClassrooms = useCallback(async () => {
     try {
-      const response = await api.get('/pdf/classrooms');
-      return response.data.data || [];
+      const response = await api.get('/pdf/classrooms?limit=100');
+      const raw = response.data;
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw.data)) return raw.data;
+      return [];
     } catch (error) {
       console.error('Error fetching classrooms:', error);
       toast.error('Failed to load classrooms');
@@ -155,54 +148,57 @@ export const PDFProvider = ({ children }) => {
     }
   }, []);
 
-  // Get PDF generation stats
+  /**
+   * FIX: Backend now returns { students, teachers, classes, reportsThisMonth }
+   *      matching the field names PDFGenerate component uses in its stats state.
+   *      Previously backend returned { totalStudents, totalTeachers, totalClassRooms }
+   *      which caused the UI stats to always show 0.
+   */
   const getStats = useCallback(async () => {
     try {
       const response = await api.get('/pdf/stats');
-      return response.data.data || {
-        totalStudents: 0,
-        totalTeachers: 0,
-        totalClassRooms: 0,
-        totalActiveEnrollments: 0,
-        reportsThisMonth: 0
+      const raw = response.data;
+      const data = raw.data || raw;
+
+      // Normalize: support both old and new field names from backend
+      return {
+        students: data.students ?? data.totalStudents ?? 0,
+        teachers: data.teachers ?? data.totalTeachers ?? 0,
+        classes: data.classes ?? data.totalClassRooms ?? 0,
+        reportsThisMonth: data.reportsThisMonth ?? 0,
       };
     } catch (error) {
       console.error('Error fetching stats:', error);
-      // Return default stats instead of throwing error
-      return {
-        totalStudents: 0,
-        totalTeachers: 0,
-        totalClassRooms: 0,
-        totalActiveEnrollments: 0,
-        reportsThisMonth: 0
-      };
+      return { students: 0, teachers: 0, classes: 0, reportsThisMonth: 0 };
     }
   }, []);
 
-  // Optional: Get students by search term
   const searchStudents = useCallback(async (searchTerm = '', classId = '') => {
     try {
       const params = new URLSearchParams();
       if (searchTerm) params.append('search', searchTerm);
       if (classId) params.append('classId', classId);
-      
       const response = await api.get(`/pdf/students?${params.toString()}`);
-      return response.data.data || [];
+      const raw = response.data;
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw.data)) return raw.data;
+      return [];
     } catch (error) {
       console.error('Error searching students:', error);
       throw error;
     }
   }, []);
 
-  // Optional: Get classrooms by search term
   const searchClassrooms = useCallback(async (searchTerm = '', type = '') => {
     try {
       const params = new URLSearchParams();
       if (searchTerm) params.append('search', searchTerm);
       if (type) params.append('type', type);
-      
       const response = await api.get(`/pdf/classrooms?${params.toString()}`);
-      return response.data.data || [];
+      const raw = response.data;
+      if (Array.isArray(raw)) return raw;
+      if (Array.isArray(raw.data)) return raw.data;
+      return [];
     } catch (error) {
       console.error('Error searching classrooms:', error);
       throw error;
@@ -210,12 +206,9 @@ export const PDFProvider = ({ children }) => {
   }, []);
 
   const value = {
-    // State
     loading,
     error,
     progress,
-    
-    // PDF Generation Actions
     generateStudentReport,
     generateMarkSheet,
     generateAttendanceSheet,
@@ -223,13 +216,11 @@ export const PDFProvider = ({ children }) => {
     previewStudentReport,
     batchGenerateStudentReports,
     clearError,
-    
-    // Data Fetching Methods
     getAllStudents,
     getAllClassrooms,
     getStats,
     searchStudents,
-    searchClassrooms
+    searchClassrooms,
   };
 
   return (

@@ -103,8 +103,15 @@ async function updateStudent(req, res) {
         const { id } = req.params;
         const {
             name, email, phone, status,
-            dateOfBirth, gender, guardianName, guardianPhone,
-            address, city, province,
+            // Personal info
+            dateOfBirth, gender, placeOfBirth, nationality, religion, bloodGroup,
+            // Guardian info
+            guardianName, guardianPhone, guardianRelation, guardianEmail,
+            guardianOccupation, guardianCNIC,
+            // Contact info
+            address, city, province, postalCode,
+            // Medical info
+            medicalConditions, allergies, medication,
         } = req.body;
 
         let student = await prisma.student.findFirst({
@@ -125,7 +132,7 @@ async function updateStudent(req, res) {
 
         const userUpdateData = {};
         if (name) userUpdateData.name = name;
-        if (email && email !== student.user.email) {
+        if (email && email !== student.user?.email) {
             const existingUser = await prisma.user.findFirst({
                 where: { email, NOT: { id: student.userId } },
             });
@@ -140,17 +147,33 @@ async function updateStudent(req, res) {
         }
 
         const studentUpdateData = {};
+        // Personal
         if (dateOfBirth) studentUpdateData.dob = new Date(dateOfBirth);
         if (gender && ['MALE', 'FEMALE', 'OTHER'].includes(gender)) studentUpdateData.gender = gender;
+        if (placeOfBirth !== undefined) studentUpdateData.placeOfBirth = placeOfBirth;
+        if (nationality !== undefined) studentUpdateData.nationality = nationality;
+        if (religion !== undefined) studentUpdateData.religion = religion;
+        if (bloodGroup !== undefined) studentUpdateData.bloodGroup = bloodGroup;
+        // Guardian
         if (guardianName) studentUpdateData.guardianName = guardianName;
         if (guardianPhone) studentUpdateData.guardianPhone = guardianPhone;
+        if (guardianRelation !== undefined) studentUpdateData.guardianRelation = guardianRelation;
+        if (guardianEmail !== undefined) studentUpdateData.guardianEmail = guardianEmail;
+        if (guardianOccupation !== undefined) studentUpdateData.guardianOccupation = guardianOccupation;
+        if (guardianCNIC !== undefined) studentUpdateData.guardianCNIC = guardianCNIC;
+        // Contact
         if (address) studentUpdateData.address = address;
         if (city) studentUpdateData.city = city;
         if (province) studentUpdateData.province = province;
+        if (postalCode !== undefined) studentUpdateData.postalCode = postalCode;
+        // Medical
+        if (medicalConditions !== undefined) studentUpdateData.medicalConditions = medicalConditions;
+        if (allergies !== undefined) studentUpdateData.allergies = allergies;
+        if (medication !== undefined) studentUpdateData.medication = medication;
 
         const result = await prisma.$transaction(async (tx) => {
-            let updatedUser = student.user;
-            if (Object.keys(userUpdateData).length > 0) {
+            let updatedUser = student.user || {};
+            if (Object.keys(userUpdateData).length > 0 && student.userId) {
                 updatedUser = await tx.user.update({
                     where: { id: student.userId },
                     data: userUpdateData,
@@ -168,7 +191,7 @@ async function updateStudent(req, res) {
             return { user: updatedUser, student: updatedStudent };
         });
 
-        const { passwordHash, ...userWithoutPassword } = result.user;
+        const { passwordHash, ...userWithoutPassword } = result.user || {};
 
         logger.info({ studentId: student.id }, 'Student updated');
 
@@ -180,11 +203,23 @@ async function updateStudent(req, res) {
                     admissionNo: result.student.admissionNo,
                     dateOfBirth: result.student.dob,
                     gender: result.student.gender,
+                    placeOfBirth: result.student.placeOfBirth,
+                    nationality: result.student.nationality,
+                    religion: result.student.religion,
+                    bloodGroup: result.student.bloodGroup,
                     guardianName: result.student.guardianName,
                     guardianPhone: result.student.guardianPhone,
+                    guardianRelation: result.student.guardianRelation,
+                    guardianEmail: result.student.guardianEmail,
+                    guardianOccupation: result.student.guardianOccupation,
+                    guardianCNIC: result.student.guardianCNIC,
                     address: result.student.address,
                     city: result.student.city,
                     province: result.student.province,
+                    postalCode: result.student.postalCode,
+                    medicalConditions: result.student.medicalConditions,
+                    allergies: result.student.allergies,
+                    medication: result.student.medication,
                 },
             },
         });
@@ -197,40 +232,102 @@ async function updateStudent(req, res) {
     }
 }
 
+// Update student academic info (enrollment)
+async function updateStudentAcademicInfo(req, res) {
+    try {
+        const { id } = req.params;
+        const { classRoomId, rollNumber, startDate } = req.body;
+
+        // Find student by userId or student id
+        let student = await prisma.student.findFirst({
+            where: { userId: id },
+            include: { currentEnrollment: true },
+        });
+
+        if (!student) {
+            student = await prisma.student.findUnique({
+                where: { id },
+                include: { currentEnrollment: true },
+            });
+        }
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        if (!student.currentEnrollment) {
+            return res.status(404).json({ error: 'Student has no current enrollment' });
+        }
+
+        const updateData = {};
+        if (rollNumber !== undefined) updateData.rollNumber = parseInt(rollNumber) || rollNumber;
+        if (startDate) updateData.startDate = new Date(startDate);
+        if (classRoomId) updateData.classRoomId = classRoomId;
+
+        if (Object.keys(updateData).length === 0) {
+            return res.status(400).json({ error: 'No fields to update' });
+        }
+
+        const updatedEnrollment = await prisma.enrollment.update({
+            where: { id: student.currentEnrollment.id },
+            data: updateData,
+            include: {
+                classRoom: {
+                    select: { id: true, name: true, grade: true, type: true },
+                },
+            },
+        });
+
+        logger.info({ studentId: student.id, enrollmentId: updatedEnrollment.id }, 'Student academic info updated');
+
+        res.json({
+            message: 'Academic information updated successfully',
+            student: {
+                id: student.id,
+                userId: student.userId,
+                currentEnrollment: updatedEnrollment,
+            },
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Update student academic info error');
+        res.status(500).json({
+            error: 'Failed to update academic info',
+            details: error.message,
+        });
+    }
+}
+
 // Get student details by ID (with progress + attendance)
 async function getStudentDetails(req, res) {
     try {
         const { id } = req.params;
 
-        const student = await prisma.student.findUnique({
-            where: { userId: id },
-            include: {
-                user: {
-                    select: {
-                        id: true,
-                        name: true,
-                        email: true,
-                        phone: true,
-                        profileImage: true,
-                        status: true,
-                        createdAt: true,
-                    },
+        const includeOptions = {
+            user: {
+                select: {
+                    id: true,
+                    name: true,
+                    email: true,
+                    phone: true,
+                    profileImage: true,
+                    status: true,
+                    createdAt: true,
                 },
-                currentEnrollment: {
-                    include: {
-                        classRoom: {
-                            include: {
-                                teacher: {
-                                    include: {
-                                        user: { select: { name: true, email: true } },
-                                    },
+            },
+            currentEnrollment: {
+                include: {
+                    classRoom: {
+                        include: {
+                            teacher: {
+                                include: {
+                                    user: { select: { name: true, email: true } },
                                 },
-                                subjects: {
-                                    include: {
-                                        teacher: {
-                                            include: {
-                                                user: { select: { name: true } },
-                                            },
+                            },
+                            subjects: {
+                                include: {
+                                    teacher: {
+                                        include: {
+                                            user: { select: { name: true } },
                                         },
                                     },
                                 },
@@ -238,36 +335,49 @@ async function getStudentDetails(req, res) {
                         },
                     },
                 },
-                enrollments: {
-                    include: {
-                        classRoom: {
-                            select: { id: true, name: true, grade: true, type: true },
-                        },
-                    },
-                    orderBy: { startDate: 'desc' },
-                },
-                parents: {
-                    include: {
-                        user: {
-                            select: { name: true, email: true, phone: true },
-                        },
+            },
+            enrollments: {
+                include: {
+                    classRoom: {
+                        select: { id: true, name: true, grade: true, type: true },
                     },
                 },
-                attendances: {
-                    orderBy: { date: 'desc' },
-                    take: 20,
-                    include: {
-                        subject: { select: { name: true } },
-                        classRoom: { select: { name: true } },
-                        teacher: {
-                            include: {
-                                user: { select: { name: true } },
-                            },
+                orderBy: { startDate: 'desc' },
+            },
+            parents: {
+                include: {
+                    user: {
+                        select: { name: true, email: true, phone: true },
+                    },
+                },
+            },
+            attendances: {
+                orderBy: { date: 'desc' },
+                take: 20,
+                include: {
+                    subject: { select: { name: true } },
+                    classRoom: { select: { name: true } },
+                    teacher: {
+                        include: {
+                            user: { select: { name: true } },
                         },
                     },
                 },
             },
+        };
+
+        // Try by userId first, then by student.id
+        let student = await prisma.student.findFirst({
+            where: { userId: id },
+            include: includeOptions,
         });
+
+        if (!student) {
+            student = await prisma.student.findUnique({
+                where: { id },
+                include: includeOptions,
+            });
+        }
 
         if (!student) {
             return res.status(404).json({ error: 'Student not found' });
@@ -354,15 +464,69 @@ async function getStudentDetails(req, res) {
             ? (presentAttendance / totalAttendance) * 100
             : 0;
 
+        // Document info
+        const otherDocumentsParsed = (() => {
+            try {
+                return student.otherDocuments ? JSON.parse(student.otherDocuments) : [];
+            } catch {
+                return [];
+            }
+        })();
+
+        const documents = {
+            profileImage: student.profileImage,
+            birthCertificate: student.birthCertificate,
+            cnicOrBForm: student.cnicOrBForm,
+            previousSchoolCertificate: student.previousSchoolCertificate,
+            otherDocuments: otherDocumentsParsed,
+        };
+
+        const generateFileUrl = (docType, sId, idx = null) => {
+            let url = `/api/admin/students/${sId}/documents/${docType}`;
+            if (idx !== null) url += `?index=${idx}`;
+            return url;
+        };
+
+        const documentUrls = {
+            profileImageUrl: `/api/admin/files/profile-image/${student.userId}`,
+            birthCertificateUrl: student.birthCertificate
+                ? generateFileUrl('birth-certificate', student.id)
+                : null,
+            cnicBformUrl: student.cnicOrBForm
+                ? generateFileUrl('cnic-bform', student.id)
+                : null,
+            previousSchoolCertificateUrl: student.previousSchoolCertificate
+                ? generateFileUrl('previous-school', student.id)
+                : null,
+            otherDocumentsUrls: otherDocumentsParsed.map((_, idx) =>
+                generateFileUrl('other', student.id, idx)
+            ),
+        };
+
         res.json({
             student: student.user,
             profile: {
+                id: student.id,
                 admissionNo: student.admissionNo,
-                dateOfBirth: student.dob,
+                dob: student.dob,
                 gender: student.gender,
+                placeOfBirth: student.placeOfBirth,
+                nationality: student.nationality,
+                religion: student.religion,
+                bloodGroup: student.bloodGroup,
                 guardianName: student.guardianName,
                 guardianPhone: student.guardianPhone,
+                guardianRelation: student.guardianRelation,
+                guardianEmail: student.guardianEmail,
+                guardianOccupation: student.guardianOccupation,
+                guardianCNIC: student.guardianCNIC,
                 address: student.address,
+                city: student.city,
+                province: student.province,
+                postalCode: student.postalCode,
+                medicalConditions: student.medicalConditions,
+                allergies: student.allergies,
+                medication: student.medication,
             },
             academic: {
                 currentEnrollment: student.currentEnrollment,
@@ -376,6 +540,8 @@ async function getStudentDetails(req, res) {
             },
             progress: progressData,
             parents: student.parents,
+            documents,
+            urls: documentUrls,
         });
     } catch (error) {
         logger.error({ err: error }, 'Get student details error');
@@ -564,6 +730,8 @@ async function calculateNazraCompletion(studentId) {
 module.exports = {
     getAllStudents,
     updateStudent,
+    updateStudentAcademicInfo,
     getStudentDetails,
     deleteStudent,
 };
+

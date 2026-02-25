@@ -179,12 +179,19 @@ async function updateTeacher(req, res) {
     try {
         const { id } = req.params;
         const {
+            // User fields
             name, email, phone, status,
+            // Personal info
             bio, specialization, qualification, experience,
             cnic, salary, employmentType,
+            joiningDate, dateOfBirth, gender,
+            phoneSecondary, address, bloodGroup, medicalConditions,
+            // Emergency contact
+            emergencyContactName, emergencyContactPhone, emergencyContactRelation,
+            // Bank details
+            bankName, accountNumber, iban,
         } = req.body;
 
-        // Find teacher
         let teacher = await prisma.teacher.findFirst({
             where: { userId: id },
             include: { user: true },
@@ -201,7 +208,6 @@ async function updateTeacher(req, res) {
             return res.status(404).json({ error: 'Teacher not found' });
         }
 
-        // Prepare update data
         const userUpdateData = {};
         if (name) userUpdateData.name = name;
         if (email && email !== teacher.user.email) {
@@ -219,13 +225,30 @@ async function updateTeacher(req, res) {
         }
 
         const teacherUpdateData = {};
+        // Professional
         if (bio !== undefined) teacherUpdateData.bio = bio;
         if (specialization !== undefined) teacherUpdateData.specialization = specialization;
         if (qualification !== undefined) teacherUpdateData.qualification = qualification;
-        if (experience !== undefined) teacherUpdateData.experience = experience;
+        if (experience !== undefined) teacherUpdateData.experience = experience ? String(experience) : null;
         if (cnic !== undefined) teacherUpdateData.cnic = cnic;
-        if (salary !== undefined) teacherUpdateData.salary = salary;
+        if (salary !== undefined) teacherUpdateData.salary = salary !== '' && salary !== null ? parseFloat(salary) : null;
         if (employmentType !== undefined) teacherUpdateData.employmentType = employmentType;
+        if (joiningDate) teacherUpdateData.joiningDate = new Date(joiningDate);
+        // Personal
+        if (dateOfBirth) teacherUpdateData.dateOfBirth = new Date(dateOfBirth);
+        if (gender !== undefined) teacherUpdateData.gender = gender;
+        if (phoneSecondary !== undefined) teacherUpdateData.phoneSecondary = phoneSecondary;
+        if (address !== undefined) teacherUpdateData.address = address;
+        if (bloodGroup !== undefined) teacherUpdateData.bloodGroup = bloodGroup;
+        if (medicalConditions !== undefined) teacherUpdateData.medicalConditions = medicalConditions;
+        // Emergency contact
+        if (emergencyContactName !== undefined) teacherUpdateData.emergencyContactName = emergencyContactName;
+        if (emergencyContactPhone !== undefined) teacherUpdateData.emergencyContactPhone = emergencyContactPhone;
+        if (emergencyContactRelation !== undefined) teacherUpdateData.emergencyContactRelation = emergencyContactRelation;
+        // Bank details
+        if (bankName !== undefined) teacherUpdateData.bankName = bankName;
+        if (accountNumber !== undefined) teacherUpdateData.accountNumber = accountNumber;
+        if (iban !== undefined) teacherUpdateData.iban = iban;
 
         const result = await prisma.$transaction(async (tx) => {
             let updatedUser = teacher.user;
@@ -249,7 +272,7 @@ async function updateTeacher(req, res) {
 
         const { passwordHash, ...userWithoutPassword } = result.user;
 
-        logger.info({ teacherId: teacher.id, userId: teacher.userId }, 'Teacher updated');
+        logger.info({ teacherId: teacher.id }, 'Teacher updated');
 
         res.json({
             message: 'Teacher updated successfully',
@@ -260,6 +283,22 @@ async function updateTeacher(req, res) {
                     specialization: result.teacher.specialization,
                     qualification: result.teacher.qualification,
                     experience: result.teacher.experience,
+                    cnic: result.teacher.cnic,
+                    salary: result.teacher.salary,
+                    employmentType: result.teacher.employmentType,
+                    joiningDate: result.teacher.joiningDate,
+                    dateOfBirth: result.teacher.dateOfBirth,
+                    gender: result.teacher.gender,
+                    phoneSecondary: result.teacher.phoneSecondary,
+                    address: result.teacher.address,
+                    bloodGroup: result.teacher.bloodGroup,
+                    medicalConditions: result.teacher.medicalConditions,
+                    emergencyContactName: result.teacher.emergencyContactName,
+                    emergencyContactPhone: result.teacher.emergencyContactPhone,
+                    emergencyContactRelation: result.teacher.emergencyContactRelation,
+                    bankName: result.teacher.bankName,
+                    accountNumber: result.teacher.accountNumber,
+                    iban: result.teacher.iban,
                 },
             },
         });

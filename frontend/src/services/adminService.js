@@ -55,13 +55,13 @@ const adminService = {
     return response.data;
   },
 
-   // NEW: Update teacher
+  // NEW: Update teacher
   updateTeacher: async (id, teacherData) => {
     const response = await api.put(`/admin/teachers/${id}`, teacherData);
     return response.data;
   },
 
-  
+
   // Student Management
   getAllStudents: async (filters = {}) => {
     const response = await api.get('/admin/students', { params: filters });
@@ -82,6 +82,12 @@ const adminService = {
   // NEW: Update student
   updateStudent: async (id, studentData) => {
     const response = await api.put(`/admin/students/${id}`, studentData);
+    return response.data;
+  },
+
+  // NEW: Update student academic info
+  updateStudentAcademicInfo: async (id, academicData) => {
+    const response = await api.put(`/admin/students/${id}/academic`, academicData);
     return response.data;
   },
 
@@ -151,9 +157,9 @@ const adminService = {
   },
 
   generateCustomReport: async (filters = {}) => {
-  const response = await api.get('/admin/custom-report', { params: filters });
-  return response.data;
-},
+    const response = await api.get('/admin/custom-report', { params: filters });
+    return response.data;
+  },
 
 
   transferStudent: async (transferData) => {
@@ -206,7 +212,57 @@ const adminService = {
   resetUserPassword: async (userId) => {
     const response = await api.post(`/auth/reset-password/${userId}`);
     return response.data;
-  }
+  },
+
+  // ============================================
+  // DOCUMENT SERVICES
+  // ============================================
+
+  // Teacher documents
+  getTeacherWithDocuments: async (id) => {
+    const response = await api.get(`/admin/teachers/${id}/documents`);
+    return response.data;
+  },
+
+  uploadTeacherDocument: async (teacherId, formData) => {
+    const response = await api.post(`/admin/teachers/${teacherId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  deleteTeacherDocument: async (teacherId, documentType) => {
+    const response = await api.delete(`/admin/teachers/${teacherId}/documents/${documentType}`);
+    return response.data;
+  },
+
+  // Student documents
+  getStudentWithDocuments: async (id) => {
+    const response = await api.get(`/admin/students/${id}/documents`);
+    return response.data;
+  },
+
+  uploadStudentDocument: async (studentId, formData) => {
+    const response = await api.post(`/admin/students/${studentId}/documents`, formData, {
+      headers: { 'Content-Type': 'multipart/form-data' },
+    });
+    return response.data;
+  },
+
+  deleteStudentDocument: async (studentId, documentType) => {
+    const response = await api.delete(`/admin/students/${studentId}/documents/${documentType}`);
+    return response.data;
+  },
+
+  // ============================================
+  // ACADEMIC / ENROLLMENT SERVICES
+  // ============================================
+
+  // At-risk students (stub — uses stats endpoint)
+  getAtRiskStudents: async (params = {}) => {
+  const response = await api.get('/admin/students-at-risk', { params });
+  return response.data;  
+},
 };
 
 export default adminService;

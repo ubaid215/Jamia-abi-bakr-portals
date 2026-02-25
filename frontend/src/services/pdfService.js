@@ -1,7 +1,39 @@
+/* eslint-disable no-unused-vars */
 import api from './api';
 
 class PDFService {
-  // Download blob helper
+
+  // ============================================================
+  // PRIVATE HELPERS
+  // ============================================================
+
+  /**
+   * FIX: When axios uses responseType:'blob', any error response body
+   * is also a Blob — JSON.parse on it always fails, so we always got
+   * the generic fallback message. This helper reads the Blob as text
+   * and attempts to extract the real server error message.
+   */
+  async _parseBlobError(error) {
+    try {
+      const blob = error.response?.data;
+      if (blob instanceof Blob) {
+        const text = await blob.text();
+        const json = JSON.parse(text);
+        return json.error || json.message || 'Unknown server error';
+      }
+    } catch (_) {
+      // Blob wasn't JSON — fall through
+    }
+    // Non-blob errors (network, 401, etc.)
+    return (
+      error.response?.data?.error ||
+      error.response?.data?.message ||
+      error.message ||
+      'Request failed'
+    );
+  }
+
+  /** Trigger a browser file download from a Blob */
   downloadBlob(blob, filename) {
     const url = window.URL.createObjectURL(blob);
     const link = document.createElement('a');
@@ -13,105 +45,128 @@ class PDFService {
     window.URL.revokeObjectURL(url);
   }
 
-  // Preview PDF in new tab
+  /** Open a Blob in a new browser tab */
   previewPDF(blob) {
     const url = window.URL.createObjectURL(blob);
     window.open(url, '_blank');
+    // Note: we intentionally don't revoke here so the tab can load it
   }
 
-  // Build query string from options
-  buildQueryString(options) {
+  /** Convert an options object to a URLSearchParams query string */
+  buildQueryString(options = {}) {
     const params = new URLSearchParams();
-    Object.keys(options).forEach(key => {
-      if (options[key]) params.append(key, options[key]);
+    Object.entries(options).forEach(([key, value]) => {
+      // Skip null / undefined / empty string
+      if (value !== null && value !== undefined && value !== '') {
+        params.append(key, value);
+      }
     });
-    return params.toString();
+    const str = params.toString();
+    return str ? `?${str}` : '';
   }
 
-  // Generate student progress report
+  // ============================================================
+  // PDF GENERATION — all routes match pdfController route names
+  // ============================================================
+
+  /**
+   * Download student progress report.
+   * Route: GET /pdf/student/:studentId/progress-report
+   */
   async generateStudentProgressReport(studentId, options = {}) {
     try {
-      const queryString = this.buildQueryString(options);
-      const url = `/pdf/student/${studentId}/progress-report${queryString ? `?${queryString}` : ''}`;
-      
+      const url = `/pdf/student/${studentId}/progress-report${this.buildQueryString(options)}`;
       const response = await api.get(url, { responseType: 'blob' });
-      const filename = `student-progress-report-${studentId}-${new Date().toISOString().split('T')[0]}.pdf`;
-      
+
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `student-progress-report-${studentId}-${dateStr}.pdf`;
       this.downloadBlob(response.data, filename);
+
       return { success: true, message: 'Report downloaded successfully' };
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Failed to generate progress report';
-      throw new Error(errorMessage);
+      throw new Error(await this._parseBlobError(error));
     }
   }
 
-  // Generate exam mark sheet
+  /**
+   * Download exam mark sheet.
+   * Route: GET /pdf/class/:classRoomId/exam-marksheet
+   */
   async generateExamMarkSheet(classRoomId, options = {}) {
     try {
-      const queryString = this.buildQueryString(options);
-      const url = `/pdf/class/${classRoomId}/exam-marksheet${queryString ? `?${queryString}` : ''}`;
-      
+      const url = `/pdf/class/${classRoomId}/exam-marksheet${this.buildQueryString(options)}`;
       const response = await api.get(url, { responseType: 'blob' });
-      const filename = `exam-marksheet-${options.examName?.replace(/\s+/g, '-') || 'exam'}-${new Date().toISOString().split('T')[0]}.pdf`;
-      
+
+      const examLabel = options.examName?.replace(/\s+/g, '-') || 'exam';
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `exam-marksheet-${examLabel}-${dateStr}.pdf`;
       this.downloadBlob(response.data, filename);
+
       return { success: true, message: 'Mark sheet downloaded successfully' };
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Failed to generate mark sheet';
-      throw new Error(errorMessage);
+      throw new Error(await this._parseBlobError(error));
     }
   }
 
-  // Generate attendance sheet
+  /**
+   * Download attendance sheet.
+   * Route: GET /pdf/class/:classRoomId/attendance-sheet
+   */
   async generateAttendanceSheet(classRoomId, options = {}) {
     try {
-      const queryString = this.buildQueryString(options);
-      const url = `/pdf/class/${classRoomId}/attendance-sheet${queryString ? `?${queryString}` : ''}`;
-      
+      const url = `/pdf/class/${classRoomId}/attendance-sheet${this.buildQueryString(options)}`;
       const response = await api.get(url, { responseType: 'blob' });
+
       const dateStr = options.date || new Date().toISOString().split('T')[0];
       const filename = `attendance-sheet-${dateStr}.pdf`;
-      
       this.downloadBlob(response.data, filename);
+
       return { success: true, message: 'Attendance sheet downloaded successfully' };
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Failed to generate attendance sheet';
-      throw new Error(errorMessage);
+      throw new Error(await this._parseBlobError(error));
     }
   }
 
-  // Generate custom PDF
+  /**
+   * Download custom PDF.
+   * Route: POST /pdf/custom
+   * Body: { title, subtitle, content[], tables[], theme, orientation, ... }
+   */
   async generateCustomPDF(pdfData) {
     try {
-      if (!pdfData.title) {
+      if (!pdfData?.title) {
         throw new Error('Title is required for custom PDF');
       }
 
       const response = await api.post('/pdf/custom', pdfData, { responseType: 'blob' });
-      const filename = `${pdfData.title.replace(/\s+/g, '-').toLowerCase()}-${new Date().toISOString().split('T')[0]}.pdf`;
-      
+
+      const titleSlug = pdfData.title.replace(/\s+/g, '-').toLowerCase();
+      const dateStr = new Date().toISOString().split('T')[0];
+      const filename = `${titleSlug}-${dateStr}.pdf`;
       this.downloadBlob(response.data, filename);
+
       return { success: true, message: 'Custom PDF downloaded successfully' };
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Failed to generate custom PDF';
-      throw new Error(errorMessage);
+      // If it's the validation error we threw above, rethrow directly
+      if (error.message === 'Title is required for custom PDF') throw error;
+      throw new Error(await this._parseBlobError(error));
     }
   }
 
-  // Get blob for preview
+  /**
+   * Return the raw Blob for in-browser preview (opens in new tab).
+   * Route: GET /pdf/student/:studentId/progress-report
+   */
   async getStudentProgressReportBlob(studentId, options = {}) {
     try {
-      const queryString = this.buildQueryString(options);
-      const url = `/pdf/student/${studentId}/progress-report${queryString ? `?${queryString}` : ''}`;
-      
+      const url = `/pdf/student/${studentId}/progress-report${this.buildQueryString(options)}`;
       const response = await api.get(url, { responseType: 'blob' });
-      return response.data;
+      return response.data; // Blob — caller passes to previewPDF()
     } catch (error) {
-      const errorMessage = error.response?.data?.error || 'Failed to get progress report';
-      throw new Error(errorMessage);
+      throw new Error(await this._parseBlobError(error));
     }
   }
 }
 
-// Export singleton instance
+// Singleton
 export default new PDFService();

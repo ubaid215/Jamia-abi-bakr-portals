@@ -1,8 +1,8 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
-import { 
-  Search, Filter, Mail, Phone, MapPin, BookOpen, Clock, 
-  GraduationCap, User, MoreVertical, Eye, Edit, 
+import {
+  Search, Filter, Mail, Phone, MapPin, BookOpen, Clock,
+  GraduationCap, User, MoreVertical, Eye, Edit,
   UserCheck, UserX, Trash2, School, TrendingUp, X
 } from 'lucide-react';
 import { useAdmin } from '../../contexts/AdminContext';
@@ -21,6 +21,10 @@ const TeacherLists = () => {
   const [updatingStatus, setUpdatingStatus] = useState(false);
   const [teachersToUpdate, setTeachersToUpdate] = useState([]);
 
+  // Pagination State
+  const [currentPage, setCurrentPage] = useState(1);
+  const itemsPerPage = 12;
+
   const API_BASE_URL = import.meta.env.VITE_API_URL || 'http://localhost:5000/api';
 
   useEffect(() => {
@@ -30,34 +34,32 @@ const TeacherLists = () => {
   // ============================================
   // Helper Functions
   // ============================================
-  
-  const getTeacherName = (teacher) => 
+
+  const getTeacherName = (teacher) =>
     teacher.user?.name || teacher.name || 'Unknown Teacher';
 
-  const getTeacherEmail = (teacher) => 
+  const getTeacherEmail = (teacher) =>
     teacher.user?.email || teacher.email || 'No email';
 
-  const getTeacherStatus = (teacher) => 
+  const getTeacherStatus = (teacher) =>
     teacher.user?.status || teacher.status || 'UNKNOWN';
 
-  const getTeacherPhone = (teacher) => 
+  const getTeacherPhone = (teacher) =>
     teacher.user?.phone || teacher.phone || '';
 
-  const getTeacherProfileImage = (teacher) => 
+  const getTeacherProfileImage = (teacher) =>
     teacher.user?.profileImage || teacher.profileImage || null;
 
-  const getTeacherUserId = (teacher) => 
+  const getTeacherUserId = (teacher) =>
     teacher.user?.id || teacher.userId || teacher.id;
 
-  const getTeacherProfileId = (teacher) => 
-    teacher.id || teacher.teacherProfile?.id;
 
   // Generate profile image URL - Using PUBLIC endpoint
   const getProfileImageUrl = useCallback((teacher) => {
     try {
       const userId = getTeacherUserId(teacher);
       const profileImage = getTeacherProfileImage(teacher);
-      
+
       if (!profileImage) return null;
 
       if (profileImage.startsWith('http') || profileImage.startsWith('data:')) {
@@ -75,11 +77,11 @@ const TeacherLists = () => {
   // ============================================
   // Teacher Selection Handlers
   // ============================================
-  
+
   const toggleTeacherSelection = (teacher) => {
     setSelectedTeachers(prev => {
       const isSelected = prev.some(t => getTeacherUserId(t) === getTeacherUserId(teacher));
-      return isSelected 
+      return isSelected
         ? prev.filter(t => getTeacherUserId(t) !== getTeacherUserId(teacher))
         : [...prev, teacher];
     });
@@ -87,19 +89,19 @@ const TeacherLists = () => {
 
   const selectAllTeachers = () => {
     setSelectedTeachers(
-      selectedTeachers.length === filteredTeachers.length 
-        ? [] 
+      selectedTeachers.length === filteredTeachers.length
+        ? []
         : [...filteredTeachers]
     );
   };
 
-  const isTeacherSelected = (teacher) => 
+  const isTeacherSelected = (teacher) =>
     selectedTeachers.some(t => getTeacherUserId(t) === getTeacherUserId(teacher));
 
   // ============================================
   // Dropdown Menu Handlers
   // ============================================
-  
+
   const toggleDropdown = (teacherId) => {
     setDropdownOpen(dropdownOpen === teacherId ? null : teacherId);
   };
@@ -124,7 +126,7 @@ const TeacherLists = () => {
   // ============================================
   // Delete Functions
   // ============================================
-  
+
   const deleteTeacher = async (teacherId) => {
     if (!window.confirm('Are you sure you want to delete this teacher? This action cannot be undone and will delete all teacher data including attendance, progress, and documents.')) {
       return;
@@ -138,15 +140,15 @@ const TeacherLists = () => {
           headers: { Authorization: `Bearer ${token}` }
         }
       );
-      
+
       toast.success(response.data.message || 'Teacher deleted successfully');
-      
+
       // Remove from selected teachers if present
       setSelectedTeachers(prev => prev.filter(t => getTeacherUserId(t) !== teacherId));
-      
+
       // Refresh the teacher list
       fetchTeachers();
-      
+
     } catch (error) {
       console.error('Error deleting teacher:', error);
       toast.error(error.response?.data?.error || 'Failed to delete teacher');
@@ -160,7 +162,7 @@ const TeacherLists = () => {
     }
 
     const teacherNames = selectedTeachers.map(t => getTeacherName(t)).join(', ');
-    
+
     if (!window.confirm(`Are you sure you want to delete ${selectedTeachers.length} teacher(s)?\n\nSelected teachers: ${teacherNames}\n\nThis action cannot be undone and will delete all teacher data.`)) {
       return;
     }
@@ -186,14 +188,14 @@ const TeacherLists = () => {
       .then(results => {
         const successful = results.filter(r => r.status === 'fulfilled').length;
         const failed = results.filter(r => r.status === 'rejected').length;
-        
+
         if (successful > 0) {
           toast.success(`Successfully deleted ${successful} teacher(s)`);
         }
         if (failed > 0) {
           toast.error(`Failed to delete ${failed} teacher(s)`);
         }
-        
+
         // Clear selection and refresh list
         setSelectedTeachers([]);
         fetchTeachers();
@@ -207,7 +209,7 @@ const TeacherLists = () => {
   // ============================================
   // Status Update Functions
   // ============================================
-  
+
   const handleStatusUpdate = async () => {
     if (!selectedStatus) {
       toast.error('Please select a status');
@@ -222,10 +224,10 @@ const TeacherLists = () => {
     try {
       setUpdatingStatus(true);
       const token = localStorage.getItem('authToken');
-      
+
       const promises = teachersToUpdate.map(async (teacher) => {
         const teacherId = getTeacherUserId(teacher);
-        
+
         return axios.put(
           `${API_BASE_URL}/admin/teachers/${teacherId}/status`,
           { status: selectedStatus },
@@ -236,7 +238,7 @@ const TeacherLists = () => {
       });
 
       await Promise.all(promises);
-      
+
       toast.success(`Updated status to ${selectedStatus} for ${teachersToUpdate.length} teacher(s)`);
       setShowStatusModal(false);
       setSelectedStatus('');
@@ -253,29 +255,40 @@ const TeacherLists = () => {
   // ============================================
   // Filtering Logic
   // ============================================
-  
-  const filteredTeachers = Array.isArray(teachers) 
+
+  const filteredTeachers = Array.isArray(teachers)
     ? teachers.filter(teacher => {
-        const teacherName = getTeacherName(teacher).toLowerCase();
-        const teacherEmail = getTeacherEmail(teacher).toLowerCase();
-        const specialization = (teacher.specialization || '').toLowerCase();
-        const teacherStatus = getTeacherStatus(teacher);
+      const teacherName = getTeacherName(teacher).toLowerCase();
+      const teacherEmail = getTeacherEmail(teacher).toLowerCase();
+      const specialization = (teacher.specialization || '').toLowerCase();
+      const teacherStatus = getTeacherStatus(teacher);
 
-        const matchesSearch = 
-          teacherName.includes(searchTerm.toLowerCase()) ||
-          teacherEmail.includes(searchTerm.toLowerCase()) ||
-          specialization.includes(searchTerm.toLowerCase());
+      const matchesSearch =
+        teacherName.includes(searchTerm.toLowerCase()) ||
+        teacherEmail.includes(searchTerm.toLowerCase()) ||
+        specialization.includes(searchTerm.toLowerCase());
 
-        const matchesStatus = statusFilter === 'ALL' || teacherStatus === statusFilter;
+      const matchesStatus = statusFilter === 'ALL' || teacherStatus === statusFilter;
 
-        return matchesSearch && matchesStatus;
-      })
+      return matchesSearch && matchesStatus;
+    })
     : [];
+
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter]);
+
+  // Pagination Logic
+  const totalPages = Math.ceil(filteredTeachers.length / itemsPerPage);
+  const paginatedTeachers = filteredTeachers.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
 
   // ============================================
   // Style Helpers
   // ============================================
-  
+
   const getStatusColor = (status) => {
     const colors = {
       ACTIVE: 'bg-green-100 text-green-800',
@@ -288,12 +301,12 @@ const TeacherLists = () => {
   // ============================================
   // Event Handlers
   // ============================================
-  
+
   const handleTeacherClick = (teacher, e) => {
-    if (e.target.type === 'checkbox' || 
-        e.target.closest('.selection-checkbox') || 
-        e.target.closest('button') ||
-        e.target.closest('.dropdown-menu')) {
+    if (e.target.type === 'checkbox' ||
+      e.target.closest('.selection-checkbox') ||
+      e.target.closest('button') ||
+      e.target.closest('.dropdown-menu')) {
       return;
     }
     const teacherId = getTeacherUserId(teacher);
@@ -303,7 +316,7 @@ const TeacherLists = () => {
   // ============================================
   // Render
   // ============================================
-  
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -369,7 +382,7 @@ const TeacherLists = () => {
                     {selectedTeachers.length === filteredTeachers.length ? 'Deselect All' : 'Select All'}
                   </span>
                 </button>
-                
+
                 {/* Bulk Actions for Selected Teachers */}
                 {selectedTeachers.length > 0 && (
                   <div className="flex items-center gap-2">
@@ -408,7 +421,7 @@ const TeacherLists = () => {
                   </div>
                 )}
               </div>
-              
+
               {selectedTeachers.length > 0 && (
                 <div className="flex items-center gap-2">
                   <span className="text-sm font-medium text-gray-600">
@@ -436,7 +449,7 @@ const TeacherLists = () => {
         ) : filteredTeachers.length === 0 ? (
           <EmptyState teachersCount={teachers.length} />
         ) : (
-          filteredTeachers.map((teacher) => (
+          paginatedTeachers.map((teacher) => (
             <TeacherCard
               key={getTeacherUserId(teacher)}
               teacher={teacher}
@@ -457,6 +470,64 @@ const TeacherLists = () => {
           ))
         )}
       </div>
+
+      {/* Pagination Controls */}
+      {totalPages > 1 && (
+        <div className="flex items-center justify-center gap-2 mt-8">
+          <button
+            onClick={() => setCurrentPage(p => Math.max(1, p - 1))}
+            disabled={currentPage === 1}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${currentPage === 1
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm'
+              }`}
+          >
+            Previous
+          </button>
+
+          <div className="flex items-center gap-1">
+            {Array.from({ length: totalPages }).map((_, idx) => {
+              const page = idx + 1;
+              // Show limited pages (first, last, and around current)
+              if (
+                page === 1 ||
+                page === totalPages ||
+                (page >= currentPage - 1 && page <= currentPage + 1)
+              ) {
+                return (
+                  <button
+                    key={page}
+                    onClick={() => setCurrentPage(page)}
+                    className={`w-10 h-10 rounded-lg text-sm font-medium transition-colors ${currentPage === page
+                      ? 'bg-[#F59E0B] text-white shadow-md'
+                      : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300'
+                      }`}
+                  >
+                    {page}
+                  </button>
+                );
+              } else if (
+                page === currentPage - 2 ||
+                page === currentPage + 2
+              ) {
+                return <span key={page} className="px-1 text-gray-400">...</span>;
+              }
+              return null;
+            })}
+          </div>
+
+          <button
+            onClick={() => setCurrentPage(p => Math.min(totalPages, p + 1))}
+            disabled={currentPage === totalPages}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${currentPage === totalPages
+              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
+              : 'bg-white text-gray-700 hover:bg-gray-50 border border-gray-300 shadow-sm'
+              }`}
+          >
+            Next
+          </button>
+        </div>
+      )}
 
       {/* Selection Summary */}
       {selectedTeachers.length > 0 && (
@@ -525,7 +596,7 @@ const TeacherLists = () => {
                 <X className="h-5 w-5" />
               </button>
             </div>
-            
+
             <div className="space-y-4">
               <div>
                 <label className="block text-sm font-medium text-gray-700 mb-2">
@@ -621,19 +692,19 @@ const EmptyState = ({ teachersCount }) => (
       {teachersCount === 0 ? 'No teachers enrolled yet' : 'No teachers found'}
     </h3>
     <p className="text-gray-500 text-sm">
-      {teachersCount === 0 
-        ? 'Use the enrollment page to register new teachers' 
+      {teachersCount === 0
+        ? 'Use the enrollment page to register new teachers'
         : 'Try adjusting your search criteria'
       }
     </p>
   </div>
 );
 
-const TeacherCard = ({ 
-  teacher, 
-  teacherName, 
-  teacherEmail, 
-  teacherStatus, 
+const TeacherCard = ({
+  teacher,
+  teacherName,
+  teacherEmail,
+  teacherStatus,
   teacherPhone,
   profileImageUrl,
   selected,
@@ -642,8 +713,8 @@ const TeacherCard = ({
   onUpdateStatus,
   onDelete,
   onToggleSelection,
-  onClick, 
-  getStatusColor 
+  onClick,
+  getStatusColor
 }) => {
   const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
@@ -663,17 +734,16 @@ const TeacherCard = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl relative ${
-        selected 
-          ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white' 
-          : 'border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50'
-      }`}
+      className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl relative ${selected
+        ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white'
+        : 'border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50'
+        }`}
     >
       {/* Teacher Header */}
       <div className="flex items-start justify-between mb-4">
         <div className="flex items-center gap-3 flex-1 min-w-0">
           {/* Selection Checkbox */}
-          <div 
+          <div
             className="selection-checkbox"
             onClick={(e) => {
               e.stopPropagation();
@@ -683,11 +753,11 @@ const TeacherCard = ({
             <input
               type="checkbox"
               checked={selected}
-              onChange={() => {}}
+              onChange={() => { }}
               className="w-5 h-5 text-[#F59E0B] border-gray-300 rounded focus:ring-[#F59E0B] cursor-pointer hover:border-[#F59E0B] transition-colors"
             />
           </div>
-          
+
           {/* Profile Image */}
           <div className="relative flex-shrink-0">
             {profileImageUrl && !imgError ? (
@@ -695,12 +765,12 @@ const TeacherCard = ({
                 {!imgLoaded && (
                   <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-200 rounded-full animate-pulse" />
                 )}
-                <img 
-                  src={profileImageUrl} 
+                <img
+                  src={profileImageUrl}
                   alt={teacherName}
-                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-white shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:border-[#F59E0B] ${
-                    imgLoaded ? 'block' : 'hidden'
-                  }`}
+                  loading="lazy"
+                  className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-white shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:border-[#F59E0B] ${imgLoaded ? 'block' : 'hidden'
+                    }`}
                   onLoad={() => setImgLoaded(true)}
                   onError={() => setImgError(true)}
                 />
@@ -732,7 +802,7 @@ const TeacherCard = ({
           <span className={`shrink-0 px-2 py-1 rounded-full text-xs font-medium ${getStatusColor(teacherStatus)}`}>
             {teacherStatus}
           </span>
-          
+
           {/* Three-dot dropdown menu */}
           <div className="relative">
             <button
@@ -744,9 +814,9 @@ const TeacherCard = ({
             >
               <MoreVertical className="h-5 w-5 text-gray-400 hover:text-gray-600" />
             </button>
-            
+
             {dropdownOpen && (
-              <div 
+              <div
                 className="dropdown-menu absolute right-0 top-8 mt-1 w-48 bg-white rounded-lg shadow-lg border border-gray-200 z-10"
                 onClick={(e) => e.stopPropagation()}
               >
@@ -896,7 +966,7 @@ const TeacherCard = ({
 
       {/* View Details CTA */}
       <div className="mt-4 pt-3 border-t border-gray-100">
-        <button 
+        <button
           onClick={(e) => {
             e.stopPropagation();
             onClick(e);

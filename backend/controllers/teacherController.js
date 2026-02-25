@@ -109,6 +109,7 @@ class TeacherController {
           email: teacher.user.email,
           profileImage: teacher.user.profileImage,
           specialization: teacher.specialization,
+          userId: teacher.userId,
           experience: teacher.experience
         },
         summary: {

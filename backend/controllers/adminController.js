@@ -1,7 +1,4 @@
 // controllers/adminController.js
-// Facade controller that re-exports methods from domain-specific controllers
-// This ensures backward compatibility with existing routes while codebase is refactored
-
 const userController = require('./admin/userController');
 const teacherController = require('./admin/teacherController');
 const studentController = require('./admin/studentController');
@@ -25,6 +22,7 @@ module.exports = {
     // Student Management
     getAllStudents: studentController.getAllStudents,
     updateStudent: studentController.updateStudent,
+    updateStudentAcademicInfo: studentController.updateStudentAcademicInfo,
     getStudentDetails: studentController.getStudentDetails,
     deleteStudent: studentController.deleteStudent,
 
@@ -41,6 +39,7 @@ module.exports = {
     getSystemStats: statsController.getSystemStats,
     getAttendanceOverview: statsController.getAttendanceOverview,
     getAttendanceTrends: statsController.getAttendanceTrends,
+    getStudentsAtRisk: statsController.getStudentsAtRisk,
     getClassAttendanceComparison: statsController.getClassAttendanceComparison,
     manageLeaveRequests: statsController.manageLeaveRequests,
     updateLeaveRequest: statsController.updateLeaveRequest,

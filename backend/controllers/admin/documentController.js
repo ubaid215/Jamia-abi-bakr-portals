@@ -111,17 +111,20 @@ async function serveTeacherDocument(req, res) {
 }
 
 // Serve student documents
+// In documentController.js - Update serveStudentDocument
 async function serveStudentDocument(req, res) {
     try {
         const { studentId, type } = req.params;
-        const { index } = req.query;
+        const { index, preview } = req.query;
 
         const student = await prisma.student.findUnique({
             where: { id: studentId },
             include: { user: { select: { name: true, email: true } } },
         });
 
-        if (!student) return res.status(404).json({ error: 'Student not found' });
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
 
         let documentPath;
         let fileName;
@@ -150,25 +153,58 @@ async function serveStudentDocument(req, res) {
                 break;
             }
             default:
-                return res.status(400).json({ error: 'Invalid document type', validTypes: ['birth-certificate', 'cnic-bform', 'previous-school', 'other'] });
+                return res.status(400).json({ error: 'Invalid document type' });
         }
 
-        if (!documentPath) return res.status(404).json({ error: 'Document not found' });
+        if (!documentPath) {
+            return res.status(404).json({ error: 'Document not found' });
+        }
 
         const filePath = path.join(__dirname, '../..', documentPath);
-        if (!fs.existsSync(filePath)) return res.status(404).json({ error: 'Document file not found on server' });
+        
+        if (!fs.existsSync(filePath)) {
+            return res.status(404).json({ error: 'Document file not found on server' });
+        }
 
         const ext = path.extname(filePath).toLowerCase();
         const contentType = {
-            '.pdf': 'application/pdf', '.doc': 'application/msword',
+            '.pdf': 'application/pdf',
+            '.doc': 'application/msword',
             '.docx': 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
-            '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.png': 'image/png',
-            '.gif': 'image/gif', '.webp': 'image/webp',
+            '.jpg': 'image/jpeg',
+            '.jpeg': 'image/jpeg',
+            '.png': 'image/png',
+            '.gif': 'image/gif',
+            '.webp': 'image/webp',
         }[ext] || 'application/octet-stream';
 
+        // Set headers
         res.setHeader('Content-Type', contentType);
-        res.setHeader('Content-Disposition', `attachment; filename="${fileName || path.basename(filePath)}"`);
-        res.sendFile(filePath);
+        res.setHeader('Cross-Origin-Resource-Policy', 'cross-origin');
+        res.setHeader('Access-Control-Allow-Origin', '*');
+        
+        // If preview=true, show inline, otherwise download
+        if (preview === 'true' || preview === '1') {
+            // Preview mode - show in browser
+            res.setHeader('Content-Disposition', `inline; filename="${fileName || path.basename(filePath)}"`);
+        } else {
+            // Download mode
+            res.setHeader('Content-Disposition', `attachment; filename="${fileName || path.basename(filePath)}"`);
+        }
+
+        // Stream the file
+        const stat = fs.statSync(filePath);
+        res.setHeader('Content-Length', stat.size);
+        
+        const fileStream = fs.createReadStream(filePath);
+        fileStream.pipe(res);
+        
+        fileStream.on('error', (error) => {
+            logger.error({ err: error }, 'Error streaming document');
+            if (!res.headersSent) {
+                res.status(500).json({ error: 'Error streaming file' });
+            }
+        });
     } catch (error) {
         logger.error({ err: error }, 'Error serving student document');
         res.status(500).json({ error: 'Internal server error' });
@@ -339,11 +375,12 @@ async function uploadTeacherDocument(req, res) {
         const { type } = req.body;
 
         if (!req.file) return res.status(400).json({ error: 'No document file uploaded' });
-        if (!type || !['cnic-front', 'cnic-back', 'qualification', 'experience', 'other'].includes(type)) {
+        if (!type || !['cnic-front', 'cnic-back', 'degree', 'other'].includes(type)) {
+            if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             return res.status(400).json({ error: 'Valid document type is required' });
         }
 
-        const teacher = await prisma.teacher.findUnique({ where: { id } });
+        const teacher = await prisma.teacher.findFirst({ where: { OR: [{ id }, { userId: id }] } });
         if (!teacher) {
             if (req.file.path && fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
             return res.status(404).json({ error: 'Teacher not found' });
@@ -357,21 +394,17 @@ async function uploadTeacherDocument(req, res) {
         } else if (type === 'cnic-back') {
             if (teacher.cnicBack && fs.existsSync(teacher.cnicBack)) fs.unlinkSync(teacher.cnicBack);
             updateData = { cnicBack: req.file.path };
-        } else if (type === 'qualification') {
-            const existingDocs = teacher.qualificationCertificates ? JSON.parse(teacher.qualificationCertificates) : [];
+        } else if (type === 'degree') {
+            const existingDocs = teacher.degreeDocuments ? JSON.parse(teacher.degreeDocuments) : [];
             existingDocs.push(req.file.path);
-            updateData = { qualificationCertificates: JSON.stringify(existingDocs) };
-        } else if (type === 'experience') {
-            const existingDocs = teacher.experienceCertificates ? JSON.parse(teacher.experienceCertificates) : [];
-            existingDocs.push(req.file.path);
-            updateData = { experienceCertificates: JSON.stringify(existingDocs) };
+            updateData = { degreeDocuments: JSON.stringify(existingDocs) };
         } else if (type === 'other') {
             const existingDocs = teacher.otherDocuments ? JSON.parse(teacher.otherDocuments) : [];
             existingDocs.push(req.file.path);
             updateData = { otherDocuments: JSON.stringify(existingDocs) };
         }
 
-        await prisma.teacher.update({ where: { id }, data: updateData });
+        await prisma.teacher.update({ where: { id: teacher.id }, data: updateData });
 
         res.json({
             message: `${type.replace('-', ' ')} uploaded successfully`,
@@ -444,11 +477,26 @@ async function getTeacherWithDocuments(req, res) {
     try {
         const { id } = req.params;
 
-        const teacher = await prisma.teacher.findUnique({
-            where: { id },
+        const teacher = await prisma.teacher.findFirst({
+            where: { OR: [{ id }, { userId: id }] },
             include: {
                 user: {
-                    select: { id: true, name: true, email: true, phone: true, profileImage: true, status: true, createdAt: true },
+                    select: {
+                        id: true, name: true, email: true, phone: true,
+                        profileImage: true, status: true, createdAt: true
+                    },
+                },
+                classes: {
+                    include: {
+                        _count: {
+                            select: { enrollments: { where: { isCurrent: true } } },
+                        },
+                    },
+                },
+                subjects: {
+                    include: {
+                        classRoom: { select: { name: true } },
+                    },
                 },
             },
         });
@@ -479,11 +527,36 @@ async function getTeacherWithDocuments(req, res) {
 
         res.json({
             teacher: teacher.user,
+            teacherRecordId: teacher.id,
             profile: {
-                bio: teacher.bio, specialization: teacher.specialization,
-                qualification: teacher.qualification, cnic: teacher.cnic,
-                experience: teacher.experience, joiningDate: teacher.joiningDate,
-                salary: teacher.salary, employmentType: teacher.employmentType,
+                // Professional
+                bio: teacher.bio,
+                specialization: teacher.specialization,
+                qualification: teacher.qualification,
+                cnic: teacher.cnic,
+                experience: teacher.experience,
+                joiningDate: teacher.joiningDate,
+                salary: teacher.salary,
+                employmentType: teacher.employmentType,
+                // Personal — these were missing
+                dateOfBirth: teacher.dateOfBirth,
+                gender: teacher.gender,
+                phoneSecondary: teacher.phoneSecondary,
+                address: teacher.address,
+                bloodGroup: teacher.bloodGroup,
+                medicalConditions: teacher.medicalConditions,
+                // Emergency contact — these were missing
+                emergencyContactName: teacher.emergencyContactName,
+                emergencyContactPhone: teacher.emergencyContactPhone,
+                emergencyContactRelation: teacher.emergencyContactRelation,
+                // Bank details — these were missing
+                bankName: teacher.bankName,
+                accountNumber: teacher.accountNumber,
+                iban: teacher.iban,
+            },
+            assignments: {
+                classes: teacher.classes,
+                subjects: teacher.subjects,
             },
             documents,
             urls: documentUrls,
@@ -537,6 +610,7 @@ async function getStudentWithDocuments(req, res) {
 
         res.json({
             student: student.user,
+            studentRecordId: student.id,
             profile: {
                 admissionNo: student.admissionNo, dateOfBirth: student.dob,
                 gender: student.gender, guardianName: student.guardianName,

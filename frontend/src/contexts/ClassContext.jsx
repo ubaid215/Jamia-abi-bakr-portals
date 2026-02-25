@@ -4,7 +4,6 @@ import { toast } from 'react-hot-toast';
 
 const ClassContext = createContext();
 
-// Action types
 const ACTION_TYPES = {
   SET_LOADING: 'SET_LOADING',
   SET_CLASSES: 'SET_CLASSES',
@@ -19,7 +18,6 @@ const ACTION_TYPES = {
   UPDATE_CLASS_STUDENTS: 'UPDATE_CLASS_STUDENTS'
 };
 
-// Initial state
 const initialState = {
   classes: [],
   classDetail: null,
@@ -29,33 +27,22 @@ const initialState = {
   error: null
 };
 
-// Reducer
 const classReducer = (state, action) => {
   switch (action.type) {
     case ACTION_TYPES.SET_LOADING:
       return { ...state, loading: action.payload };
-    
     case ACTION_TYPES.SET_CLASSES:
       return { ...state, classes: action.payload };
-    
     case ACTION_TYPES.SET_CLASS_DETAIL:
       return { ...state, classDetail: action.payload };
-    
     case ACTION_TYPES.SET_CLASS_STUDENTS:
       return { ...state, classStudents: action.payload };
-    
     case ACTION_TYPES.SET_CLASS_SUBJECTS:
       return { ...state, classSubjects: action.payload };
-    
     case ACTION_TYPES.SET_ERROR:
       return { ...state, error: action.payload, loading: false };
-    
     case ACTION_TYPES.ADD_CLASS:
-      return {
-        ...state,
-        classes: [...state.classes, action.payload]
-      };
-    
+      return { ...state, classes: [...state.classes, action.payload] };
     case ACTION_TYPES.UPDATE_CLASS:
       return {
         ...state,
@@ -64,18 +51,13 @@ const classReducer = (state, action) => {
         ),
         classDetail: state.classDetail?.id === action.payload.id ? action.payload : state.classDetail
       };
-    
     case ACTION_TYPES.DELETE_CLASS:
-      return {
-        ...state,
-        classes: state.classes.filter(cls => cls.id !== action.payload)
-      };
-    
+      return { ...state, classes: state.classes.filter(cls => cls.id !== action.payload) };
     case ACTION_TYPES.ASSIGN_TEACHER:
       return {
         ...state,
         classes: state.classes.map(cls =>
-          cls.id === action.payload.classId 
+          cls.id === action.payload.classId
             ? { ...cls, teacherId: action.payload.teacherId }
             : cls
         ),
@@ -83,13 +65,8 @@ const classReducer = (state, action) => {
           ? { ...state.classDetail, teacherId: action.payload.teacherId }
           : state.classDetail
       };
-    
     case ACTION_TYPES.UPDATE_CLASS_STUDENTS:
-      return {
-        ...state,
-        classStudents: action.payload
-      };
-    
+      return { ...state, classStudents: action.payload };
     default:
       return state;
   }
@@ -98,19 +75,14 @@ const classReducer = (state, action) => {
 export const ClassProvider = ({ children }) => {
   const [state, dispatch] = useReducer(classReducer, initialState);
 
-  const setLoading = (loading) => {
-    dispatch({ type: ACTION_TYPES.SET_LOADING, payload: loading });
-  };
+  const setLoading = (loading) => dispatch({ type: ACTION_TYPES.SET_LOADING, payload: loading });
+  const setError = (error) => dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
 
-  const setError = (error) => {
-    dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
-  };
-
-  // Fetch all classes
+  // ✅ FIXED: pass limit=100 so all classes load, not just the default 10
   const fetchClasses = useCallback(async () => {
     setLoading(true);
     try {
-      const response = await classService.getClasses();
+      const response = await classService.getClasses({ limit: 100 });
       dispatch({ type: ACTION_TYPES.SET_CLASSES, payload: response.classes || [] });
       return response;
     } catch (error) {
@@ -123,7 +95,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Fetch class by ID
   const fetchClassById = useCallback(async (id) => {
     setLoading(true);
     try {
@@ -140,7 +111,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Create new class
   const createClass = useCallback(async (classData) => {
     setLoading(true);
     try {
@@ -158,7 +128,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Update class
   const updateClass = useCallback(async (id, classData) => {
     setLoading(true);
     try {
@@ -176,7 +145,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Delete class
   const deleteClass = useCallback(async (id) => {
     setLoading(true);
     try {
@@ -194,21 +162,14 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Assign teacher to class
   const assignTeacherToClass = useCallback(async (classId, teacherId) => {
     setLoading(true);
     try {
       const result = await classService.assignTeacher(classId, teacherId);
-      
-      dispatch({ 
-        type: ACTION_TYPES.ASSIGN_TEACHER, 
-        payload: { 
-          classId, 
-          teacherId, 
-          result: result.class || result 
-        } 
+      dispatch({
+        type: ACTION_TYPES.ASSIGN_TEACHER,
+        payload: { classId, teacherId, result: result.class || result }
       });
-      
       toast.success('Teacher assigned to class successfully');
       return result;
     } catch (error) {
@@ -221,7 +182,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Fetch class students
   const fetchClassStudents = useCallback(async (classId) => {
     setLoading(true);
     try {
@@ -238,7 +198,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // Fetch class subjects
   const fetchClassSubjects = useCallback(async (classId) => {
     setLoading(true);
     try {
@@ -255,7 +214,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // NEW: Generate roll number for a class
   const generateRollNumber = useCallback(async (classId) => {
     setLoading(true);
     try {
@@ -272,7 +230,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // NEW: Get next available roll number for a class
   const getNextRollNumber = useCallback(async (classId) => {
     setLoading(true);
     try {
@@ -287,7 +244,6 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // NEW: Generate multiple roll numbers for bulk operations
   const generateMultipleRollNumbers = useCallback(async (classId, count = 1) => {
     setLoading(true);
     try {
@@ -304,18 +260,14 @@ export const ClassProvider = ({ children }) => {
     }
   }, []);
 
-  // NEW: Assign class to student with auto-generated roll number
   const assignClassToStudent = useCallback(async (studentId, classId, enrollmentData = {}) => {
     setLoading(true);
     try {
       const response = await classService.assignClassToStudent(studentId, classId, enrollmentData);
       toast.success('Student assigned to class successfully');
-      
-      // Refresh class students if we're viewing this class
       if (state.classDetail?.id === classId) {
         fetchClassStudents(classId);
       }
-      
       return response;
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Failed to assign student to class';
@@ -327,22 +279,14 @@ export const ClassProvider = ({ children }) => {
     }
   }, [state.classDetail, fetchClassStudents]);
 
-  // NEW: Bulk assign class to multiple students
   const bulkAssignClassToStudents = useCallback(async (studentIds, classId, enrollmentData = {}) => {
     setLoading(true);
     try {
-      const response = await classService.bulkAssignClassToStudents(
-        studentIds, 
-        classId, 
-        enrollmentData
-      );
+      const response = await classService.bulkAssignClassToStudents(studentIds, classId, enrollmentData);
       toast.success(`Successfully enrolled ${studentIds.length} student(s)`);
-      
-      // Refresh class students if we're viewing this class
       if (state.classDetail?.id === classId) {
         fetchClassStudents(classId);
       }
-      
       return response;
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Failed to assign students to class';
@@ -354,20 +298,13 @@ export const ClassProvider = ({ children }) => {
     }
   }, [state.classDetail, fetchClassStudents]);
 
-  // NEW: Remove student from class
-  const removeStudentFromClass = useCallback(async (enrollmentId, classId) => {
+  const removeStudentFromClass = useCallback(async (enrollmentId) => {
     setLoading(true);
     try {
-      // This endpoint needs to be implemented in your backend
       const response = await classService.removeStudentFromClass(enrollmentId);
       toast.success('Student removed from class successfully');
-      
-      // Update local state
-      const updatedStudents = state.classStudents.filter(
-        student => student.id !== enrollmentId
-      );
+      const updatedStudents = state.classStudents.filter(s => s.id !== enrollmentId);
       dispatch({ type: ACTION_TYPES.UPDATE_CLASS_STUDENTS, payload: updatedStudents });
-      
       return response;
     } catch (error) {
       const errorMessage = error.response?.data?.error || 'Failed to remove student from class';
@@ -379,17 +316,13 @@ export const ClassProvider = ({ children }) => {
     }
   }, [state.classStudents]);
 
-  // NEW: Transfer student to another class
   const transferStudentToClass = useCallback(async (studentId, fromClassId, toClassId, enrollmentData = {}) => {
     setLoading(true);
     try {
-      // First remove from old class (this should be done in backend in a transaction)
-      // For now, we'll assign to new class and the backend should handle the transfer
       const response = await assignClassToStudent(studentId, toClassId, {
         ...enrollmentData,
         transferFromClassId: fromClassId
       });
-      
       toast.success('Student transferred to new class successfully');
       return response;
     } catch (error) {
@@ -402,24 +335,12 @@ export const ClassProvider = ({ children }) => {
     }
   }, [assignClassToStudent]);
 
-  // Clear error
-  const clearError = useCallback(() => {
-    dispatch({ type: ACTION_TYPES.SET_ERROR, payload: null });
-  }, []);
-
-  // Clear class students
-  const clearClassStudents = useCallback(() => {
-    dispatch({ type: ACTION_TYPES.SET_CLASS_STUDENTS, payload: [] });
-  }, []);
-
-  // Clear class detail
-  const clearClassDetail = useCallback(() => {
-    dispatch({ type: ACTION_TYPES.SET_CLASS_DETAIL, payload: null });
-  }, []);
+  const clearError = useCallback(() => dispatch({ type: ACTION_TYPES.SET_ERROR, payload: null }), []);
+  const clearClassStudents = useCallback(() => dispatch({ type: ACTION_TYPES.SET_CLASS_STUDENTS, payload: [] }), []);
+  const clearClassDetail = useCallback(() => dispatch({ type: ACTION_TYPES.SET_CLASS_DETAIL, payload: null }), []);
 
   const value = {
     ...state,
-    // Methods
     fetchClasses,
     fetchClassById,
     createClass,
@@ -428,16 +349,13 @@ export const ClassProvider = ({ children }) => {
     assignTeacherToClass,
     fetchClassStudents,
     fetchClassSubjects,
-    // New roll number methods
     generateRollNumber,
     getNextRollNumber,
     generateMultipleRollNumbers,
-    // Class assignment methods
     assignClassToStudent,
     bulkAssignClassToStudents,
     removeStudentFromClass,
     transferStudentToClass,
-    // Utility methods
     clearError,
     clearClassStudents,
     clearClassDetail

@@ -440,6 +440,185 @@ async function updateLeaveRequest(req, res) {
     }
 }
 
+// GET /admin/stats/students-at-risk
+async function getStudentsAtRisk(req, res) {
+  try {
+    const {
+      classRoomId,
+      startDate,
+      endDate,
+      thresholdPercent = 75,  // Industry standard minimum attendance
+      criticalPercent = 60,   // Critical alert level
+    } = req.query;
+
+    const start = startDate
+      ? new Date(startDate)
+      : new Date(Date.now() - 30 * 86400000);
+    const end = endDate ? new Date(endDate) : new Date();
+
+    // 1. Get all active enrollments (optionally filtered by class)
+    const enrollments = await prisma.enrollment.findMany({
+      where: {
+        isCurrent: true,
+        ...(classRoomId && { classRoomId }),
+      },
+      include: {
+        student: {
+          include: {
+            user: { select: { id: true, name: true, email: true, phone: true } },
+            parents: {
+              include: {
+                user: { select: { name: true, email: true, phone: true } },
+              },
+            },
+          },
+        },
+        classRoom: { select: { id: true, name: true, type: true } },
+      },
+    });
+
+    // 2. For each enrolled student, calculate attendance in period
+    const studentRiskProfiles = await Promise.all(
+      enrollments.map(async (enrollment) => {
+        const [totalRecords, presentRecords, absentRecords, consecutiveAbsences] =
+          await Promise.all([
+            prisma.attendance.count({
+              where: {
+                studentId: enrollment.studentId,
+                classRoomId: enrollment.classRoomId,
+                date: { gte: start, lte: end },
+              },
+            }),
+            prisma.attendance.count({
+              where: {
+                studentId: enrollment.studentId,
+                classRoomId: enrollment.classRoomId,
+                date: { gte: start, lte: end },
+                OR: [{ status: 'PRESENT' }, { status: 'LATE' }],
+              },
+            }),
+            prisma.attendance.count({
+              where: {
+                studentId: enrollment.studentId,
+                classRoomId: enrollment.classRoomId,
+                date: { gte: start, lte: end },
+                status: 'ABSENT',
+              },
+            }),
+            // Get last 7 days to detect consecutive absences
+            prisma.attendance.findMany({
+              where: {
+                studentId: enrollment.studentId,
+                classRoomId: enrollment.classRoomId,
+                date: { gte: new Date(Date.now() - 7 * 86400000) },
+              },
+              orderBy: { date: 'desc' },
+              select: { status: true, date: true },
+            }),
+          ]);
+
+        const attendancePercent =
+          totalRecords > 0
+            ? parseFloat(((presentRecords / totalRecords) * 100).toFixed(2))
+            : null; // null = no data, different from 0%
+
+        // Count current consecutive absences streak
+        let consecutiveAbsenceStreak = 0;
+        for (const record of consecutiveAbsences) {
+          if (record.status === 'ABSENT') {
+            consecutiveAbsenceStreak++;
+          } else {
+            break; // streak broken
+          }
+        }
+
+        // 3. Determine risk level
+        let riskLevel = 'NONE';
+        const riskReasons = [];
+
+        if (attendancePercent !== null) {
+          if (attendancePercent < parseFloat(criticalPercent)) {
+            riskLevel = 'CRITICAL';
+            riskReasons.push(
+              `Attendance at ${attendancePercent}% — below critical threshold of ${criticalPercent}%`
+            );
+          } else if (attendancePercent < parseFloat(thresholdPercent)) {
+            riskLevel = 'WARNING';
+            riskReasons.push(
+              `Attendance at ${attendancePercent}% — below required ${thresholdPercent}%`
+            );
+          }
+        }
+
+        if (consecutiveAbsenceStreak >= 3) {
+          if (riskLevel === 'NONE') riskLevel = 'WARNING';
+          if (consecutiveAbsenceStreak >= 5) riskLevel = 'CRITICAL';
+          riskReasons.push(
+            `${consecutiveAbsenceStreak} consecutive absences in the last 7 days`
+          );
+        }
+
+        return {
+          studentId: enrollment.studentId,
+          studentName: enrollment.student.user.name,
+          email: enrollment.student.user.email,
+          phone: enrollment.student.user.phone,
+          admissionNo: enrollment.student.admissionNo,
+          classRoom: enrollment.classRoom,
+          parents: enrollment.student.parents?.map((p) => ({
+            name: p.user.name,
+            email: p.user.email,
+            phone: p.user.phone,
+          })),
+          attendance: {
+            totalRecords,
+            presentRecords,
+            absentRecords,
+            attendancePercent,
+            consecutiveAbsenceStreak,
+          },
+          riskLevel,       // 'NONE' | 'WARNING' | 'CRITICAL'
+          riskReasons,
+        };
+      })
+    );
+
+    // 4. Filter to only at-risk students and sort by severity
+    const riskOrder = { CRITICAL: 0, WARNING: 1, NONE: 2 };
+    const atRiskStudents = studentRiskProfiles
+      .filter((s) => s.riskLevel !== 'NONE')
+      .sort((a, b) => {
+        if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
+          return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
+        }
+        return (a.attendance.attendancePercent ?? 100) -
+               (b.attendance.attendancePercent ?? 100);
+      });
+
+    // 5. Build summary metrics for dashboard cards
+    const summary = {
+      totalStudentsChecked: studentRiskProfiles.length,
+      atRiskCount: atRiskStudents.length,
+      criticalCount: atRiskStudents.filter((s) => s.riskLevel === 'CRITICAL').length,
+      warningCount: atRiskStudents.filter((s) => s.riskLevel === 'WARNING').length,
+      thresholdPercent: parseFloat(thresholdPercent),
+      criticalPercent: parseFloat(criticalPercent),
+    };
+
+    res.json({
+      period: {
+        startDate: start.toISOString().split('T')[0],
+        endDate: end.toISOString().split('T')[0],
+      },
+      summary,
+      atRiskStudents,
+    });
+  } catch (error) {
+    logger.error({ err: error }, 'Get students at risk error');
+    res.status(500).json({ error: 'Internal server error' });
+  }
+}
+
 module.exports = {
     getSystemStats,
     getAttendanceOverview,
@@ -447,4 +626,5 @@ module.exports = {
     getClassAttendanceComparison,
     manageLeaveRequests,
     updateLeaveRequest,
+    getStudentsAtRisk
 };

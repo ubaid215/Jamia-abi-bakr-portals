@@ -66,22 +66,39 @@ const subjectReducer = (state, action) => {
       };
     
     case ACTION_TYPES.ASSIGN_TEACHER:
-      return {
-        ...state,
-        subjects: state.subjects.map(subject =>
-          subject.id === action.payload.subjectId 
-            ? { ...subject, teacherId: action.payload.teacherId }
-            : subject
-        ),
-        subjectDetail: state.subjectDetail?.id === action.payload.subjectId
-          ? { ...state.subjectDetail, teacherId: action.payload.teacherId }
-          : state.subjectDetail,
-        classSubjects: state.classSubjects.map(subject =>
-          subject.id === action.payload.subjectId
-            ? { ...subject, teacherId: action.payload.teacherId }
-            : subject
-        )
-      };
+  // If we have the full updated subject, use it
+  if (action.payload.subject) {
+    return {
+      ...state,
+      subjects: state.subjects.map(subject =>
+        subject.id === action.payload.subjectId ? action.payload.subject : subject
+      ),
+      subjectDetail: state.subjectDetail?.id === action.payload.subjectId
+        ? action.payload.subject
+        : state.subjectDetail,
+      classSubjects: state.classSubjects.map(subject =>
+        subject.id === action.payload.subjectId ? action.payload.subject : subject
+      )
+    };
+  }
+  
+  // Fallback to just updating teacherId
+  return {
+    ...state,
+    subjects: state.subjects.map(subject =>
+      subject.id === action.payload.subjectId 
+        ? { ...subject, teacherId: action.payload.teacherId }
+        : subject
+    ),
+    subjectDetail: state.subjectDetail?.id === action.payload.subjectId
+      ? { ...state.subjectDetail, teacherId: action.payload.teacherId }
+      : state.subjectDetail,
+    classSubjects: state.classSubjects.map(subject =>
+      subject.id === action.payload.subjectId
+        ? { ...subject, teacherId: action.payload.teacherId }
+        : subject
+    )
+  };
     
     default:
       return state;
@@ -99,14 +116,24 @@ export const SubjectProvider = ({ children }) => {
     dispatch({ type: ACTION_TYPES.SET_ERROR, payload: error });
   };
 
-  // Fetch all subjects
-// Fetch all subjects - FIXED
+  // Fetch all subjects - FIXED
 const fetchSubjects = useCallback(async () => {
   setLoading(true);
   try {
     const response = await subjectService.getSubjects();
-    // Extract subjects array from response
-    const subjects = response.subjects || response || [];
+    // Handle both response structures
+    let subjects = [];
+    
+    if (response.subjects && Array.isArray(response.subjects)) {
+      // Structure: { subjects: [...], pagination: {...} }
+      subjects = response.subjects;
+    } else if (Array.isArray(response)) {
+      // Structure: [...]
+      subjects = response;
+    } else {
+      subjects = [];
+    }
+    
     dispatch({ type: ACTION_TYPES.SET_SUBJECTS, payload: subjects });
     return subjects;
   } catch (error) {
@@ -214,25 +241,32 @@ const updateSubject = useCallback(async (id, subjectData) => {
   }, []);
 
   // Assign teacher to subject
-  const assignTeacherToSubject = useCallback(async (subjectId, teacherId) => {
-    setLoading(true);
-    try {
-      const result = await subjectService.assignTeacherToSubject(subjectId, teacherId);
-      dispatch({ 
-        type: ACTION_TYPES.ASSIGN_TEACHER, 
-        payload: { subjectId, teacherId, result } 
-      });
-      toast.success('Teacher assigned to subject successfully');
-      return result;
-    } catch (error) {
-      const errorMessage = error.response?.data?.message || 'Failed to assign teacher';
-      setError(errorMessage);
-      toast.error(errorMessage);
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+const assignTeacherToSubject = useCallback(async (subjectId, teacherId) => {
+  setLoading(true);
+  try {
+    const result = await subjectService.assignTeacherToSubject(subjectId, teacherId);
+    // Extract the subject from the response properly
+    const updatedSubject = result.subject || result;
+    
+    dispatch({ 
+      type: ACTION_TYPES.ASSIGN_TEACHER, 
+      payload: { 
+        subjectId, 
+        teacherId,
+        subject: updatedSubject  // Store the full updated subject
+      } 
+    });
+    toast.success('Teacher assigned to subject successfully');
+    return updatedSubject;
+  } catch (error) {
+    const errorMessage = error.response?.data?.message || 'Failed to assign teacher';
+    setError(errorMessage);
+    toast.error(errorMessage);
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   // Clear error
   const clearError = useCallback(() => {

@@ -116,80 +116,78 @@ const adminReducer = (state, action) => {
     case ACTION_TYPES.UPDATE_USER:
       return {
         ...state,
-        users: Array.isArray(state.users) 
+        users: Array.isArray(state.users)
           ? state.users.map((user) => user.id === action.payload.id ? action.payload : user)
           : [],
-        admins: Array.isArray(state.admins) 
+        admins: Array.isArray(state.admins)
           ? state.admins.map((admin) => admin.id === action.payload.id ? action.payload : admin)
           : [],
-        teachers: Array.isArray(state.teachers) 
-          ? state.teachers.map((teacher) => 
-              teacher.userId === action.payload.id 
-                ? { ...teacher, user: action.payload } 
-                : teacher
-            )
+        teachers: Array.isArray(state.teachers)
+          ? state.teachers.map((teacher) =>
+            teacher.userId === action.payload.id
+              ? { ...teacher, user: action.payload }
+              : teacher
+          )
           : [],
-        students: Array.isArray(state.students) 
-          ? state.students.map((student) => 
-              student.userId === action.payload.id 
-                ? { ...student, user: action.payload } 
-                : student
-            )
+        students: Array.isArray(state.students)
+          ? state.students.map((student) =>
+            student.userId === action.payload.id
+              ? { ...student, user: action.payload }
+              : student
+          )
           : [],
       };
 
     case ACTION_TYPES.UPDATE_TEACHER:
       return {
         ...state,
-        teachers: Array.isArray(state.teachers) 
-          ? state.teachers.map((teacher) => 
-              teacher.id === action.payload.id || 
-              teacher.userId === action.payload.id 
-                ? { ...teacher, ...action.payload } 
-                : teacher
-            )
+        teachers: Array.isArray(state.teachers)
+          ? state.teachers.map((teacher) =>
+            teacher.id === action.payload.id ||
+              teacher.userId === action.payload.id
+              ? { ...teacher, ...action.payload }
+              : teacher
+          )
           : [],
-        users: Array.isArray(state.users) 
-          ? state.users.map((user) => 
-              user.id === action.payload.id 
-                ? { ...user, ...action.payload.user } 
-                : user
-            )
+        users: Array.isArray(state.users)
+          ? state.users.map((user) =>
+            user.id === action.payload.id
+              ? { ...user, ...action.payload.user }
+              : user
+          )
           : [],
       };
 
     case ACTION_TYPES.UPDATE_STUDENT:
       return {
         ...state,
-        students: Array.isArray(state.students) 
-          ? state.students.map((student) => 
-              student.id === action.payload.id || 
-              student.userId === action.payload.id 
-                ? { ...student, ...action.payload } 
-                : student
-            )
+        students: Array.isArray(state.students)
+          ? state.students.map((student) =>
+            student.id === action.payload.id ||
+              student.userId === action.payload.id
+              ? { ...student, ...action.payload }
+              : student
+          )
           : [],
-        users: Array.isArray(state.users) 
-          ? state.users.map((user) => 
-              user.id === action.payload.id 
-                ? { ...user, ...action.payload.user } 
-                : user
-            )
+        users: Array.isArray(state.users)
+          ? state.users.map((user) =>
+            user.id === action.payload.id
+              ? { ...user, ...action.payload.user }
+              : user
+          )
           : [],
       };
 
     case ACTION_TYPES.UPDATE_STUDENT_ACADEMIC:
       return {
         ...state,
-        students: Array.isArray(state.students) 
-          ? state.students.map((student) => 
-              student.id === action.payload.studentId 
-                ? { 
-                    ...student, 
-                    currentEnrollment: action.payload.enrollment 
-                  } 
-                : student
-            )
+        students: Array.isArray(state.students)
+          ? state.students.map((student) =>
+            student.id === action.payload.studentId ||
+              student.userId === action.payload.studentId
+              ? { ...student, currentEnrollment: action.payload.enrollment }
+              : student
+          )
           : [],
       };
 
@@ -197,9 +195,9 @@ const adminReducer = (state, action) => {
       return {
         ...state,
         leaveRequests: Array.isArray(state.leaveRequests)
-          ? state.leaveRequests.map((request) => 
-              request.id === action.payload.id ? action.payload : request
-            )
+          ? state.leaveRequests.map((request) =>
+            request.id === action.payload.id ? action.payload : request
+          )
           : [],
       };
 
@@ -213,16 +211,16 @@ const adminReducer = (state, action) => {
     case ACTION_TYPES.DELETE_USER:
       return {
         ...state,
-        users: Array.isArray(state.users) 
-          ? state.users.filter((user) => user.id !== action.payload) 
+        users: Array.isArray(state.users)
+          ? state.users.filter((user) => user.id !== action.payload)
           : [],
-        admins: Array.isArray(state.admins) 
-          ? state.admins.filter((admin) => admin.id !== action.payload) 
+        admins: Array.isArray(state.admins)
+          ? state.admins.filter((admin) => admin.id !== action.payload)
           : [],
-        teachers: Array.isArray(state.teachers) 
+        teachers: Array.isArray(state.teachers)
           ? state.teachers.filter((teacher) => teacher.userId !== action.payload)
           : [],
-        students: Array.isArray(state.students) 
+        students: Array.isArray(state.students)
           ? state.students.filter((student) => student.userId !== action.payload)
           : [],
       };
@@ -230,28 +228,28 @@ const adminReducer = (state, action) => {
     case ACTION_TYPES.DELETE_TEACHER:
       return {
         ...state,
-        teachers: Array.isArray(state.teachers) 
+        teachers: Array.isArray(state.teachers)
           ? state.teachers.filter((teacher) => {
-              const teacherId = teacher.userId || teacher.id;
-              return teacherId !== action.payload.id && teacher.id !== action.payload.id;
-            })
+            const teacherId = teacher.userId || teacher.id;
+            return teacherId !== action.payload.id && teacher.id !== action.payload.id;
+          })
           : [],
-        users: Array.isArray(state.users) 
-          ? state.users.filter((user) => user.id !== action.payload.userId) 
+        users: Array.isArray(state.users)
+          ? state.users.filter((user) => user.id !== action.payload.userId)
           : [],
       };
 
     case ACTION_TYPES.DELETE_STUDENT:
       return {
         ...state,
-        students: Array.isArray(state.students) 
+        students: Array.isArray(state.students)
           ? state.students.filter((student) => {
-              const studentId = student.userId || student.id;
-              return studentId !== action.payload.id && student.id !== action.payload.id;
-            })
+            const studentId = student.userId || student.id;
+            return studentId !== action.payload.id && student.id !== action.payload.id;
+          })
           : [],
-        users: Array.isArray(state.users) 
-          ? state.users.filter((user) => user.id !== action.payload.userId) 
+        users: Array.isArray(state.users)
+          ? state.users.filter((user) => user.id !== action.payload.userId)
           : [],
       };
 
@@ -292,7 +290,7 @@ export const AdminProvider = ({ children }) => {
     setLoading(true);
     try {
       const response = await adminService.getUsers({ role: "ADMIN" });
-      
+
       let adminsArray = [];
       if (Array.isArray(response)) {
         adminsArray = response;
@@ -303,7 +301,7 @@ export const AdminProvider = ({ children }) => {
       } else if (response && response.data && Array.isArray(response.data)) {
         adminsArray = response.data;
       }
-      
+
       dispatch({ type: ACTION_TYPES.SET_ADMINS, payload: adminsArray });
       return adminsArray;
     } catch (error) {
@@ -322,7 +320,7 @@ export const AdminProvider = ({ children }) => {
     setLoading(true);
     try {
       const response = await adminService.getUsers(filters);
-      
+
       let usersArray = [];
       if (Array.isArray(response)) {
         usersArray = response;
@@ -331,7 +329,7 @@ export const AdminProvider = ({ children }) => {
       } else if (response && response.data && Array.isArray(response.data)) {
         usersArray = response.data;
       }
-      
+
       dispatch({ type: ACTION_TYPES.SET_USERS, payload: usersArray });
       return usersArray;
     } catch (error) {
@@ -475,19 +473,19 @@ export const AdminProvider = ({ children }) => {
     setLoading(true);
     try {
       const result = await adminService.deleteTeacher(id);
-      
-      dispatch({ 
-        type: ACTION_TYPES.DELETE_TEACHER, 
-        payload: result.deletedTeacher || { id, userId: id } 
+
+      dispatch({
+        type: ACTION_TYPES.DELETE_TEACHER,
+        payload: result.deletedTeacher || { id, userId: id }
       });
-      
+
       if (result.deletedTeacher?.userId) {
-        dispatch({ 
-          type: ACTION_TYPES.DELETE_USER, 
-          payload: result.deletedTeacher.userId 
+        dispatch({
+          type: ACTION_TYPES.DELETE_USER,
+          payload: result.deletedTeacher.userId
         });
       }
-      
+
       return result;
     } catch (error) {
       setError(error.response?.data?.message || "Failed to delete teacher");
@@ -614,12 +612,12 @@ export const AdminProvider = ({ children }) => {
     setLoading(true);
     try {
       const result = await adminService.updateStudentAcademicInfo(id, academicData);
-      dispatch({ 
-        type: ACTION_TYPES.UPDATE_STUDENT_ACADEMIC, 
-        payload: { 
-          studentId: id, 
-          enrollment: result.student?.currentEnrollment 
-        } 
+      dispatch({
+        type: ACTION_TYPES.UPDATE_STUDENT_ACADEMIC,
+        payload: {
+          studentId: id,
+          enrollment: result.student?.currentEnrollment
+        }
       });
       return result;
     } catch (error) {
@@ -647,19 +645,19 @@ export const AdminProvider = ({ children }) => {
     setLoading(true);
     try {
       const result = await adminService.deleteStudent(id);
-      
-      dispatch({ 
-        type: ACTION_TYPES.DELETE_STUDENT, 
-        payload: result.deletedStudent || { id, userId: id } 
+
+      dispatch({
+        type: ACTION_TYPES.DELETE_STUDENT,
+        payload: result.deletedStudent || { id, userId: id }
       });
-      
+
       if (result.deletedStudent?.userId) {
-        dispatch({ 
-          type: ACTION_TYPES.DELETE_USER, 
-          payload: result.deletedStudent.userId 
+        dispatch({
+          type: ACTION_TYPES.DELETE_USER,
+          payload: result.deletedStudent.userId
         });
       }
-      
+
       return result;
     } catch (error) {
       setError(error.response?.data?.message || "Failed to delete student");
@@ -741,18 +739,22 @@ export const AdminProvider = ({ children }) => {
   }, [fetchStudents]);
 
   const getAtRiskStudents = useCallback(async (params = {}) => {
-    setLoading(true);
-    try {
-      const students = await adminService.getAtRiskStudents(params);
-      dispatch({ type: ACTION_TYPES.SET_AT_RISK_STUDENTS, payload: students });
-      return students;
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to fetch at-risk students");
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  setLoading(true);
+  try {
+    const response = await adminService.getAtRiskStudents(params);
+    // response = { summary, atRiskStudents[], period }
+    dispatch({ 
+      type: ACTION_TYPES.SET_AT_RISK_STUDENTS, 
+      payload: response.atRiskStudents || [] 
+    });
+    return response; // return full object so components can access summary too
+  } catch (error) {
+    setError(error.response?.data?.message || "Failed to fetch at-risk students");
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+}, []);
 
   // ============================================
   // CLASS MANAGEMENT

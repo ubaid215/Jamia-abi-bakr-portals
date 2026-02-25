@@ -38,21 +38,22 @@ function generateStrongPassword(length = 12) {
 // -------------------------------
 // 📧 Generate Email (for staff/admins etc.)
 // -------------------------------
-function generateEmail(name, role = '', domain = 'khanqahsaifia.com') {
-  // Clean and normalize name
-  const cleanName = name
+async function generateEmail(name, domain = 'khanqahsaifia.com') {
+  const baseEmail = name
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '') // remove special chars
+    .replace(/[^a-z0-9\s]/g, '')
     .trim()
-    .replace(/\s+/g, '.'); // replace spaces with dots
+    .replace(/\s+/g, '.');
 
-  // Add role part (if given)
-  const rolePart = role ? `.${role.toLowerCase()}` : '';
+  let email = `${baseEmail}@${domain}`;
+  let counter = 1;
 
-  // Random 4-digit number to ensure uniqueness
-  const randomNum = Math.floor(1000 + Math.random() * 9000);
+  while (await prisma.user.findUnique({ where: { email } })) {
+    email = `${baseEmail}${counter}@${domain}`;
+    counter++;
+  }
 
-  return `${cleanName}${rolePart}.${randomNum}@${domain}`;
+  return email;
 }
 
 // -------------------------------

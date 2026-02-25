@@ -21,7 +21,6 @@ const TeacherSidebar = ({ isOpen, onClose, onToggle }) => {
     { icon: Users, label: 'My Students', to: '/teacher/students' },
     { icon: Calendar, label: 'Attendance Analysis', to: '/teacher/attendance' },
     { icon: ChartAreaIcon, label: 'Hifz/Nazra Report', to: '/teacher/hifz-progress' },
-    { icon: Clock, label: 'Leave Management', to: '/teacher/leave' },
   ];
 
   return (

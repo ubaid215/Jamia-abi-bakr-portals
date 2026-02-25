@@ -36,7 +36,7 @@ const ExecutiveSummary = React.memo(({ stats, attendanceOverview, admins }) => {
                 sparkData: genSparkline(s.totalUsers, 3),
                 sparkColor: '#3B82F6',
                 color: 'blue',
-                onClick: () => navigate('/super-admin/users'),
+                onClick: () => navigate('/admin/users'),
             },
             {
                 icon: GraduationCap,
@@ -47,7 +47,7 @@ const ExecutiveSummary = React.memo(({ stats, attendanceOverview, admins }) => {
                 sparkData: genSparkline(s.totalStudents, 4),
                 sparkColor: '#10B981',
                 color: 'green',
-                onClick: () => navigate('/super-admin/users?role=STUDENT'),
+                onClick: () => navigate('/admin/students'),
             },
             {
                 icon: UserCheck,
@@ -58,7 +58,7 @@ const ExecutiveSummary = React.memo(({ stats, attendanceOverview, admins }) => {
                 sparkData: genSparkline(s.totalTeachers, 2),
                 sparkColor: '#8B5CF6',
                 color: 'purple',
-                onClick: () => navigate('/super-admin/users?role=TEACHER'),
+                onClick: () => navigate('/admin/teachers'),
             },
             {
                 icon: School,
@@ -67,7 +67,7 @@ const ExecutiveSummary = React.memo(({ stats, attendanceOverview, admins }) => {
                 sparkData: genSparkline(s.totalClasses, 1),
                 sparkColor: '#F59E0B',
                 color: 'amber',
-                onClick: () => navigate('/admin/class-management'),
+                onClick: () => navigate('/admin/classes'),
             },
             {
                 icon: TrendingUp,
@@ -79,7 +79,7 @@ const ExecutiveSummary = React.memo(({ stats, attendanceOverview, admins }) => {
                 sparkData: genSparkline(s.weeklyAttendanceRate || 85, 6),
                 sparkColor: '#10B981',
                 color: 'green',
-                onClick: () => navigate('/super-admin/attendance'),
+                onClick: () => navigate('/admin/attendance'),
             },
             {
                 icon: BookOpen,

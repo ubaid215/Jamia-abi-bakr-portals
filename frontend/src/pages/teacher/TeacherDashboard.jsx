@@ -41,7 +41,7 @@ const TeacherDashboard = () => {
     fetchDashboard();
     fetchMyClasses();
     fetchMySubjects();
-  }, []);
+  }, [fetchDashboard, fetchMyClasses, fetchMySubjects]);
 
   if (loading && !dashboard) {
     return (
@@ -226,8 +226,8 @@ const TeacherDashboard = () => {
       {/* Header */}
       <header className="bg-white shadow-sm border-b border-gray-200">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center gap-3 sm:gap-0 py-4">
-            <div className="flex-1 min-w-0">
+          <div className="flex flex-col sm:flex-row justify-between items-center py-4 gap-4">
+            <div className="flex-1 min-w-0 text-center sm:text-left">
               <h1 className="text-xl sm:text-2xl font-bold text-gray-900 truncate">
                 Teacher Dashboard
               </h1>
@@ -235,8 +235,8 @@ const TeacherDashboard = () => {
                 Welcome back, {teacher.name}!
               </p>
             </div>
-            <div className="flex items-center space-x-3 self-end sm:self-center">
-              <div className="text-right hidden sm:block">
+            <div className="flex items-center space-x-3 w-full sm:w-auto justify-center sm:justify-end bg-gray-50 sm:bg-transparent p-2 sm:p-0 rounded-lg sm:rounded-none">
+              <div className="text-right">
                 <p className="text-sm font-medium text-gray-900 truncate max-w-[150px] lg:max-w-none">
                   {teacher.name}
                 </p>
@@ -244,24 +244,15 @@ const TeacherDashboard = () => {
                   {teacher.specialization}
                 </p>
               </div>
-              {/* Mobile name display */}
-              <div className="sm:hidden text-right">
-                <p className="text-xs font-medium text-gray-700">
-                  {teacher.name
-                    .split(" ")
-                    .map((n) => n[0])
-                    .join("")}
-                </p>
-              </div>
-              <div className="h-8 w-8 sm:h-10 sm:w-10 bg-gold rounded-full flex items-center justify-center flex-shrink-0">
+              <div className="h-10 w-10 bg-gold rounded-full flex items-center justify-center flex-shrink-0">
                 {teacher.profileImage ? (
                   <img
-                    src={teacher.profileImage}
+                    src={teacher.profileImage.startsWith('http') || teacher.profileImage.startsWith('data:') ? teacher.profileImage : `${import.meta.env.VITE_API_URL || 'http://localhost:5000/api'}/admin/public/profile-image/${teacher.userId || teacher.id}`}
                     alt={teacher.name}
-                    className="h-8 w-8 sm:h-10 sm:w-10 rounded-full object-cover"
+                    className="h-10 w-10 rounded-full object-cover"
                   />
                 ) : (
-                  <User className="h-4 w-4 sm:h-6 sm:w-6 text-white" />
+                  <User className="h-6 w-6 text-white" />
                 )}
               </div>
             </div>
@@ -298,12 +289,6 @@ const TeacherDashboard = () => {
                 icon: UserCheck,
                 mobileLabel: "Attend",
               },
-              {
-                id: "leave",
-                label: "Leave",
-                icon: Calendar,
-                mobileLabel: "Leave",
-              },
             ].map((tab) => {
               const Icon = tab.icon;
               return (
@@ -311,8 +296,8 @@ const TeacherDashboard = () => {
                   key={tab.id}
                   onClick={() => setActiveTab(tab.id)}
                   className={`flex items-center py-3 sm:py-4 px-2 sm:px-1 border-b-2 font-medium text-xs sm:text-sm whitespace-nowrap flex-shrink-0 ${activeTab === tab.id
-                      ? "border-gold text-gold"
-                      : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
+                    ? "border-gold text-gold"
+                    : "border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300"
                     }`}
                 >
                   <Icon className="h-3 w-3 sm:h-4 sm:w-4 mr-1 sm:mr-2 flex-shrink-0" />

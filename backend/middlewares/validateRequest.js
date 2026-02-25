@@ -58,9 +58,11 @@ function validate(schema) {
  * Formats ZodError into a clean array of field-level error objects.
  */
 function formatErrors(zodError, source) {
-    return zodError.errors.map((err) => ({
+    // Guard against malformed ZodError
+    const errors = zodError?.errors ?? zodError?.issues ?? [];
+    return errors.map((err) => ({
         source,
-        field: err.path.join('.'),
+        field: err.path?.join('.') ?? 'unknown',
         message: err.message,
         code: err.code,
     }));

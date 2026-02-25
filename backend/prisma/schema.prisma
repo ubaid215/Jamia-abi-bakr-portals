@@ -213,6 +213,8 @@ model Teacher {
   qualification String?
   specialization String?
   experience    String?
+  bloodGroup    String?       // ← ADD
+  medicalConditions String?   // ← ADD
   
   // Contact details
   address       String?
@@ -233,6 +235,11 @@ model Teacher {
   joiningDate   DateTime?
   salary        Float?
   employmentType String?
+
+  // Bank details
+  bankName      String?       // ← ADD
+  accountNumber String?       // ← ADD
+  iban          String?       // ← ADD
   
   // Relations
   teacherSubjects TeacherSubject[]
@@ -246,8 +253,6 @@ model Teacher {
   subjectProgress  SubjectProgress[]
   monthlyProgress  MonthlyProgress[]
   studyPlans       StudyPlan[]
-  
-  // Progress Tracking Relations
   dailyActivities         DailyActivity[]
   weeklyProgressReports   WeeklyProgress[]
   studentGoals            StudentGoal[]
@@ -256,7 +261,6 @@ model Teacher {
   createdAt   DateTime    @default(now())
   updatedAt   DateTime    @updatedAt
 
-  // ✅ PERFORMANCE INDEXES
   @@index([userId])
   @@index([cnic])
   @@index([employmentType, joiningDate])

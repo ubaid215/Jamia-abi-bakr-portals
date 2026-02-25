@@ -7,7 +7,7 @@ const {
   requireSuperAdmin,
   requireAdmin
 } = require('../middlewares/auth');
-const { upload } = require('../middlewares/upload'); // Import the upload instance
+const { upload } = require('../middlewares/upload'); 
 const { validate } = require('../middlewares/validateRequest');
 const {
   createAdminSchema,
@@ -62,6 +62,7 @@ router.get(
 );
 router.get('/students/:id/documents', authenticateToken, requireAdmin, adminController.getStudentWithDocuments);
 router.put('/students/:id', authenticateToken, requireAdmin, validate(updateStudentSchema), adminController.updateStudent);
+router.put('/students/:id/academic', authenticateToken, requireAdmin, adminController.updateStudentAcademicInfo);
 router.delete('/students/:id', authenticateToken, requireAdmin, adminController.deleteStudent);
 
 // Student profile image upload
@@ -158,6 +159,7 @@ router.delete('/teachers/:teacherId/documents/:type',
 router.get('/attendance-overview', authenticateToken, requireAdmin, adminController.getAttendanceOverview);
 router.get('/attendance-trends', authenticateToken, requireAdmin, adminController.getAttendanceTrends);
 router.get('/class-attendance-comparison', authenticateToken, requireAdmin, adminController.getClassAttendanceComparison);
+router.get('/students-at-risk', authenticateToken, requireAdmin, adminController.getStudentsAtRisk);
 
 // Legacy attendance route
 router.get('/attendance', authenticateToken, requireAdmin, adminController.getAttendanceOverview);

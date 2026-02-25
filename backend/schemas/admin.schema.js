@@ -1,4 +1,4 @@
-// schemas/admin.schema.js — Zod validation schemas for admin routes
+// schemas/admin.schema.js
 
 const { z } = require('zod');
 
@@ -20,23 +20,61 @@ const updateUserStatusSchema = {
     }),
 };
 
+// admin.schema.js — fix all nullable enums to accept empty string too
+
 const updateTeacherSchema = {
     params: z.object({
         id: z.string().min(1, 'Teacher ID is required'),
     }),
     body: z.object({
+        // User fields
         name: z.string().min(2).max(100).optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
         status: z.enum(['ACTIVE', 'INACTIVE', 'TERMINATED']).optional(),
-        bio: z.string().max(1000).optional(),
-        specialization: z.string().max(200).optional(),
-        qualification: z.string().max(200).optional(),
-        cnic: z.string().optional(),
-        experience: z.coerce.number().min(0).optional(),
-        joiningDate: z.string().datetime().or(z.string().regex(/^\d{4}-\d{2}-\d{2}$/)).optional(),
-        salary: z.coerce.number().min(0).optional(),
-        employmentType: z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT']).optional(),
+
+        // Professional info
+        bio: z.string().max(1000).optional().nullable(),
+        specialization: z.string().max(200).optional().nullable(),
+        qualification: z.string().max(200).optional().nullable(),
+        cnic: z.string().optional().nullable(),
+        experience: z.coerce.number().min(0).optional().nullable(),
+        salary: z.coerce.number().min(0).optional().nullable(),
+
+        // ← Empty string from frontend becomes null before enum check
+        employmentType: z.preprocess(
+            val => (val === '' ? null : val),
+            z.enum(['FULL_TIME', 'PART_TIME', 'CONTRACT']).optional().nullable()
+        ),
+        joiningDate: z.string().optional().nullable(),
+
+        // Personal info
+        dateOfBirth: z.string().optional().nullable(),
+
+        // ← Same fix for gender
+        gender: z.preprocess(
+            val => (val === '' ? null : val),
+            z.enum(['MALE', 'FEMALE', 'OTHER']).optional().nullable()
+        ),
+        phoneSecondary: z.string().optional().nullable(),
+        address: z.string().max(500).optional().nullable(),
+
+        // ← Same fix for bloodGroup
+        bloodGroup: z.preprocess(
+            val => (val === '' ? null : val),
+            z.enum(['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']).optional().nullable()
+        ),
+        medicalConditions: z.string().max(1000).optional().nullable(),
+
+        // Emergency contact
+        emergencyContactName: z.string().max(100).optional().nullable(),
+        emergencyContactPhone: z.string().optional().nullable(),
+        emergencyContactRelation: z.string().max(100).optional().nullable(),
+
+        // Bank details
+        bankName: z.string().max(200).optional().nullable(),
+        accountNumber: z.string().optional().nullable(),
+        iban: z.string().optional().nullable(),
     }),
 };
 
@@ -45,17 +83,44 @@ const updateStudentSchema = {
         id: z.string().min(1, 'Student ID is required'),
     }),
     body: z.object({
+        // User fields
         name: z.string().min(2).max(100).optional(),
         email: z.string().email().optional(),
         phone: z.string().optional(),
         status: z.enum(['ACTIVE', 'INACTIVE', 'TERMINATED']).optional(),
-        dateOfBirth: z.string().optional(),
-        gender: z.enum(['MALE', 'FEMALE']).optional(),
+
+        // Personal info
+        dateOfBirth: z.string().optional().nullable(),
+        gender: z.preprocess(
+            val => (val === '' ? null : val),
+            z.enum(['MALE', 'FEMALE', 'OTHER']).optional().nullable()
+        ),
+        placeOfBirth: z.string().max(200).optional().nullable(),
+        nationality: z.string().max(100).optional().nullable(),
+        religion: z.string().max(100).optional().nullable(),
+        bloodGroup: z.preprocess(
+            val => (val === '' ? null : val),
+            z.enum(['A+', 'A-', 'B+', 'B-', 'O+', 'O-', 'AB+', 'AB-']).optional().nullable()
+        ),
+
+        // Guardian info
         guardianName: z.string().max(100).optional(),
         guardianPhone: z.string().optional(),
+        guardianRelation: z.string().max(100).optional().nullable(),
+        guardianEmail: z.string().email().optional().nullable(),
+        guardianOccupation: z.string().max(200).optional().nullable(),
+        guardianCNIC: z.string().optional().nullable(),
+
+        // Contact info
         address: z.string().max(500).optional(),
         city: z.string().max(100).optional(),
         province: z.string().max(100).optional(),
+        postalCode: z.string().max(20).optional().nullable(),
+
+        // Medical info
+        medicalConditions: z.string().max(1000).optional().nullable(),
+        allergies: z.string().max(1000).optional().nullable(),
+        medication: z.string().max(1000).optional().nullable(),
     }),
 };
 
