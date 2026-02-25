@@ -28,19 +28,20 @@ import {
   Trash2Icon,
 } from "lucide-react";
 import { useAdmin } from "../../contexts/AdminContext";
-import { useClass } from "../../contexts/ClassContext"; // Import ClassContext
+import { useClass } from "../../contexts/ClassContext";
 import BatchPromotionModal from "../../components/BatchPromotionModal";
+import Pagination from "../../components/ui/Pagination"; 
 import { toast } from "react-hot-toast";
 import axios from "axios";
 
 const StudentLists = () => {
   const { students, fetchStudents, loading } = useAdmin();
-  const { 
-    classes: availableClasses, 
-    fetchClasses, 
+  const {
+    classes: availableClasses,
+    fetchClasses,
     loading: classesLoading,
-    bulkAssignClassToStudents // Get the new method from context
-  } = useClass(); // Use ClassContext
+    bulkAssignClassToStudents,
+  } = useClass();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
   const [statusFilter, setStatusFilter] = useState("ALL");
@@ -48,7 +49,11 @@ const StudentLists = () => {
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
 
-  // New states for dropdown and class assignment
+  // Pagination state
+  const [currentPage, setCurrentPage] = useState(1);
+  const [itemsPerPage, setItemsPerPage] = useState(6);
+
+  // Dropdown / modal state
   const [dropdownOpen, setDropdownOpen] = useState(null);
   const [showAssignClassModal, setShowAssignClassModal] = useState(false);
   const [selectedClass, setSelectedClass] = useState("");
@@ -63,8 +68,13 @@ const StudentLists = () => {
 
   useEffect(() => {
     fetchStudents();
-    fetchClasses(); // Use context method to fetch classes
+    fetchClasses();
   }, [fetchStudents, fetchClasses]);
+
+  // Reset to page 1 whenever filters / search change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [searchTerm, statusFilter, classFilter, itemsPerPage]);
 
   // ============================================
   // Helper Functions for Safe Data Access
@@ -107,9 +117,7 @@ const StudentLists = () => {
       const userId = getStudentUserId(student);
       const profileImage = getStudentProfileImage(student);
 
-      if (!profileImage) {
-        return null;
-      }
+      if (!profileImage) return null;
 
       if (profileImage.startsWith("http") || profileImage.startsWith("data:")) {
         return profileImage;
@@ -118,9 +126,8 @@ const StudentLists = () => {
       const baseUrl = (
         import.meta.env.VITE_API_URL || "http://localhost:5000/api"
       ).replace(/\/$/, "");
-      const imageUrl = `${baseUrl}/admin/public/profile-image/${userId}`;
 
-      return imageUrl;
+      return `${baseUrl}/admin/public/profile-image/${userId}`;
     } catch (error) {
       console.error("Error generating profile image URL:", error);
       return null;
@@ -140,12 +147,26 @@ const StudentLists = () => {
     });
   };
 
+  // Select-all targets only the current page
   const selectAllStudents = () => {
-    setSelectedStudents(
-      selectedStudents.length === filteredStudents.length
-        ? []
-        : [...filteredStudents]
+    const allCurrentPageSelected = paginatedStudents.every((s) =>
+      selectedStudents.some((sel) => sel.id === s.id)
     );
+
+    if (allCurrentPageSelected) {
+      // Deselect current page items only
+      setSelectedStudents((prev) =>
+        prev.filter((s) => !paginatedStudents.some((p) => p.id === s.id))
+      );
+    } else {
+      // Add current page items that aren't already selected
+      setSelectedStudents((prev) => {
+        const newOnes = paginatedStudents.filter(
+          (s) => !prev.some((sel) => sel.id === s.id)
+        );
+        return [...prev, ...newOnes];
+      });
+    }
   };
 
   const isStudentSelected = (studentId) =>
@@ -192,7 +213,7 @@ const StudentLists = () => {
   };
 
   // ============================================
-  // Class Assignment Functions - UPDATED
+  // Class Assignment Functions
   // ============================================
 
   const handleClassAssignment = async () => {
@@ -200,7 +221,6 @@ const StudentLists = () => {
       toast.error("Please select a class");
       return;
     }
-
     if (studentsToAssign.length === 0) {
       toast.error("No students selected");
       return;
@@ -208,33 +228,23 @@ const StudentLists = () => {
 
     try {
       setAssigningClass(true);
-      
-      // Get the selected class details from context
-      const classDetails = availableClasses.find((c) => c.id === selectedClass);
-      if (!classDetails) {
-        throw new Error("Class not found");
-      }
 
-      // Use the new context method for bulk assignment
+      const classDetails = availableClasses.find((c) => c.id === selectedClass);
+      if (!classDetails) throw new Error("Class not found");
+
       await bulkAssignClassToStudents(
-        studentsToAssign.map(s => getStudentUserId(s)),
+        studentsToAssign.map((s) => getStudentUserId(s)),
         selectedClass,
-        {
-          startDate: new Date().toISOString(),
-          isCurrent: true
-        }
+        { startDate: new Date().toISOString(), isCurrent: true }
       );
 
-      // Note: bulkAssignClassToStudents already shows toast success message
-      
       setShowAssignClassModal(false);
       setSelectedClass("");
       setStudentsToAssign([]);
-      setSelectedStudents([]); // Clear selection
-      fetchStudents(); // Refresh student list
+      setSelectedStudents([]);
+      fetchStudents();
     } catch (error) {
       console.error("Error assigning class:", error);
-      // Error is already handled by the context
     } finally {
       setAssigningClass(false);
     }
@@ -249,27 +259,20 @@ const StudentLists = () => {
       !window.confirm(
         "Are you sure you want to delete this student? This action cannot be undone and will delete all student data including attendance, progress, and documents."
       )
-    ) {
+    )
       return;
-    }
 
     try {
       const token = localStorage.getItem("authToken");
       const response = await axios.delete(
         `${API_BASE_URL}/admin/students/${studentId}`,
-        {
-          headers: { Authorization: `Bearer ${token}` },
-        }
+        { headers: { Authorization: `Bearer ${token}` } }
       );
 
       toast.success(response.data.message || "Student deleted successfully");
-
-      // Remove from selected students if present
       setSelectedStudents((prev) =>
         prev.filter((s) => getStudentUserId(s) !== studentId)
       );
-
-      // Refresh the student list
       fetchStudents();
     } catch (error) {
       console.error("Error deleting student:", error);
@@ -277,61 +280,39 @@ const StudentLists = () => {
     }
   };
 
-  // Bulk delete function
   const handleBulkDelete = () => {
     if (selectedStudents.length === 0) {
       toast.error("Please select at least one student to delete");
       return;
     }
 
-    const studentNames = selectedStudents
-      .map((s) => getStudentName(s))
-      .join(", ");
+    const studentNames = selectedStudents.map((s) => getStudentName(s)).join(", ");
 
     if (
       !window.confirm(
         `Are you sure you want to delete ${selectedStudents.length} student(s)?\n\nSelected students: ${studentNames}\n\nThis action cannot be undone and will delete all student data.`
       )
-    ) {
+    )
       return;
-    }
 
-    // Show loading state
     const deletePromises = selectedStudents.map(async (student) => {
-      try {
-        const studentId = getStudentUserId(student);
-        const token = localStorage.getItem("authToken");
-        return axios.delete(`${API_BASE_URL}/admin/students/${studentId}`, {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-      } catch (error) {
-        console.error(`Error deleting student ${student.id}:`, error);
-        throw error;
-      }
+      const studentId = getStudentUserId(student);
+      const token = localStorage.getItem("authToken");
+      return axios.delete(`${API_BASE_URL}/admin/students/${studentId}`, {
+        headers: { Authorization: `Bearer ${token}` },
+      });
     });
 
-    Promise.allSettled(deletePromises)
-      .then((results) => {
-        const successful = results.filter(
-          (r) => r.status === "fulfilled"
-        ).length;
-        const failed = results.filter((r) => r.status === "rejected").length;
+    Promise.allSettled(deletePromises).then((results) => {
+      const successful = results.filter((r) => r.status === "fulfilled").length;
+      const failed = results.filter((r) => r.status === "rejected").length;
 
-        if (successful > 0) {
-          toast.success(`Successfully deleted ${successful} student(s)`);
-        }
-        if (failed > 0) {
-          toast.error(`Failed to delete ${failed} student(s)`);
-        }
+      if (successful > 0) toast.success(`Successfully deleted ${successful} student(s)`);
+      if (failed > 0) toast.error(`Failed to delete ${failed} student(s)`);
 
-        // Clear selection and refresh list
-        setSelectedStudents([]);
-        fetchStudents();
-      })
-      .catch((error) => {
-        toast.error("An error occurred during bulk deletion");
-        console.error("Bulk delete error:", error);
-      });
+      setSelectedStudents([]);
+      fetchStudents();
+    });
   };
 
   // ============================================
@@ -343,7 +324,6 @@ const StudentLists = () => {
       toast.error("Please select a status");
       return;
     }
-
     if (studentsToAssign.length === 0) {
       toast.error("No students selected");
       return;
@@ -353,17 +333,13 @@ const StudentLists = () => {
       setUpdatingStatus(true);
       const token = localStorage.getItem("authToken");
 
-      const promises = studentsToAssign.map(async (student) => {
-        const studentId = getStudentUserId(student);
-
-        return axios.put(
-          `${API_BASE_URL}/admin/students/${studentId}/status`,
+      const promises = studentsToAssign.map((student) =>
+        axios.put(
+          `${API_BASE_URL}/admin/students/${getStudentUserId(student)}/status`,
           { status: selectedStatus },
-          {
-            headers: { Authorization: `Bearer ${token}` },
-          }
-        );
-      });
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
+      );
 
       await Promise.all(promises);
 
@@ -373,7 +349,7 @@ const StudentLists = () => {
       setShowStatusModal(false);
       setSelectedStatus("");
       setStudentsToAssign([]);
-      fetchStudents(); // Refresh student list
+      fetchStudents();
     } catch (error) {
       console.error("Error updating status:", error);
       toast.error(error.response?.data?.error || "Failed to update status");
@@ -383,7 +359,7 @@ const StudentLists = () => {
   };
 
   // ============================================
-  // Filtering Logic
+  // Filtering + Pagination Logic
   // ============================================
 
   const filteredStudents = Array.isArray(students)
@@ -402,11 +378,22 @@ const StudentLists = () => {
 
         const matchesStatus =
           statusFilter === "ALL" || studentStatus === statusFilter;
-        const matchesClass = classFilter === "ALL" || className === classFilter;
+        const matchesClass =
+          classFilter === "ALL" || className === classFilter;
 
         return matchesSearch && matchesStatus && matchesClass;
       })
     : [];
+
+  // Slice for current page
+  const paginatedStudents = filteredStudents.slice(
+    (currentPage - 1) * itemsPerPage,
+    currentPage * itemsPerPage
+  );
+
+  const allCurrentPageSelected =
+    paginatedStudents.length > 0 &&
+    paginatedStudents.every((s) => selectedStudents.some((sel) => sel.id === s.id));
 
   const uniqueClasses = Array.isArray(students)
     ? [
@@ -450,9 +437,8 @@ const StudentLists = () => {
       e.target.closest(".selection-checkbox") ||
       e.target.closest("button") ||
       e.target.closest(".dropdown-menu")
-    ) {
+    )
       return;
-    }
     navigate(`/admin/students/${getStudentUserId(student)}`);
   };
 
@@ -462,7 +448,6 @@ const StudentLists = () => {
     toast.success("Students promoted successfully");
   };
 
-  // Mock attendance - replace with real API data
   const getStudentAttendance = () => ({ present: 0, total: 0, percentage: 0 });
 
   // ============================================
@@ -565,19 +550,16 @@ const StudentLists = () => {
                   onClick={selectAllStudents}
                   className="flex items-center gap-2 text-sm text-gray-600 hover:text-gray-900 hover:bg-gray-50 px-3 py-2 rounded-lg transition-colors duration-200"
                 >
-                  {selectedStudents.length === filteredStudents.length ? (
+                  {allCurrentPageSelected ? (
                     <CheckSquare className="h-5 w-5 text-[#F59E0B]" />
                   ) : (
                     <Square className="h-5 w-5" />
                   )}
                   <span className="font-medium">
-                    {selectedStudents.length === filteredStudents.length
-                      ? "Deselect All"
-                      : "Select All"}
+                    {allCurrentPageSelected ? "Deselect Page" : "Select Page"}
                   </span>
                 </button>
 
-                {/* Bulk Actions for Selected Students */}
                 {selectedStudents.length > 0 && (
                   <div className="flex items-center gap-2">
                     <div className="h-6 border-l border-gray-300"></div>
@@ -605,7 +587,6 @@ const StudentLists = () => {
                       <UserX className="h-3 w-3" />
                       <span>Terminate</span>
                     </button>
-                    {/* Add Bulk Delete button */}
                     <button
                       onClick={handleBulkDelete}
                       className="flex items-center gap-1 text-xs text-red-600 hover:text-red-800 hover:bg-red-50 px-2 py-1 rounded transition-colors duration-200 border border-red-200"
@@ -639,14 +620,13 @@ const StudentLists = () => {
       {/* Students Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {loading ? (
-          // Loading Skeleton
-          Array.from({ length: 6 }).map((_, index) => (
+          Array.from({ length: itemsPerPage }).map((_, index) => (
             <LoadingSkeleton key={index} />
           ))
-        ) : filteredStudents.length === 0 ? (
+        ) : paginatedStudents.length === 0 ? (
           <EmptyState studentsCount={students.length} />
         ) : (
-          filteredStudents.map((student) => (
+          paginatedStudents.map((student) => (
             <StudentCard
               key={student.id}
               student={student}
@@ -670,11 +650,7 @@ const StudentLists = () => {
               onViewDetails={() =>
                 navigate(`/admin/students/${getStudentUserId(student)}`)
               }
-              // Add delete functionality
-              onDelete={() => {
-                const studentId = getStudentUserId(student);
-                deleteStudent(studentId);
-              }}
+              onDelete={() => deleteStudent(getStudentUserId(student))}
               getStatusColor={getStatusColor}
               getClassTypeColor={getClassTypeColor}
             />
@@ -682,7 +658,20 @@ const StudentLists = () => {
         )}
       </div>
 
-      {/* Selection Summary */}
+      {/* ── Pagination ── */}
+      {!loading && filteredStudents.length > 0 && (
+        <Pagination
+          currentPage={currentPage}
+          totalItems={filteredStudents.length}
+          itemsPerPage={itemsPerPage}
+          onPageChange={setCurrentPage}
+          onItemsPerPageChange={setItemsPerPage}
+          itemsPerPageOptions={[6, 12, 24, 48]}
+          showItemsPerPage={true}
+        />
+      )}
+
+      {/* Selection Summary (floating) */}
       {selectedStudents.length > 0 && (
         <div className="fixed bottom-6 right-6 bg-white rounded-xl shadow-xl border border-gray-200 p-4 z-50 min-w-[300px]">
           <div className="flex items-center justify-between gap-3 mb-3">
@@ -722,7 +711,6 @@ const StudentLists = () => {
               <TrendingUp className="h-4 w-4" />
               Promote
             </button>
-            {/* Add Delete button to selection summary */}
             <button
               onClick={handleBulkDelete}
               className="flex-1 flex items-center justify-center gap-2 text-sm font-medium px-3 py-2 bg-red-50 text-red-600 hover:bg-red-100 rounded-lg transition-colors"
@@ -768,26 +756,19 @@ const StudentLists = () => {
                 >
                   <option value="">Select a class</option>
                   {classesLoading ? (
-                    <option value="" disabled>
-                      Loading classes...
-                    </option>
+                    <option value="" disabled>Loading classes...</option>
                   ) : availableClasses.length === 0 ? (
-                    <option value="" disabled>
-                      No classes available
-                    </option>
+                    <option value="" disabled>No classes available</option>
                   ) : (
                     availableClasses.map((classItem) => (
                       <option key={classItem.id} value={classItem.id}>
-                        {classItem.name} - {classItem.type} (Grade{" "}
-                        {classItem.grade})
+                        {classItem.name} - {classItem.type} (Grade {classItem.grade})
                       </option>
                     ))
                   )}
                 </select>
                 {classesLoading && (
-                  <p className="text-xs text-gray-500 mt-1">
-                    Loading classes from server...
-                  </p>
+                  <p className="text-xs text-gray-500 mt-1">Loading classes from server...</p>
                 )}
               </div>
 
@@ -797,13 +778,8 @@ const StudentLists = () => {
                 </h4>
                 <div className="space-y-1">
                   {studentsToAssign.map((student, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between text-sm py-1"
-                    >
-                      <span className="text-gray-600">
-                        {getStudentName(student)}
-                      </span>
+                    <div key={index} className="flex items-center justify-between text-sm py-1">
+                      <span className="text-gray-600">{getStudentName(student)}</span>
                       <span className="text-xs text-gray-500">
                         {getCurrentClass(student)?.name || "No class"}
                       </span>
@@ -888,18 +864,9 @@ const StudentLists = () => {
                 </h4>
                 <div className="space-y-1">
                   {studentsToAssign.map((student, index) => (
-                    <div
-                      key={index}
-                      className="flex items-center justify-between text-sm py-1"
-                    >
-                      <span className="text-gray-600">
-                        {getStudentName(student)}
-                      </span>
-                      <span
-                        className={`text-xs font-medium ${getStatusColor(
-                          getStudentStatus(student)
-                        )}`}
-                      >
+                    <div key={index} className="flex items-center justify-between text-sm py-1">
+                      <span className="text-gray-600">{getStudentName(student)}</span>
+                      <span className={`text-xs font-medium ${getStatusColor(getStudentStatus(student))}`}>
                         {getStudentStatus(student)}
                       </span>
                     </div>
@@ -1051,17 +1018,11 @@ const StudentCard = ({
                 🏫 {currentClass.name}
               </p>
             )}
-            <span
-              className={`text-xs font-medium ${getStatusColor(studentStatus)}`}
-            >
+            <span className={`text-xs font-medium ${getStatusColor(studentStatus)}`}>
               • {studentStatus}
             </span>
             {currentClass?.type && (
-              <span
-                className={`text-xs font-medium ${getClassTypeColor(
-                  currentClass.type
-                )}`}
-              >
+              <span className={`text-xs font-medium ${getClassTypeColor(currentClass.type)}`}>
                 • {currentClass.type}
               </span>
             )}
@@ -1069,7 +1030,7 @@ const StudentCard = ({
         </div>
       </div>
 
-      {/* Three-dot dropdown menu */}
+      {/* Three-dot dropdown */}
       <div className="relative">
         <button
           onClick={(e) => {
@@ -1088,20 +1049,14 @@ const StudentCard = ({
           >
             <div className="py-1">
               <button
-                onClick={() => {
-                  onViewDetails();
-                  onToggleDropdown();
-                }}
+                onClick={() => { onViewDetails(); onToggleDropdown(); }}
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               >
                 <Eye className="h-4 w-4" />
                 View Details
               </button>
               <button
-                onClick={() => {
-                  onViewHistory();
-                  onToggleDropdown();
-                }}
+                onClick={() => { onViewHistory(); onToggleDropdown(); }}
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-gray-700 hover:bg-gray-100"
               >
                 <History className="h-4 w-4" />
@@ -1136,13 +1091,9 @@ const StudentCard = ({
                 <UserX className="h-4 w-4" />
                 Terminate
               </button>
-              {/* Add Delete option */}
               <div className="border-t border-gray-200 my-1"></div>
               <button
-                onClick={() => {
-                  onDelete();
-                  onToggleDropdown();
-                }}
+                onClick={() => { onDelete(); onToggleDropdown(); }}
                 className="flex items-center gap-2 w-full px-4 py-2 text-sm text-red-600 hover:bg-red-50"
               >
                 <Trash2Icon className="h-4 w-4" />
@@ -1181,9 +1132,7 @@ const StudentCard = ({
           <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 text-blue-600 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Class</p>
-            <p className="text-sm font-medium text-gray-900 truncate">
-              {currentClass.name}
-            </p>
+            <p className="text-sm font-medium text-gray-900 truncate">{currentClass.name}</p>
           </div>
         </div>
       ) : (
@@ -1191,9 +1140,7 @@ const StudentCard = ({
           <School className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Class</p>
-            <p className="text-sm font-medium text-gray-900 truncate">
-              Not Assigned
-            </p>
+            <p className="text-sm font-medium text-gray-900 truncate">Not Assigned</p>
           </div>
         </div>
       )}
@@ -1202,9 +1149,7 @@ const StudentCard = ({
           <Users className="h-3 w-3 sm:h-4 sm:w-4 text-green-600 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Guardian</p>
-            <p className="text-sm font-medium text-gray-900 truncate">
-              {student.guardianName}
-            </p>
+            <p className="text-sm font-medium text-gray-900 truncate">{student.guardianName}</p>
           </div>
         </div>
       ) : (
@@ -1212,9 +1157,7 @@ const StudentCard = ({
           <Users className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 flex-shrink-0" />
           <div>
             <p className="text-xs text-gray-500">Guardian</p>
-            <p className="text-sm font-medium text-gray-900 truncate">
-              Not Provided
-            </p>
+            <p className="text-sm font-medium text-gray-900 truncate">Not Provided</p>
           </div>
         </div>
       )}
@@ -1232,12 +1175,8 @@ const StudentCard = ({
       <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="flex items-baseline gap-2">
-            <span className="text-lg font-bold text-gray-900">
-              {attendance.present}
-            </span>
-            <span className="text-sm text-gray-500">
-              / {attendance.total} days
-            </span>
+            <span className="text-lg font-bold text-gray-900">{attendance.present}</span>
+            <span className="text-sm text-gray-500">/ {attendance.total} days</span>
           </div>
           <span
             className={`text-sm font-bold ${
@@ -1269,20 +1208,14 @@ const StudentCard = ({
     {/* Action Buttons */}
     <div className="mt-4 pt-4 border-t border-gray-100 flex gap-2">
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onViewHistory();
-        }}
+        onClick={(e) => { e.stopPropagation(); onViewHistory(); }}
         className="flex-1 flex items-center justify-center gap-2 text-blue-600 hover:text-blue-800 text-xs font-medium transition-all duration-200 py-2.5 border border-blue-200 rounded-xl hover:bg-blue-50 hover:border-blue-300 hover:shadow-sm"
       >
         <History className="h-3 w-3" />
         <span>History</span>
       </button>
       <button
-        onClick={(e) => {
-          e.stopPropagation();
-          onViewDetails();
-        }}
+        onClick={(e) => { e.stopPropagation(); onViewDetails(); }}
         className="flex-1 flex items-center justify-center gap-2 text-[#F59E0B] hover:text-[#D97706] text-xs font-medium transition-all duration-200 py-2.5 border border-[#FDE68A] rounded-xl hover:bg-[#FFFBEB] hover:border-[#F59E0B] hover:shadow-sm"
       >
         <Eye className="h-3 w-3" />
@@ -1317,19 +1250,14 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
           {!imgLoaded && (
             <div className="w-10 h-10 sm:w-12 sm:h-12 bg-gray-200 rounded-full animate-pulse" />
           )}
-
           <img
             src={profileImageUrl}
             alt={studentName}
             className={`w-10 h-10 sm:w-12 sm:h-12 rounded-full object-cover border-2 border-white shadow-lg transition-all duration-300 group-hover:scale-105 group-hover:border-[#F59E0B] ${
               imgLoaded ? "block" : "hidden"
             }`}
-            onLoad={() => {
-              setImgLoaded(true);
-            }}
-            onError={() => {
-              setImgError(true);
-            }}
+            onLoad={() => setImgLoaded(true)}
+            onError={() => setImgError(true)}
           />
         </>
       ) : (
@@ -1337,7 +1265,6 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
           {initials}
         </div>
       )}
-
       {studentStatus === "ACTIVE" && (
         <div className="absolute bottom-0 right-0 w-3 h-3 bg-green-500 rounded-full border-2 border-white" />
       )}
