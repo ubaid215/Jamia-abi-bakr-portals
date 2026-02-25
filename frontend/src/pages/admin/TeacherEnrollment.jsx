@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
 import { useEnrollment } from '../../contexts/EnrollmentContext';
 import { User, Mail, Phone, BookOpen, Calendar, MapPin, FileText, Award, Briefcase, Upload, X, Image as ImageIcon, File } from 'lucide-react';
+import toast from 'react-hot-toast';
 
 const TeacherEnrollment = () => {
   const { registerTeacher, loading, error, success, resetState } = useEnrollment();
@@ -220,91 +221,53 @@ const TeacherEnrollment = () => {
     e.preventDefault();
     resetState();
 
-    // Validate required profile image
     if (!files.profileImage) {
-      setFileErrors({ profileImage: 'Profile image is required' });
-      return;
+        setFileErrors({ profileImage: 'Profile image is required' });
+        toast.error('Profile image is required');
+        return;
     }
-    
-    try {
-      // Create FormData
-      const data = new FormData();
-      
-      // Add text fields
-      data.append('name', formData.name);
-      if (formData.phone) data.append('phone', formData.phone);
-      
-      // Add profile data as JSON string
-      data.append('profileData', JSON.stringify(formData.profileData));
-      
-      // Add files
-      if (files.profileImage) {
-        data.append('profileImage', files.profileImage);
-      }
-      if (files.cnicFront) {
-        data.append('cnicFront', files.cnicFront);
-      }
-      if (files.cnicBack) {
-        data.append('cnicBack', files.cnicBack);
-      }
-      
-      // Add multiple files
-      files.degreeDocuments.forEach(file => {
-        data.append('degreeDocuments', file);
-      });
-      
-      files.otherDocuments.forEach(file => {
-        data.append('otherDocuments', file);
-      });
 
-      const result = await registerTeacher(data);
-      setCredentials(result.credentials);
-      
-      // Reset form
-      setFormData({
-        name: '',
-        phone: '',
-        profileData: {
-          bio: '',
-          dateOfBirth: '',
-          gender: '',
-          cnic: '',
-          qualification: '',
-          specialization: '',
-          experience: '',
-          address: '',
-          emergencyContactName: '',
-          emergencyContactPhone: '',
-          emergencyContactRelation: '',
-          phoneSecondary: '',
-          phoneEmergency: '',
-          joiningDate: '',
-          salary: '',
-          employmentType: ''
-        }
-      });
-      
-      // Reset files
-      setFiles({
-        profileImage: null,
-        cnicFront: null,
-        cnicBack: null,
-        degreeDocuments: [],
-        otherDocuments: []
-      });
-      
-      setPreviews({
-        profileImage: null,
-        cnicFront: null,
-        cnicBack: null
-      });
-      
-      setFileErrors({});
-      
-    } catch (error) {
-      console.error('Registration failed:', error);
+    try {
+        const data = new FormData();
+        data.append('name', formData.name);
+        if (formData.phone) data.append('phone', formData.phone);
+        data.append('profileData', JSON.stringify(formData.profileData));
+        if (files.profileImage) data.append('profileImage', files.profileImage);
+        if (files.cnicFront) data.append('cnicFront', files.cnicFront);
+        if (files.cnicBack) data.append('cnicBack', files.cnicBack);
+        files.degreeDocuments.forEach(file => data.append('degreeDocuments', file));
+        files.otherDocuments.forEach(file => data.append('otherDocuments', file));
+
+        const result = await toast.promise(
+            registerTeacher(data),
+            {
+                loading: 'Registering teacher...',
+                success: (res) => `Teacher "${res.user?.name}" registered successfully!`,
+                error: (err) => err?.response?.data?.error || 'Registration failed. Please try again.',
+            }
+        );
+
+        setCredentials(result.credentials);
+
+        // Reset form
+        setFormData({
+            name: '', phone: '',
+            profileData: {
+                bio: '', dateOfBirth: '', gender: '', cnic: '', qualification: '',
+                specialization: '', experience: '', address: '', emergencyContactName: '',
+                emergencyContactPhone: '', emergencyContactRelation: '', phoneSecondary: '',
+                phoneEmergency: '', joiningDate: '', salary: '', employmentType: ''
+            }
+        });
+        setFiles({ profileImage: null, cnicFront: null, cnicBack: null, degreeDocuments: [], otherDocuments: [] });
+        setPreviews({ profileImage: null, cnicFront: null, cnicBack: null });
+        setFileErrors({});
+
+    } catch (err) {
+        // toast.promise already showed the error toast — nothing extra needed
+        console.error('Registration failed:', err);
     }
-  };
+};
 
   return (
     <div className="min-h-screen bg-white py-8 px-4 sm:px-6 lg:px-8">

@@ -19,6 +19,11 @@ const envSchema = z.object({
   // Redis (optional — app works without it, just no caching)
   REDIS_URL: z.string().optional(),
 
+  // Cloudinary (optional — falls back to local storage if not set)
+  CLOUDINARY_CLOUD_NAME: z.string().optional(),
+  CLOUDINARY_API_KEY: z.string().optional(),
+  CLOUDINARY_API_SECRET: z.string().optional(),
+
   // Domain
   DOMAIN: z.string().default('http://localhost'),
 });
@@ -43,5 +48,11 @@ config.isDev = config.NODE_ENV === 'development';
 config.isProd = config.NODE_ENV === 'production';
 config.isTest = config.NODE_ENV === 'test';
 config.redisEnabled = !!config.REDIS_URL;
+
+config.cloudinaryEnabled = !!(
+  config.CLOUDINARY_CLOUD_NAME &&
+  config.CLOUDINARY_API_KEY &&
+  config.CLOUDINARY_API_SECRET
+);
 
 module.exports = config;

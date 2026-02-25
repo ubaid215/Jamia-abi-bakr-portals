@@ -2,6 +2,9 @@ import React, { useState, useEffect } from 'react';
 import { useEnrollment } from '../../contexts/EnrollmentContext';
 import { useClass } from '../../contexts/ClassContext';
 import { User, Mail, Phone, Calendar, MapPin, FileText, Users, School, Heart, Pill, Upload, X, Image as ImageIcon, File } from 'lucide-react';
+import toast from 'react-hot-toast';
+
+
 
 const StudentEnrollment = () => {
   const { registerStudent, loading, error, success, resetState, uploadProgress, isUploading } = useEnrollment();
@@ -221,100 +224,56 @@ const StudentEnrollment = () => {
     e.preventDefault();
     resetState();
 
-    // Validate required profile image
     if (!files.profileImage) {
-      setFileErrors({ profileImage: 'Profile image is required' });
-      return;
+        setFileErrors({ profileImage: 'Profile image is required' });
+        toast.error('Profile image is required');
+        return;
     }
-    
-    try {
-      // Create FormData
-      const data = new FormData();
-      
-      // Add text fields
-      data.append('name', formData.name);
-      if (formData.phone) data.append('phone', formData.phone);
-      if (formData.classRoomId) data.append('classRoomId', formData.classRoomId);
-      
-      // Add profile data as JSON string
-      data.append('profileData', JSON.stringify(formData.profileData));
-      
-      // Add files
-      if (files.profileImage) {
-        data.append('profileImage', files.profileImage);
-      }
-      if (files.birthCertificate) {
-        data.append('birthCertificate', files.birthCertificate);
-      }
-      if (files.cnicOrBForm) {
-        data.append('cnicOrBForm', files.cnicOrBForm);
-      }
-      if (files.previousSchoolCertificate) {
-        data.append('previousSchoolCertificate', files.previousSchoolCertificate);
-      }
-      
-      // Add multiple files
-      files.otherDocuments.forEach(file => {
-        data.append('otherDocuments', file);
-      });
 
-      const result = await registerStudent(data);
-      setCredentials(result.credentials);
-      
-      // Reset form
-      setFormData({
-        name: '',
-        phone: '',
-        classRoomId: '',
-        profileData: {
-          dob: '',
-          gender: '',
-          placeOfBirth: '',
-          nationality: 'Pakistani',
-          religion: 'Islam',
-          bloodGroup: '',
-          medicalConditions: '',
-          allergies: '',
-          medication: '',
-          guardianName: '',
-          guardianRelation: '',
-          guardianPhone: '',
-          guardianEmail: '',
-          guardianOccupation: '',
-          guardianCNIC: '',
-          guardian2Name: '',
-          guardian2Relation: '',
-          guardian2Phone: '',
-          guardian2Email: '',
-          address: '',
-          city: '',
-          province: '',
-          postalCode: '',
-          emergencyContactName: '',
-          emergencyContactPhone: '',
-          emergencyContactRelation: ''
-        }
-      });
-      
-      // Reset files
-      setFiles({
-        profileImage: null,
-        birthCertificate: null,
-        cnicOrBForm: null,
-        previousSchoolCertificate: null,
-        otherDocuments: []
-      });
-      
-      setPreviews({
-        profileImage: null
-      });
-      
-      setFileErrors({});
-      
-    } catch (error) {
-      console.error('Registration failed:', error);
+    try {
+        const data = new FormData();
+        data.append('name', formData.name);
+        if (formData.phone) data.append('phone', formData.phone);
+        if (formData.classRoomId) data.append('classRoomId', formData.classRoomId);
+        data.append('profileData', JSON.stringify(formData.profileData));
+        if (files.profileImage) data.append('profileImage', files.profileImage);
+        if (files.birthCertificate) data.append('birthCertificate', files.birthCertificate);
+        if (files.cnicOrBForm) data.append('cnicOrBForm', files.cnicOrBForm);
+        if (files.previousSchoolCertificate) data.append('previousSchoolCertificate', files.previousSchoolCertificate);
+        files.otherDocuments.forEach(file => data.append('otherDocuments', file));
+
+        const result = await toast.promise(
+            registerStudent(data),
+            {
+                loading: 'Registering student...',
+                success: (res) =>
+                    `Student "${res.user?.name}" registered! Admission No: ${res.credentials?.admissionNo}`,
+                error: (err) => err?.response?.data?.error || 'Registration failed. Please try again.',
+            }
+        );
+
+        setCredentials(result.credentials);
+
+        // Reset form
+        setFormData({
+            name: '', phone: '', classRoomId: '',
+            profileData: {
+                dob: '', gender: '', placeOfBirth: '', nationality: 'Pakistani', religion: 'Islam',
+                bloodGroup: '', medicalConditions: '', allergies: '', medication: '',
+                guardianName: '', guardianRelation: '', guardianPhone: '', guardianEmail: '',
+                guardianOccupation: '', guardianCNIC: '', guardian2Name: '', guardian2Relation: '',
+                guardian2Phone: '', guardian2Email: '', address: '', city: '', province: '',
+                postalCode: '', emergencyContactName: '', emergencyContactPhone: '', emergencyContactRelation: ''
+            }
+        });
+        setFiles({ profileImage: null, birthCertificate: null, cnicOrBForm: null, previousSchoolCertificate: null, otherDocuments: [] });
+        setPreviews({ profileImage: null });
+        setFileErrors({});
+
+    } catch (err) {
+        console.error('Registration failed:', err);
     }
-  };
+};
 
   // Get available classes
   const availableClasses = Array.isArray(classes) ? classes : [];

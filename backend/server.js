@@ -15,6 +15,7 @@ const logger = require('./utils/logger');
 const { errorHandler } = require('./middlewares/errorHandler');
 const { redisHealthCheck } = require('./db/redisClient');
 const prisma = require('./db/prismaClient');
+const { ipKeyGenerator } = require('express-rate-limit');
 
 // Import routes
 const authRoutes = require('./routes/authRoute');
@@ -142,24 +143,24 @@ app.use((req, res, next) => {
 // Rate Limiting
 // ============================================
 
-// Auth endpoints — 5 attempts per 15 minutes
+// Auth endpoints — 15 attempts per 15 minutes
 const authLimiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 15, // 15 requests per window (login, register, forgot-password etc.)
+  windowMs: 15 * 60 * 1000,
+  max: 15,
   message: {
     error: 'Too many requests',
     message: 'Too many authentication attempts. Please try again in 15 minutes.',
     retryAfter: '15 minutes',
   },
-  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip, // Rate limit by IP
+  keyGenerator: (req) => ipKeyGenerator(req), // ✅ IPv6-safe
 });
 
 // Login endpoint — stricter limit
 const loginLimiter = rateLimit({
   windowMs: 15 * 60 * 1000,
-  max: 5, // Only 5 login attempts per 15 minutes
+  max: 5,
   message: {
     error: 'Too many login attempts',
     message: 'Account temporarily locked. Please try again in 15 minutes.',
@@ -167,13 +168,13 @@ const loginLimiter = rateLimit({
   },
   standardHeaders: true,
   legacyHeaders: false,
-  keyGenerator: (req) => req.ip,
+  keyGenerator: (req) => ipKeyGenerator(req), // ✅ IPv6-safe
 });
 
-// General API rate limiter
+// General API rate limiter — no custom keyGenerator needed,
 const apiLimiter = rateLimit({
-  windowMs: 1 * 60 * 1000, // 1 minute
-  max: 100, // 100 requests per minute
+  windowMs: 1 * 60 * 1000,
+  max: 100,
   message: {
     error: 'Rate limit exceeded',
     message: 'Too many requests. Please slow down.',
