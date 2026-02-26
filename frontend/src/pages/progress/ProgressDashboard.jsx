@@ -2,6 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import snapshotService from '../../services/snapshotService';
 import goalService from '../../services/goalService';
+import StudentClassPicker from '../../components/shared/StudentClassPicker';
 import {
   Activity, TrendingUp, AlertTriangle, Target, BookOpen,
   Award, Clock, BarChart3, Users, RefreshCw, ChevronRight,
@@ -65,39 +66,80 @@ const ProgressDashboard = () => {
   const { user } = useAuth();
   const [snapshot, setSnapshot] = useState(null);
   const [goalStats, setGoalStats] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [refreshing, setRefreshing] = useState(false);
 
-  // Resolve student ID (for student portal, use own; otherwise from prop/query)
+  // For teacher / admin — pick a student from the picker
+  const [pickedStudentId, setPickedStudentId] = useState('');
+
+  const isStaff = ['TEACHER', 'ADMIN', 'SUPER_ADMIN'].includes(user?.role);
+
+  // Resolve student ID
   const studentId = useMemo(() => {
+    // Students see their own snapshot
     if (user?.role === 'STUDENT' && user?.studentProfile?.id) return user.studentProfile.id;
+    // From picker
+    if (pickedStudentId) return pickedStudentId;
+    // From URL query param
     const params = new URLSearchParams(window.location.search);
     return params.get('studentId') || null;
-  }, [user]);
+  }, [user, pickedStudentId]);
 
   const fetchData = async () => {
     if (!studentId) return;
+    setLoading(true);
     try {
-      const [snap, stats] = await Promise.allSettled([
-        snapshotService.getSnapshot(studentId),
-        goalService.getStats({ studentId }),
-      ]);
-      if (snap.status === 'fulfilled') setSnapshot(snap.value.data);
-      if (stats.status === 'fulfilled') setGoalStats(stats.value.data);
+      // Fetch snapshot
+      const snapRes = await snapshotService.getSnapshot(studentId);
+      setSnapshot(snapRes.data || snapRes || null);
+
+      // Fetch goals list and compute stats locally
+      // (no /goals/stats endpoint — we derive from the list)
+      try {
+        const goalsRes = await goalService.getAll({ studentId, limit: 500 });
+        const goals = goalsRes.data || goalsRes.goals || [];
+        if (Array.isArray(goals) && goals.length > 0) {
+          const total = goals.length;
+          const achieved = goals.filter(g => g.status === 'ACHIEVED').length;
+          const inProgress = goals.filter(g => g.status === 'IN_PROGRESS').length;
+          const atRisk = goals.filter(g => g.status === 'AT_RISK').length;
+          const failed = goals.filter(g => g.status === 'FAILED').length;
+          const overdue = goals.filter(g => {
+            if (g.status === 'ACHIEVED' || g.status === 'CANCELLED') return false;
+            return g.targetDate && new Date(g.targetDate) < new Date();
+          }).length;
+          setGoalStats({
+            total,
+            achieved,
+            inProgress,
+            atRisk,
+            failed,
+            overdue,
+            achievementRate: total > 0 ? Math.round((achieved / total) * 100) : 0,
+          });
+        } else {
+          setGoalStats(null);
+        }
+      } catch {
+        setGoalStats(null);
+      }
     } catch (err) {
       console.error('Dashboard data fetch error:', err);
+      setSnapshot(null);
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { fetchData(); }, [studentId]);
+  useEffect(() => {
+    if (studentId) fetchData();
+  }, [studentId]);
 
   const handleRefresh = async () => {
     if (!studentId) return;
     setRefreshing(true);
     try {
-      await snapshotService.recalculate(studentId);
+      await snapshotService.refresh(studentId);
       await fetchData();
     } catch (err) {
       console.error('Refresh error:', err);
@@ -106,13 +148,40 @@ const ProgressDashboard = () => {
     }
   };
 
+  const handleStudentPick = ({ studentId: sid }) => {
+    if (sid) setPickedStudentId(sid);
+  };
+
+  /* ── No student selected state ── */
   if (!studentId) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Users size={48} className="mx-auto text-gray-300 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-600">No Student Selected</h2>
-          <p className="text-gray-400 mt-1">Select a student to view their progress dashboard</p>
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Progress Dashboard</h1>
+          <p className="text-gray-500 text-sm mt-1">Select a student to view their progress snapshot</p>
+        </div>
+
+        {/* Student picker for staff */}
+        {isStaff && (
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Users size={16} className="text-amber-500" />
+              <h3 className="font-semibold text-gray-800 text-sm">Select a Student</h3>
+            </div>
+            <StudentClassPicker compact onSelect={handleStudentPick} />
+          </div>
+        )}
+
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <div className="text-center">
+            <Users size={48} className="mx-auto text-gray-300 mb-4" />
+            <h2 className="text-xl font-semibold text-gray-600">No Student Selected</h2>
+            <p className="text-gray-400 mt-1">
+              {isStaff
+                ? 'Use the picker above to select a student'
+                : 'Your student profile could not be found'}
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -120,7 +189,7 @@ const ProgressDashboard = () => {
 
   if (loading) {
     return (
-      <div className="p-6 space-y-6 animate-pulse">
+      <div className="p-6 space-y-6 animate-pulse max-w-7xl mx-auto">
         <div className="h-8 bg-gray-200 rounded w-48" />
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
           {[...Array(4)].map((_, i) => <div key={i} className="h-32 bg-gray-200 rounded-xl" />)}
@@ -138,7 +207,7 @@ const ProgressDashboard = () => {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Progress Dashboard</h1>
           <p className="text-gray-500 text-sm mt-1">
@@ -157,6 +226,17 @@ const ProgressDashboard = () => {
           </button>
         </div>
       </div>
+
+      {/* Student picker for staff — inline compact */}
+      {isStaff && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Users size={14} className="text-amber-500" />
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Change Student</span>
+          </div>
+          <StudentClassPicker compact onSelect={handleStudentPick} />
+        </div>
+      )}
 
       {/* Metric Cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -268,14 +348,14 @@ const ProgressDashboard = () => {
         </div>
         <div className="grid grid-cols-2 md:grid-cols-5 gap-4">
           {[
-            { label: 'Reading', value: s.currentReadingLevel, color: 'indigo' },
-            { label: 'Writing', value: s.currentWritingLevel, color: 'emerald' },
-            { label: 'Listening', value: s.currentListeningLevel, color: 'amber' },
-            { label: 'Speaking', value: s.currentSpeakingLevel, color: 'rose' },
-            { label: 'Critical Thinking', value: s.currentCriticalThinking, color: 'purple' },
+            { label: 'Reading', value: s.currentReadingLevel, bg: 'bg-indigo-50', text: 'text-indigo-600' },
+            { label: 'Writing', value: s.currentWritingLevel, bg: 'bg-emerald-50', text: 'text-emerald-600' },
+            { label: 'Listening', value: s.currentListeningLevel, bg: 'bg-amber-50', text: 'text-amber-600' },
+            { label: 'Speaking', value: s.currentSpeakingLevel, bg: 'bg-rose-50', text: 'text-rose-600' },
+            { label: 'Critical Thinking', value: s.currentCriticalThinking, bg: 'bg-purple-50', text: 'text-purple-600' },
           ].map((skill) => (
-            <div key={skill.label} className="text-center p-3 bg-gray-50 rounded-lg">
-              <p className={`text-2xl font-bold text-${skill.color}-600`}>{skill.value || '—'}</p>
+            <div key={skill.label} className={`text-center p-3 ${skill.bg} rounded-lg`}>
+              <p className={`text-2xl font-bold ${skill.text}`}>{skill.value || '—'}</p>
               <p className="text-xs text-gray-500 mt-1">{skill.label}</p>
             </div>
           ))}

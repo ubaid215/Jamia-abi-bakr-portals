@@ -1,659 +1,413 @@
 import React, { useState, useEffect } from "react";
+import { useAuth } from "../../contexts/AuthContext";
 import { useStudent } from "../../contexts/StudentContext";
+import dailyActivityService from "../../services/dailyActivityService";
+import weeklyProgressService from "../../services/weeklyProgressService";
 import {
-  TrendingUp,
-  BookOpen,
-  Target,
-  Award,
-  Calendar,
-  Clock,
-  CheckCircle,
-  BarChart3,
-  Bookmark,
-  FileText,
-  User,
-  ChevronDown,
-  ChevronUp,
-  Filter,
-  Download,
+  TrendingUp, BookOpen, Target, Award, Calendar, Clock,
+  CheckCircle, BarChart3, ChevronDown, ChevronUp,
+  Activity, FileText, Star, AlertTriangle
 } from "lucide-react";
 
+/* ─── Tab Button ─── */
+const Tab = ({ active, label, icon: Icon, onClick }) => (
+  <button
+    onClick={onClick}
+    className={`flex items-center gap-2 px-4 py-2.5 text-sm font-medium rounded-lg transition-colors ${active ? 'bg-indigo-600 text-white shadow-sm' : 'text-gray-600 hover:bg-gray-100'
+      }`}
+  >
+    <Icon size={16} /> {label}
+  </button>
+);
+
+/* ─── Stat Card ─── */
+const StatCard = ({ icon: Icon, label, value, color = 'text-indigo-600', sub }) => (
+  <div className="bg-white rounded-xl border border-gray-100 p-4 text-center">
+    <Icon size={18} className={`mx-auto mb-1.5 ${color}`} />
+    <p className="text-xl font-bold text-gray-900">{value ?? '—'}</p>
+    <p className="text-xs text-gray-500">{label}</p>
+    {sub && <p className="text-xs text-gray-400 mt-0.5">{sub}</p>}
+  </div>
+);
+
+/* ═══ Main Component ═══ */
 const StudentProgress = () => {
-  const { progress, loading, error, fetchMyProgress } = useStudent();
+  const { user } = useAuth();
+  const { progress, loading: ctxLoading, fetchMyProgress } = useStudent();
+  const studentId = user?.studentProfile?.id;
 
-  const [selectedType, setSelectedType] = useState("");
-  const [dateRange, setDateRange] = useState({
-    startDate: "",
-    endDate: "",
-  });
-  const [expandedProgress, setExpandedProgress] = useState(null);
+  const [tab, setTab] = useState('daily');
+  const [activities, setActivities] = useState([]);
+  const [weeklyReports, setWeeklyReports] = useState([]);
+  const [loadingAct, setLoadingAct] = useState(false);
+  const [loadingWeek, setLoadingWeek] = useState(false);
+  const [expandedId, setExpandedId] = useState(null);
 
+  // Fetch academic progress on mount
+  useEffect(() => { fetchMyProgress(); }, [fetchMyProgress]);
+
+  // Fetch daily activities
   useEffect(() => {
-    fetchMyProgress();
-  }, [fetchMyProgress]);
+    if (!studentId || tab !== 'daily') return;
+    setLoadingAct(true);
+    dailyActivityService.getByStudent(studentId, { limit: 30 })
+      .then(res => setActivities(res.data || []))
+      .catch(() => setActivities([]))
+      .finally(() => setLoadingAct(false));
+  }, [studentId, tab]);
 
-  const toggleProgress = (progressId) => {
-    setExpandedProgress(expandedProgress === progressId ? null : progressId);
-  };
+  // Fetch weekly progress
+  useEffect(() => {
+    if (!studentId || tab !== 'weekly') return;
+    setLoadingWeek(true);
+    weeklyProgressService.getByStudent(studentId, { limit: 20 })
+      .then(res => setWeeklyReports(res.data || []))
+      .catch(() => setWeeklyReports([]))
+      .finally(() => setLoadingWeek(false));
+  }, [studentId, tab]);
 
-  const getProgressTypeConfig = (type) => {
-    const config = {
-      HIFZ: {
-        color: "bg-purple-100 text-purple-800 border-purple-200",
-        icon: BookOpen,
-        title: "Hifz Program Progress",
-        description: "Quran Memorization Tracking",
-      },
-      NAZRA: {
-        color: "bg-amber-100 text-amber-800 border-amber-200",
-        icon: BookOpen,
-        title: "Nazra Program Progress",
-        description: "Quran Recitation Tracking",
-      },
-      REGULAR: {
-        color: "bg-blue-100 text-blue-800 border-blue-200",
-        icon: Award,
-        title: "Regular Program Progress",
-        description: "Academic Performance Tracking",
-      },
-    };
-    return (
-      config[type] || {
-        color: "bg-gray-100 text-gray-800 border-gray-200",
-        icon: TrendingUp,
-      }
-    );
-  };
+  const formatDate = (d) => d ? new Date(d).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : '—';
 
-  const formatDate = (dateString) => {
-    return new Date(dateString).toLocaleDateString("en-US", {
-      weekday: "short",
-      year: "numeric",
-      month: "short",
-      day: "numeric",
-    });
-  };
+  const toggle = (id) => setExpandedId(expandedId === id ? null : id);
 
-  const calculateProgressPercentage = (completionStats) => {
-    if (!completionStats) return 0;
-    return (
-      completionStats.completionPercentage ||
-      completionStats.averagePercentage ||
-      0
-    );
-  };
+  return (
+    <div className="min-h-screen bg-gray-50">
+      {/* Header */}
+      <div className="bg-white shadow-sm border-b border-gray-200">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-4">
+          <h1 className="text-xl sm:text-2xl font-bold text-gray-900">My Progress</h1>
+          <p className="text-sm text-gray-500 mt-1">Daily activities, weekly reports & academic progress</p>
+        </div>
+      </div>
 
-  const ProgressCard = ({ progressData }) => {
-    const config = getProgressTypeConfig(progressData.progressType);
-    const Icon = config.icon;
-    const progressPercentage = calculateProgressPercentage(
-      progressData.completionStats
-    );
-
-    return (
-      <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 lg:p-6">
-        {/* Header */}
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0 mb-3 sm:mb-4">
-          <div className="flex items-center space-x-2.5 sm:space-x-3">
-            <div
-              className={`p-1.5 sm:p-2 rounded-lg ${config.color} flex-shrink-0`}
-            >
-              <Icon className="h-4 w-4 sm:h-5 sm:w-5" />
-            </div>
-            <div className="min-w-0">
-              <h3 className="text-base sm:text-lg font-semibold text-black truncate">
-                {config.title}
-              </h3>
-              <p className="text-xs sm:text-sm text-gray-600 line-clamp-2 sm:line-clamp-1">
-                {config.description}
-              </p>
-            </div>
-          </div>
-          <span
-            className={`px-2 py-0.5 sm:px-3 sm:py-1 rounded-full text-xs sm:text-sm font-medium border ${config.color} mt-2 sm:mt-0 self-start sm:self-center`}
-          >
-            {progressData.progressType}
-          </span>
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-6 space-y-6">
+        {/* Tabs */}
+        <div className="flex gap-2 bg-white rounded-xl border border-gray-100 p-2 overflow-x-auto">
+          <Tab active={tab === 'daily'} label="Daily Activities" icon={Activity} onClick={() => setTab('daily')} />
+          <Tab active={tab === 'weekly'} label="Weekly Reports" icon={BarChart3} onClick={() => setTab('weekly')} />
+          <Tab active={tab === 'academic'} label="Academic Progress" icon={Award} onClick={() => setTab('academic')} />
         </div>
 
-        {/* Progress Bar */}
-        <div className="mb-4 sm:mb-5 lg:mb-6">
-          <div className="flex justify-between items-center mb-1.5 sm:mb-2">
-            <span className="text-xs sm:text-sm font-medium text-gray-700">
-              Overall Progress
-            </span>
-            <span className="text-xs sm:text-sm font-bold text-black">
-              {progressPercentage.toFixed(1)}%
-            </span>
-          </div>
-          <div className="w-full bg-gray-200 rounded-full h-2 sm:h-3">
-            <div
-              className="bg-amber-600 h-2 sm:h-3 rounded-full transition-all duration-500"
-              style={{ width: `${progressPercentage}%` }}
-            ></div>
-          </div>
-        </div>
-
-        {/* Progress Stats */}
-        {progressData.completionStats && (
-          <div className="grid grid-cols-2 gap-2 sm:gap-3 md:gap-4 mb-4 sm:mb-5 lg:mb-6">
-            {/* HIFZ Progress Stats */}
-            {progressData.progressType === "HIFZ" && (
-              <>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <Bookmark className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-purple-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.totalLinesCompleted || 0}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Lines</p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <Award className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-purple-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.parasCompleted || 0}/30
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Paras</p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <Target className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-purple-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.currentPara || 1}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Current Para</p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-purple-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.averageDailyLines || 0}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Daily Avg</p>
-                </div>
-              </>
-            )}
-
-            {/* NAZRA Progress Stats */}
-            {progressData.progressType === "NAZRA" && (
-              <>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-amber-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.totalLinesRecited || 0}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">
-                    Lines Recited
-                  </p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <Target className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-amber-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.completionPercentage?.toFixed(
-                      1
-                    ) || 0}
-                    %
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Complete</p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-amber-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.averageDailyLines || 0}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Daily Lines</p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <CheckCircle className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-amber-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.isCompleted ? "✓" : "↻"}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">
-                    {progressData.completionStats.isCompleted
-                      ? "Done"
-                      : "Active"}
-                  </p>
-                </div>
-              </>
-            )}
-
-            {/* REGULAR Progress Stats */}
-            {progressData.progressType === "REGULAR" && (
-              <>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <Award className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-blue-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.averagePercentage || 0}%
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Avg Score</p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-blue-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.progress?.length || 0}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">Assessments</p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <TrendingUp className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-blue-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.averagePercentage >= 80
-                      ? "A"
-                      : progressData.completionStats.averagePercentage >= 60
-                      ? "B"
-                      : "C"}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">
-                    {progressData.completionStats.averagePercentage >= 80
-                      ? "Excel"
-                      : progressData.completionStats.averagePercentage >= 60
-                      ? "Good"
-                      : "Improve"}
-                  </p>
-                </div>
-                <div className="text-center p-2 sm:p-3 bg-gray-50 rounded-lg">
-                  <Target className="h-4 w-4 sm:h-5 sm:w-5 lg:h-6 lg:w-6 text-blue-600 mx-auto mb-1 sm:mb-2" />
-                  <p className="text-base sm:text-lg font-bold text-black truncate">
-                    {progressData.completionStats.averagePercentage >= 75
-                      ? "✓"
-                      : "!"}
-                  </p>
-                  <p className="text-xs text-gray-600 truncate">
-                    {progressData.completionStats.averagePercentage >= 75
-                      ? "On Track"
-                      : "Below"}
-                  </p>
-                </div>
-              </>
-            )}
-          </div>
-        )}
-
-        {/* Recent Progress Records */}
-        {progressData.progress && progressData.progress.length > 0 && (
-          <div>
-            <h4 className="font-medium text-black mb-3 sm:mb-4 flex items-center space-x-1.5 sm:space-x-2 text-sm sm:text-base">
-              <Calendar className="h-3 w-3 sm:h-4 sm:w-4 flex-shrink-0" />
-              <span>Recent Progress</span>
-            </h4>
-            <div className="space-y-2 sm:space-y-3">
-              {progressData.progress.slice(0, 3).map((record, index) => (
-                <div
-                  key={index}
-                  className="border border-gray-200 rounded-lg p-3 sm:p-4 hover:bg-gray-50 transition-colors cursor-pointer"
-                  onClick={() => toggleProgress(record.id)}
-                >
-                  <div className="flex items-start justify-between">
-                    <div className="flex items-start space-x-2.5 sm:space-x-3 flex-1 min-w-0">
-                      <div className="flex-shrink-0">
-                        {progressData.progressType === "HIFZ" && (
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-purple-100 rounded-full flex items-center justify-center">
-                            <Bookmark className="h-3 w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-purple-600" />
-                          </div>
-                        )}
-                        {progressData.progressType === "NAZRA" && (
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-amber-100 rounded-full flex items-center justify-center">
-                            <BookOpen className="h-3 w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-amber-600" />
-                          </div>
-                        )}
-                        {progressData.progressType === "REGULAR" && (
-                          <div className="w-8 h-8 sm:w-10 sm:h-10 bg-blue-100 rounded-full flex items-center justify-center">
-                            <Award className="h-3 w-3 sm:h-4 sm:w-4 lg:h-5 lg:w-5 text-blue-600" />
-                          </div>
-                        )}
-                      </div>
-                      <div className="flex-1 min-w-0">
-                        <p className="font-medium text-black text-sm sm:text-base truncate">
-                          {progressData.progressType === "HIFZ" &&
-                            `Sabaq: ${record.sabaqLines} lines`}
-                          {progressData.progressType === "NAZRA" &&
-                            `Recited: ${record.recitedLines} lines`}
-                          {progressData.progressType === "REGULAR" &&
-                            `${
-                              record.subject?.name?.split(" ")[0] || "Assess"
-                            }: ${record.percentage}%`}
-                        </p>
-                        <p className="text-xs sm:text-sm text-gray-600 truncate">
-                          {formatDate(record.date, "mobile")} •{" "}
-                          {record.teacher?.user?.name?.split(" ")[0] ||
-                            "Teacher"}
-                        </p>
+        {/* ═══ DAILY ACTIVITIES TAB ═══ */}
+        {tab === 'daily' && (
+          loadingAct ? (
+            <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-600" /></div>
+          ) : activities.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
+              <Activity size={48} className="mx-auto text-gray-300 mb-4" />
+              <h3 className="text-lg font-semibold text-gray-600">No daily activities yet</h3>
+              <p className="text-sm text-gray-400 mt-1">Your teacher will record daily activities here</p>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {activities.map(act => (
+                <div key={act.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  {/* Row header */}
+                  <button onClick={() => toggle(act.id)} className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left">
+                    <div className="flex items-center gap-3 min-w-0">
+                      <div className={`w-2 h-2 rounded-full flex-shrink-0 ${act.attendanceStatus === 'PRESENT' ? 'bg-emerald-500' : act.attendanceStatus === 'ABSENT' ? 'bg-red-500' : 'bg-amber-500'}`} />
+                      <div className="min-w-0">
+                        <p className="text-sm font-semibold text-gray-900">{formatDate(act.date)}</p>
+                        <p className="text-xs text-gray-500">{act.attendanceStatus} • {act.subjectsStudied?.length || 0} subjects • {act.totalHoursSpent || 0}h</p>
                       </div>
                     </div>
-                    <div className="flex flex-col items-end ml-1.5">
-                      <span className="text-xs text-gray-500 whitespace-nowrap">
-                        {progressData.progressType === "HIFZ" &&
-                          `P. ${record.currentPara}`}
-                        {progressData.progressType === "NAZRA" &&
-                          `Pg. ${record.pageNumber || "N/A"}`}
-                        {progressData.progressType === "REGULAR" &&
-                          record.grade}
-                      </span>
-                      {expandedProgress === record.id ? (
-                        <ChevronUp className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 mt-1" />
-                      ) : (
-                        <ChevronDown className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400 mt-1" />
+                    <div className="flex items-center gap-3">
+                      <div className="flex gap-1">
+                        {act.behaviorRating >= 4 && <Star size={14} className="text-amber-400 fill-amber-400" />}
+                        {act.participationLevel === 'HIGH' && <TrendingUp size={14} className="text-emerald-500" />}
+                      </div>
+                      {expandedId === act.id ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                    </div>
+                  </button>
+
+                  {/* Expanded details */}
+                  {expandedId === act.id && (
+                    <div className="px-4 pb-4 border-t border-gray-50 space-y-3">
+                      {/* Quick metrics */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
+                        <div className="text-center p-2 bg-indigo-50 rounded-lg">
+                          <p className="text-lg font-bold text-indigo-700">{act.behaviorRating || 0}/5</p>
+                          <p className="text-xs text-indigo-500">Behavior</p>
+                        </div>
+                        <div className="text-center p-2 bg-emerald-50 rounded-lg">
+                          <p className="text-lg font-bold text-emerald-700">{act.disciplineScore || 0}/5</p>
+                          <p className="text-xs text-emerald-500">Discipline</p>
+                        </div>
+                        <div className="text-center p-2 bg-amber-50 rounded-lg">
+                          <p className="text-lg font-bold text-amber-700">{act.participationLevel || '—'}</p>
+                          <p className="text-xs text-amber-500">Participation</p>
+                        </div>
+                        <div className="text-center p-2 bg-purple-50 rounded-lg">
+                          <p className="text-lg font-bold text-purple-700">{act.totalHoursSpent || 0}h</p>
+                          <p className="text-xs text-purple-500">Hours</p>
+                        </div>
+                      </div>
+
+                      {/* Tags */}
+                      <div className="flex flex-wrap gap-2">
+                        {act.punctuality && <span className={`text-xs px-2 py-0.5 rounded-full ${act.punctuality ? 'bg-emerald-50 text-emerald-700' : 'bg-red-50 text-red-700'}`}>{act.punctuality ? '✓ Punctual' : '✗ Late'}</span>}
+                        {act.uniformCompliance !== undefined && <span className={`text-xs px-2 py-0.5 rounded-full ${act.uniformCompliance ? 'bg-blue-50 text-blue-700' : 'bg-red-50 text-red-700'}`}>{act.uniformCompliance ? '✓ Uniform' : '✗ No Uniform'}</span>}
+                        {act.homeworkCompleted !== undefined && <span className={`text-xs px-2 py-0.5 rounded-full ${act.homeworkCompleted ? 'bg-emerald-50 text-emerald-700' : 'bg-orange-50 text-orange-700'}`}>{act.homeworkCompleted ? '✓ HW Done' : '✗ HW Missing'}</span>}
+                      </div>
+
+                      {/* Subjects */}
+                      {act.subjectsStudied?.length > 0 && (
+                        <div>
+                          <p className="text-xs font-medium text-gray-600 mb-1.5">Subjects Studied</p>
+                          <div className="flex flex-wrap gap-2">
+                            {act.subjectsStudied.map((s, i) => (
+                              <div key={i} className="bg-gray-50 rounded-lg px-3 py-1.5 text-xs">
+                                <span className="font-medium text-gray-800">{s.subjectName || s.subject?.name || 'Subject'}</span>
+                                {s.topicsCovered?.length > 0 && (
+                                  <span className="text-gray-500 ml-1">({s.topicsCovered.join(', ')})</span>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        </div>
                       )}
-                    </div>
-                  </div>
 
-                  {/* Expanded Details */}
-                  {expandedProgress === record.id && (
-                    <div className="mt-3 sm:mt-4 pt-3 sm:pt-4 border-t border-gray-200">
-                      <div className="space-y-2 sm:space-y-3 text-xs sm:text-sm">
-                        {progressData.progressType === "HIFZ" && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">
-                                Sabaq Lines:
-                              </span>
-                              <span className="font-medium text-black">
-                                {record.sabaqLines}
-                              </span>
+                      {/* Teacher remarks */}
+                      {(act.strengths || act.improvements || act.teacherRemarks) && (
+                        <div className="space-y-2">
+                          {act.strengths && (
+                            <div className="p-2 bg-emerald-50 rounded-lg">
+                              <p className="text-xs font-medium text-emerald-700 mb-0.5">Strengths</p>
+                              <p className="text-xs text-emerald-600">{act.strengths}</p>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">
-                                Sabaqi Lines:
-                              </span>
-                              <span className="font-medium text-black">
-                                {record.sabaqiLines || "N/A"}
-                              </span>
+                          )}
+                          {act.improvements && (
+                            <div className="p-2 bg-amber-50 rounded-lg">
+                              <p className="text-xs font-medium text-amber-700 mb-0.5">Areas to Improve</p>
+                              <p className="text-xs text-amber-600">{act.improvements}</p>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">
-                                Manzil Lines:
-                              </span>
-                              <span className="font-medium text-black">
-                                {record.manzilLines || "N/A"}
-                              </span>
+                          )}
+                          {act.teacherRemarks && (
+                            <div className="p-2 bg-blue-50 rounded-lg">
+                              <p className="text-xs font-medium text-blue-700 mb-0.5">Teacher Remarks</p>
+                              <p className="text-xs text-blue-600">{act.teacherRemarks}</p>
                             </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">
-                                Current Para:
-                              </span>
-                              <span className="font-medium text-black">
-                                {record.currentPara}
-                              </span>
-                            </div>
-                            {record.remarks && (
-                              <div className="col-span-2">
-                                <span className="text-gray-600 block mb-1">
-                                  Remarks:
-                                </span>
-                                <p className="font-medium text-black line-clamp-2">
-                                  {record.remarks}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
+                          )}
+                        </div>
+                      )}
 
-                        {progressData.progressType === "NAZRA" && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">
-                                Recited Lines:
-                              </span>
-                              <span className="font-medium text-black">
-                                {record.recitedLines}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Page:</span>
-                              <span className="font-medium text-black">
-                                {record.pageNumber || "N/A"}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Tajweed:</span>
-                              <span className="font-medium text-black">
-                                {record.tajweedScore || "N/A"}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Fluency:</span>
-                              <span className="font-medium text-black">
-                                {record.fluency || "N/A"}
-                              </span>
-                            </div>
-                            {record.remarks && (
-                              <div className="col-span-2">
-                                <span className="text-gray-600 block mb-1">
-                                  Remarks:
-                                </span>
-                                <p className="font-medium text-black line-clamp-2">
-                                  {record.remarks}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-
-                        {progressData.progressType === "REGULAR" && (
-                          <div className="grid grid-cols-2 gap-2">
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Subject:</span>
-                              <span className="font-medium text-black truncate">
-                                {record.subject?.name?.split(" ")[0] || "N/A"}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Percentage:</span>
-                              <span className="font-medium text-black">
-                                {record.percentage}%
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Grade:</span>
-                              <span className="font-medium text-black">
-                                {record.grade || "N/A"}
-                              </span>
-                            </div>
-                            <div className="flex justify-between">
-                              <span className="text-gray-600">Type:</span>
-                              <span className="font-medium text-black truncate">
-                                {record.assessmentType?.split(" ")[0] || "N/A"}
-                              </span>
-                            </div>
-                            {record.remarks && (
-                              <div className="col-span-2">
-                                <span className="text-gray-600 block mb-1">
-                                  Remarks:
-                                </span>
-                                <p className="font-medium text-black line-clamp-2">
-                                  {record.remarks}
-                                </p>
-                              </div>
-                            )}
-                          </div>
-                        )}
-                      </div>
+                      {/* Recorded by */}
+                      {act.teacher && (
+                        <p className="text-xs text-gray-400">Recorded by {act.teacher?.user?.name || 'Teacher'}</p>
+                      )}
                     </div>
                   )}
                 </div>
               ))}
             </div>
+          )
+        )}
 
-            {progressData.progress.length > 3 && (
-              <button className="w-full mt-3 sm:mt-4 text-center text-amber-600 hover:text-amber-700 font-medium py-2 text-sm">
-                View All {progressData.progress.length} Records
-              </button>
-            )}
-          </div>
+        {/* ═══ WEEKLY REPORTS TAB ═══ */}
+        {tab === 'weekly' && (
+          loadingWeek ? (
+            <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-600" /></div>
+          ) : weeklyReports.length === 0 ? (
+            <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
+              <BarChart3 size={48} className="mx-auto text-gray-300 mb-4" />
+              <h3 className="text-lg font-semibold text-gray-600">No weekly reports yet</h3>
+              <p className="text-sm text-gray-400 mt-1">Weekly summaries will appear once your teacher generates them</p>
+            </div>
+          ) : (
+            <div className="space-y-4">
+              {weeklyReports.map(wr => (
+                <div key={wr.id} className="bg-white rounded-xl border border-gray-100 overflow-hidden">
+                  <button onClick={() => toggle(wr.id)} className="w-full flex items-center justify-between p-4 hover:bg-gray-50 transition-colors text-left">
+                    <div>
+                      <p className="text-sm font-semibold text-gray-900">
+                        Week {wr.weekNumber} • {wr.year}
+                      </p>
+                      <p className="text-xs text-gray-500">
+                        {formatDate(wr.weekStartDate)} — {formatDate(wr.weekEndDate)}
+                      </p>
+                    </div>
+                    <div className="flex items-center gap-3">
+                      {wr.overallScore !== undefined && (
+                        <span className={`text-sm font-bold px-2 py-0.5 rounded-full ${wr.overallScore >= 80 ? 'bg-emerald-50 text-emerald-700' : wr.overallScore >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+                          {Math.round(wr.overallScore)}%
+                        </span>
+                      )}
+                      {expandedId === wr.id ? <ChevronUp size={16} className="text-gray-400" /> : <ChevronDown size={16} className="text-gray-400" />}
+                    </div>
+                  </button>
+
+                  {expandedId === wr.id && (
+                    <div className="px-4 pb-4 border-t border-gray-50 space-y-3">
+                      {/* Metrics grid */}
+                      <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 pt-3">
+                        {wr.attendanceRate !== undefined && (
+                          <div className="text-center p-2 bg-blue-50 rounded-lg">
+                            <p className="text-lg font-bold text-blue-700">{Math.round(wr.attendanceRate)}%</p>
+                            <p className="text-xs text-blue-500">Attendance</p>
+                          </div>
+                        )}
+                        {wr.averageBehavior !== undefined && (
+                          <div className="text-center p-2 bg-indigo-50 rounded-lg">
+                            <p className="text-lg font-bold text-indigo-700">{(wr.averageBehavior || 0).toFixed(1)}/5</p>
+                            <p className="text-xs text-indigo-500">Behavior</p>
+                          </div>
+                        )}
+                        {wr.averageDiscipline !== undefined && (
+                          <div className="text-center p-2 bg-emerald-50 rounded-lg">
+                            <p className="text-lg font-bold text-emerald-700">{(wr.averageDiscipline || 0).toFixed(1)}/5</p>
+                            <p className="text-xs text-emerald-500">Discipline</p>
+                          </div>
+                        )}
+                        {wr.totalHoursSpent !== undefined && (
+                          <div className="text-center p-2 bg-purple-50 rounded-lg">
+                            <p className="text-lg font-bold text-purple-700">{wr.totalHoursSpent || 0}h</p>
+                            <p className="text-xs text-purple-500">Total Hours</p>
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Activity count & homework */}
+                      <div className="flex flex-wrap gap-3 text-xs text-gray-600">
+                        {wr.activitiesCount !== undefined && <span>📅 {wr.activitiesCount} activities</span>}
+                        {wr.homeworkCompletionRate !== undefined && <span>📝 {Math.round(wr.homeworkCompletionRate)}% homework done</span>}
+                        {wr.punctualityRate !== undefined && <span>⏰ {Math.round(wr.punctualityRate)}% on time</span>}
+                      </div>
+
+                      {/* Commentary */}
+                      {wr.weeklyHighlights && (
+                        <div className="p-2.5 bg-emerald-50 rounded-lg">
+                          <p className="text-xs font-medium text-emerald-700 mb-0.5">Weekly Highlights</p>
+                          <p className="text-xs text-emerald-600">{wr.weeklyHighlights}</p>
+                        </div>
+                      )}
+                      {wr.areasOfImprovement && (
+                        <div className="p-2.5 bg-amber-50 rounded-lg">
+                          <p className="text-xs font-medium text-amber-700 mb-0.5">Areas for Improvement</p>
+                          <p className="text-xs text-amber-600">{wr.areasOfImprovement}</p>
+                        </div>
+                      )}
+                      {wr.teacherComments && (
+                        <div className="p-2.5 bg-blue-50 rounded-lg">
+                          <p className="text-xs font-medium text-blue-700 mb-0.5">Teacher Comments</p>
+                          <p className="text-xs text-blue-600">{wr.teacherComments}</p>
+                        </div>
+                      )}
+                      {wr.achievements && (
+                        <div className="p-2.5 bg-purple-50 rounded-lg">
+                          <p className="text-xs font-medium text-purple-700 mb-0.5">Achievements</p>
+                          <p className="text-xs text-purple-600">{wr.achievements}</p>
+                        </div>
+                      )}
+                      {wr.followUpRequired && (
+                        <div className="flex items-center gap-1.5 text-xs text-orange-600 bg-orange-50 px-3 py-1.5 rounded-lg">
+                          <AlertTriangle size={12} /> Follow-up required
+                        </div>
+                      )}
+                    </div>
+                  )}
+                </div>
+              ))}
+            </div>
+          )
+        )}
+
+        {/* ═══ ACADEMIC PROGRESS TAB ═══ */}
+        {tab === 'academic' && (
+          ctxLoading ? (
+            <div className="flex justify-center py-12"><div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-600" /></div>
+          ) : !progress ? (
+            <div className="text-center py-16 bg-white rounded-xl border border-gray-100">
+              <Award size={48} className="mx-auto text-gray-300 mb-4" />
+              <h3 className="text-lg font-semibold text-gray-600">No academic progress data</h3>
+              <p className="text-sm text-gray-400 mt-1">Progress records will appear as your teacher records them</p>
+            </div>
+          ) : (
+            <div className="space-y-6">
+              {/* Program type badge */}
+              <div className="bg-white rounded-xl border border-gray-100 p-4">
+                <div className="flex items-center gap-3">
+                  <BookOpen size={20} className="text-indigo-600" />
+                  <div>
+                    <p className="text-sm font-semibold text-gray-900">{progress.progressType} Program</p>
+                    <p className="text-xs text-gray-500">
+                      {progress.student?.name} • {progress.student?.admissionNo}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Completion stats */}
+              {progress.completionStats && (
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+                  {progress.progressType === 'HIFZ' && (
+                    <>
+                      <StatCard icon={BookOpen} label="Lines Memorized" value={progress.completionStats.totalLinesCompleted} color="text-purple-600" />
+                      <StatCard icon={Target} label="Paras Done" value={progress.completionStats.parasCompleted} color="text-indigo-600" />
+                      <StatCard icon={BarChart3} label="Completion" value={`${Math.round(progress.completionStats.completionPercentage || 0)}%`} color="text-emerald-600" />
+                      <StatCard icon={TrendingUp} label="Daily Avg" value={progress.completionStats.averageDailyLines} color="text-blue-600" sub="lines/day" />
+                      <StatCard icon={Clock} label="Est. Days Left" value={progress.completionStats.estimatedDaysRemaining ?? '—'} color="text-amber-600" />
+                    </>
+                  )}
+                  {progress.progressType === 'NAZRA' && (
+                    <>
+                      <StatCard icon={BookOpen} label="Lines Recited" value={progress.completionStats.totalLinesRecited} color="text-purple-600" />
+                      <StatCard icon={BarChart3} label="Completion" value={`${Math.round(progress.completionStats.completionPercentage || 0)}%`} color="text-emerald-600" />
+                      <StatCard icon={TrendingUp} label="Daily Avg" value={progress.completionStats.averageDailyLines} color="text-blue-600" sub="lines/day" />
+                      <StatCard icon={Clock} label="Est. Days Left" value={progress.completionStats.estimatedDaysRemaining ?? '—'} color="text-amber-600" />
+                      <StatCard icon={CheckCircle} label="Status" value={progress.completionStats.isCompleted ? 'Done!' : 'Ongoing'} color={progress.completionStats.isCompleted ? 'text-emerald-600' : 'text-blue-600'} />
+                    </>
+                  )}
+                  {progress.progressType === 'REGULAR' && (
+                    <StatCard icon={BarChart3} label="Average %" value={`${progress.completionStats.averagePercentage || 0}%`} color="text-indigo-600" />
+                  )}
+                </div>
+              )}
+
+              {/* Progress records */}
+              {progress.progress?.length > 0 ? (
+                <div className="space-y-3">
+                  <h3 className="text-sm font-semibold text-gray-700">Recent Records ({progress.pagination?.total || progress.progress.length})</h3>
+                  {progress.progress.map((rec, i) => (
+                    <div key={rec.id || i} className="bg-white rounded-xl border border-gray-100 p-4">
+                      <div className="flex items-center justify-between mb-2">
+                        <p className="text-sm font-medium text-gray-900">{formatDate(rec.date)}</p>
+                        {rec.teacher?.user?.name && <p className="text-xs text-gray-400">{rec.teacher.user.name}</p>}
+                      </div>
+                      {progress.progressType === 'HIFZ' && (
+                        <div className="grid grid-cols-3 gap-2 text-xs">
+                          <div className="p-2 bg-purple-50 rounded text-center"><p className="font-bold text-purple-700">{rec.sabaqLines || 0}</p><p className="text-purple-500">Sabaq</p></div>
+                          <div className="p-2 bg-indigo-50 rounded text-center"><p className="font-bold text-indigo-700">{rec.sabaqiLines || 0}</p><p className="text-indigo-500">Sabaqi</p></div>
+                          <div className="p-2 bg-amber-50 rounded text-center"><p className="font-bold text-amber-700">{rec.manzilLines || 0}</p><p className="text-amber-500">Manzil</p></div>
+                        </div>
+                      )}
+                      {progress.progressType === 'NAZRA' && (
+                        <div className="text-xs">
+                          <span className="font-medium text-gray-700">Lines recited: </span>
+                          <span className="font-bold text-purple-700">{rec.recitedLines || 0}</span>
+                        </div>
+                      )}
+                      {progress.progressType === 'REGULAR' && (
+                        <div className="flex items-center gap-3 text-xs">
+                          <span className="font-medium text-gray-700">{rec.subject?.name || 'Subject'}</span>
+                          <span className={`font-bold px-2 py-0.5 rounded ${rec.percentage >= 80 ? 'bg-emerald-50 text-emerald-700' : rec.percentage >= 50 ? 'bg-amber-50 text-amber-700' : 'bg-red-50 text-red-700'}`}>
+                            {rec.percentage || 0}%
+                          </span>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="text-center py-8 bg-white rounded-xl border border-gray-100">
+                  <FileText size={32} className="mx-auto text-gray-300 mb-2" />
+                  <p className="text-sm text-gray-500">No progress records found</p>
+                </div>
+              )}
+            </div>
+          )
         )}
       </div>
-    );
-  };
-
-  if (loading && !progress) {
-    return (
-      <div className="min-h-screen bg-white flex items-center justify-center">
-        <div className="text-center">
-          <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-amber-600 mx-auto"></div>
-          <p className="mt-4 text-gray-600">Loading your progress...</p>
-        </div>
-      </div>
-    );
-  }
-
-  return (
-   <div className="min-h-screen bg-gray-50">
-  {/* Header */}
-  <div className="bg-white shadow-sm border-b border-gray-200">
-    <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-5 lg:py-6">
-      <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
-        <div>
-          <h1 className="text-lg sm:text-xl lg:text-2xl font-bold text-black">
-            My Progress
-          </h1>
-          <p className="text-xs sm:text-sm text-gray-600 mt-0.5 sm:mt-1">
-            Track your academic and Quranic learning progress
-          </p>
-        </div>
-        <div className="mt-2 sm:mt-0 flex items-center">
-          <button className="flex items-center justify-center space-x-1 sm:space-x-2 bg-amber-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-amber-700 transition-colors text-xs sm:text-sm">
-            <Download className="h-3 w-3 sm:h-4 sm:w-4" />
-            <span>Export</span>
-          </button>
-        </div>
-      </div>
     </div>
-  </div>
-
-  <div className="max-w-7xl mx-auto px-3 sm:px-4 lg:px-6 py-4 sm:py-6 lg:py-8">
-    {/* Filters */}
-    <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 lg:p-6 mb-6 sm:mb-8">
-      <div className="flex flex-col gap-3 sm:gap-4">
-        <div className="flex items-center space-x-2 sm:space-x-3">
-          <Filter className="h-3 w-3 sm:h-4 sm:w-4 text-gray-400" />
-          <select
-            value={selectedType}
-            onChange={(e) => setSelectedType(e.target.value)}
-            className="border border-gray-300 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-xs sm:text-sm w-full"
-          >
-            <option value="">All Program Types</option>
-            <option value="HIFZ">Hifz Program</option>
-            <option value="NAZRA">Nazra Program</option>
-            <option value="REGULAR">Regular Program</option>
-          </select>
-        </div>
-
-        <div className="flex items-center justify-between space-x-2">
-          <div className="flex-1">
-            <input
-              type="date"
-              value={dateRange.startDate}
-              onChange={(e) =>
-                setDateRange((prev) => ({
-                  ...prev,
-                  startDate: e.target.value,
-                }))
-              }
-              className="border border-gray-300 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-xs sm:text-sm w-full"
-              placeholder="Start Date"
-            />
-          </div>
-          <span className="text-xs sm:text-sm text-gray-400 px-1">to</span>
-          <div className="flex-1">
-            <input
-              type="date"
-              value={dateRange.endDate}
-              onChange={(e) =>
-                setDateRange((prev) => ({ ...prev, endDate: e.target.value }))
-              }
-              className="border border-gray-300 rounded-lg px-2 py-1.5 sm:px-3 sm:py-2 focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-xs sm:text-sm w-full"
-              placeholder="End Date"
-            />
-          </div>
-        </div>
-      </div>
-    </div>
-
-    {/* Progress Content */}
-    {progress ? (
-      <div className="space-y-4 sm:space-y-6">
-        {/* Student Info */}
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 lg:p-6">
-          <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-3 sm:gap-0">
-            <div>
-              <h2 className="text-base sm:text-lg font-semibold text-black">
-                {progress.student?.name}
-              </h2>
-              <p className="text-xs sm:text-sm text-gray-600">
-                Admission No: {progress.student?.admissionNo}
-              </p>
-            </div>
-            <div className="text-left sm:text-right mt-2 sm:mt-0">
-              <p className="text-xs text-gray-600">Progress Type</p>
-              <p className="text-sm sm:text-base font-semibold text-black">
-                {progress.progressType}
-              </p>
-            </div>
-          </div>
-        </div>
-
-        {/* Progress Cards */}
-        <ProgressCard progressData={progress} />
-
-        {/* Empty State for No Progress Records */}
-        {(!progress.progress || progress.progress.length === 0) && (
-          <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 lg:p-12 text-center">
-            <TrendingUp className="h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12 text-gray-400 mx-auto mb-3 sm:mb-4" />
-            <h3 className="text-base sm:text-lg font-medium text-black mb-1.5 sm:mb-2">
-              No Progress Records Yet
-            </h3>
-            <p className="text-xs sm:text-sm text-gray-600 px-4 sm:px-0">
-              Your progress records will appear here once your teachers start
-              tracking your performance.
-            </p>
-          </div>
-        )}
-      </div>
-    ) : (
-      <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-6 sm:p-8 lg:p-12 text-center">
-        <TrendingUp className="h-8 w-8 sm:h-10 sm:w-10 lg:h-12 lg:w-12 text-gray-400 mx-auto mb-3 sm:mb-4" />
-        <h3 className="text-base sm:text-lg font-medium text-black mb-1.5 sm:mb-2">
-          No Progress Data Available
-        </h3>
-        <p className="text-xs sm:text-sm text-gray-600 mb-3 sm:mb-4 px-2 sm:px-0">
-          {error || "Unable to load progress information at this time."}
-        </p>
-        <button
-          onClick={fetchMyProgress}
-          className="bg-amber-600 text-white px-3 py-1.5 sm:px-4 sm:py-2 rounded-lg hover:bg-amber-700 transition-colors text-xs sm:text-sm"
-        >
-          Try Again
-        </button>
-      </div>
-    )}
-
-    {/* Quick Stats */}
-    {progress?.completionStats && (
-      <div className="mt-6 sm:mt-8 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-5 lg:gap-6">
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 lg:p-6 text-center">
-          <BarChart3 className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 text-amber-600 mx-auto mb-2 sm:mb-3" />
-          <p className="text-xl sm:text-2xl font-bold text-black">
-            {calculateProgressPercentage(progress.completionStats).toFixed(1)}%
-          </p>
-          <p className="text-xs sm:text-sm text-gray-600">Overall Progress</p>
-        </div>
-
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 lg:p-6 text-center">
-          <Clock className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 text-amber-600 mx-auto mb-2 sm:mb-3" />
-          <p className="text-xl sm:text-2xl font-bold text-black">
-            {progress.completionStats.estimatedDaysRemaining || "N/A"}
-          </p>
-          <p className="text-xs sm:text-sm text-gray-600">Days Remaining</p>
-        </div>
-
-        <div className="bg-white rounded-lg sm:rounded-xl shadow-sm border border-gray-200 p-4 sm:p-5 lg:p-6 text-center">
-          <Target className="h-6 w-6 sm:h-7 sm:w-7 lg:h-8 lg:w-8 text-amber-600 mx-auto mb-2 sm:mb-3" />
-          <p className="text-xl sm:text-2xl font-bold text-black">
-            {progress.progress?.length || 0}
-          </p>
-          <p className="text-xs sm:text-sm text-gray-600">Total Records</p>
-        </div>
-      </div>
-    )}
-  </div>
-</div>
   );
 };
 

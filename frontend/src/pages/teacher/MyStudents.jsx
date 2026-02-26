@@ -2,23 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { useTeacher } from '../../contexts/TeacherContext';
 import {
   Search,
-  Filter,
   Users,
-  Mail,
-  Phone,
-  Calendar,
-  BookOpen,
   GraduationCap,
-  MapPin,
   User,
   MoreHorizontal,
-  ChevronDown,
-  ChevronUp,
-  Eye,
-  MessageCircle,
-  Award,
+  Mail,
+  Phone,
   BookMarked,
-  BarChart3
+  BarChart3,
+  MapPin
 } from 'lucide-react';
 
 const MyStudents = () => {
@@ -32,465 +24,260 @@ const MyStudents = () => {
 
   const [selectedClass, setSelectedClass] = useState('');
   const [searchTerm, setSearchTerm] = useState('');
-  const [viewMode, setViewMode] = useState('grid'); // 'grid' or 'list'
-  const [sortBy, setSortBy] = useState('name'); // 'name', 'rollNumber', 'class'
-  const [expandedStudent, setExpandedStudent] = useState(null);
-  const [studentStats, setStudentStats] = useState({});
+  const [viewMode, setViewMode] = useState('grid');
+  const [sortBy, setSortBy] = useState('name');
+  const [studentStats, setStudentStats] = useState({ total: 0, byClass: {}, byGender: { male: 0, female: 0, unknown: 0 } });
 
-  // Ensure classes and students are always arrays
   const classList = Array.isArray(classes) ? classes : (classes?.classes || []);
   const studentList = Array.isArray(students) ? students : (students?.students || []);
 
   useEffect(() => {
     fetchMyClasses();
     fetchMyStudents();
-  }, []);
+  }, [fetchMyClasses, fetchMyStudents]);
 
   useEffect(() => {
     if (studentList.length > 0) {
-      calculateStudentStats();
+      const stats = { total: studentList.length, byClass: {}, byGender: { male: 0, female: 0, unknown: 0 } };
+      studentList.forEach(student => {
+        const className = student.classRoom?.name || 'Unknown';
+        stats.byClass[className] = (stats.byClass[className] || 0) + 1;
+        const gender = student.student?.gender?.toLowerCase() || 'unknown';
+        if (gender === 'male') stats.byGender.male++;
+        else if (gender === 'female') stats.byGender.female++;
+        else stats.byGender.unknown++;
+      });
+      setStudentStats(stats);
     }
   }, [studentList]);
-
-  const calculateStudentStats = () => {
-    const stats = {
-      total: studentList.length,
-      byClass: {},
-      byGender: {
-        male: 0,
-        female: 0,
-        unknown: 0
-      }
-    };
-
-    studentList.forEach(student => {
-      // Count by class
-      const className = student.classRoom?.name || 'Unknown';
-      stats.byClass[className] = (stats.byClass[className] || 0) + 1;
-
-      // Count by gender
-      const gender = student.student?.gender?.toLowerCase() || 'unknown';
-      if (gender === 'male') stats.byGender.male++;
-      else if (gender === 'female') stats.byGender.female++;
-      else stats.byGender.unknown++;
-    });
-
-    setStudentStats(stats);
-  };
 
   const filteredStudents = studentList
     .filter(student => {
       const matchesSearch = student.student?.user?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-                           student.rollNumber?.toString().includes(searchTerm) ||
-                           student.student?.admissionNo?.toLowerCase().includes(searchTerm.toLowerCase());
+        student.rollNumber?.toString().includes(searchTerm) ||
+        student.student?.admissionNo?.toLowerCase().includes(searchTerm.toLowerCase());
       const matchesClass = !selectedClass || student.classRoom?.id === selectedClass;
       return matchesSearch && matchesClass;
     })
     .sort((a, b) => {
       switch (sortBy) {
-        case 'name':
-          return (a.student?.user?.name || '').localeCompare(b.student?.user?.name || '');
-        case 'rollNumber':
-          return (a.rollNumber || 0) - (b.rollNumber || 0);
-        case 'class':
-          return (a.classRoom?.name || '').localeCompare(b.classRoom?.name || '');
-        default:
-          return 0;
+        case 'name': return (a.student?.user?.name || '').localeCompare(b.student?.user?.name || '');
+        case 'rollNumber': return (a.rollNumber || 0) - (b.rollNumber || 0);
+        case 'class': return (a.classRoom?.name || '').localeCompare(b.classRoom?.name || '');
+        default: return 0;
       }
     });
 
-  const getInitials = (name) => {
-    return name?.split(' ').map(n => n[0]).join('').toUpperCase() || '?';
-  };
+  const getInitials = (name) => name?.split(' ').map(n => n[0]).join('').substring(0, 2).toUpperCase() || '?';
 
-  const getStatusColor = (status) => {
-    switch (status?.toLowerCase()) {
-      case 'active':
-        return 'text-green-600 bg-green-50';
-      case 'inactive':
-        return 'text-red-600 bg-red-50';
-      case 'transferred':
-        return 'text-yellow-600 bg-yellow-50';
-      default:
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
-
-  const getClassTypeColor = (type) => {
-    switch (type?.toUpperCase()) {
-      case 'REGULAR':
-        return 'text-blue-600 bg-blue-50';
-      case 'HIFZ':
-        return 'text-purple-600 bg-purple-50';
-      case 'NAZRA':
-        return 'text-indigo-600 bg-indigo-50';
-      default:
-        return 'text-gray-600 bg-gray-50';
-    }
-  };
-
+  // Minimal Student Card
   const StudentCard = ({ student }) => {
-    const isExpanded = expandedStudent === student.id;
+    const profileImg = student.student?.user?.profileImage;
+    const name = student.student?.user?.name || 'Unknown Student';
 
     return (
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200 hover:shadow-md transition-all duration-200">
-        {/* Student Header */}
-        <div className="p-6">
-          <div className="flex items-start justify-between mb-4">
-            <div className="flex items-center space-x-4">
-              <div className="h-16 w-16 bg-gold rounded-full flex items-center justify-center text-white font-bold text-lg">
-                {getInitials(student.student?.user?.name)}
-              </div>
-              <div>
-                <h3 className="text-lg font-semibold text-gray-900">
-                  {student.student?.user?.name || 'Unknown Student'}
-                </h3>
-                <p className="text-sm text-gray-600">
-                  Roll No: {student.rollNumber} • Admission: {student.student?.admissionNo || 'N/A'}
-                </p>
-                <div className="flex items-center space-x-2 mt-1">
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getStatusColor(student.student?.status)}`}>
-                    {student.student?.status || 'Active'}
-                  </span>
-                  <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${getClassTypeColor(student.classRoom?.type)}`}>
-                    {student.classRoom?.type || 'Regular'}
-                  </span>
+      <div className="bg-white rounded-[1.5rem] p-6 shadow-sm border border-gray-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 group relative overflow-hidden">
+        {/* Decorative Top Accent */}
+        <div className="absolute top-0 left-0 right-0 h-1 bg-gradient-to-r from-amber-400 to-amber-600 opacity-0 group-hover:opacity-100 transition-opacity" />
+
+        <div className="flex flex-col items-center text-center">
+          {/* Profile Image */}
+          <div className="relative mb-4">
+            <div className="w-20 h-20 rounded-full p-1 bg-white shadow-sm ring-1 ring-gray-100">
+              {profileImg ? (
+                <img src={profileImg} alt={name} className="w-full h-full rounded-full object-cover" />
+              ) : (
+                <div className="w-full h-full rounded-full bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center text-amber-600 font-bold text-xl border border-amber-200">
+                  {getInitials(name)}
                 </div>
-              </div>
+              )}
             </div>
-            <button
-              onClick={() => setExpandedStudent(isExpanded ? null : student.id)}
-              className="p-2 hover:bg-gray-100 rounded-lg transition-colors"
-            >
-              {isExpanded ? <ChevronUp className="h-5 w-5" /> : <ChevronDown className="h-5 w-5" />}
-            </button>
+            {/* Status Dot */}
+            <div className={`absolute bottom-1 right-1 w-4 h-4 rounded-full border-2 border-white ${student.student?.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-red-500'}`} title={student.student?.status || 'Active'} />
           </div>
 
-          {/* Quick Info Grid */}
-          <div className="grid grid-cols-2 gap-4 text-sm">
-            <div className="flex items-center space-x-2">
-              <GraduationCap className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-600">{student.classRoom?.name || 'Unknown Class'}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <BookOpen className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-600">Grade {student.classRoom?.grade || 'N/A'}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <User className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-600 capitalize">{student.student?.gender || 'Not specified'}</span>
-            </div>
-            <div className="flex items-center space-x-2">
-              <Calendar className="h-4 w-4 text-gray-400" />
-              <span className="text-gray-600">
-                {student.student?.dateOfBirth ? new Date(student.student.dateOfBirth).toLocaleDateString() : 'N/A'}
-              </span>
-            </div>
-          </div>
+          {/* Details */}
+          <h3 className="text-lg font-bold text-gray-900 leading-tight mb-1">{name}</h3>
+          <p className="text-xs font-semibold text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full mb-3 inline-block">
+            {student.classRoom?.name} • Roll: {student.rollNumber}
+          </p>
+
+          <p className="text-sm text-gray-500 mb-5">
+            Admin No: {student.student?.admissionNo || 'N/A'}
+          </p>
+
         </div>
-
-        
       </div>
     );
   };
 
+  // Minimal List Item
   const StudentListItem = ({ student }) => {
-    const isExpanded = expandedStudent === student.id;
+    const profileImg = student.student?.user?.profileImage;
+    const name = student.student?.user?.name || 'Unknown Student';
 
     return (
-      <div className="bg-white border-b border-gray-200 hover:bg-gray-50 transition-colors">
-  <div className="px-4 sm:px-6 py-3 sm:py-4">
-    <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 sm:gap-0">
-      <div className="flex items-start sm:items-center space-x-3 sm:space-x-4 flex-1">
-        <div className="h-10 w-10 sm:h-12 sm:w-12 bg-gold rounded-full flex items-center justify-center text-white font-semibold text-sm sm:text-base flex-shrink-0">
-          {getInitials(student.student?.user?.name)}
+      <div className="bg-white p-4 flex items-center gap-4 hover:bg-gray-50 transition-colors border-b border-gray-100 last:border-0 group">
+        <div className="w-12 h-12 rounded-full overflow-hidden flex-shrink-0 bg-amber-50 flex items-center justify-center text-amber-600 font-bold border border-amber-100">
+          {profileImg ? (
+            <img src={profileImg} alt={name} className="w-full h-full object-cover" />
+          ) : getInitials(name)}
         </div>
-        
+
         <div className="flex-1 min-w-0">
-          <div className="flex flex-wrap items-center gap-2">
-            <h3 className="font-medium text-gray-900 text-sm sm:text-base truncate">
-              {student.student?.user?.name || 'Unknown Student'}
-            </h3>
-            <span className={`inline-flex items-center px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-xs font-medium ${getStatusColor(student.student?.status)}`}>
-              {student.student?.status || 'Active'}
-            </span>
+          <div className="flex items-center gap-2">
+            <h3 className="text-sm font-bold text-gray-900 truncate">{name}</h3>
+            <span className={`w-2 h-2 rounded-full ${student.student?.status === 'ACTIVE' ? 'bg-emerald-500' : 'bg-red-500'}`} />
           </div>
-          <p className="text-xs sm:text-sm text-gray-600 mt-1">
-            <span className="block sm:inline">Roll: {student.rollNumber}</span>
-            <span className="hidden sm:inline"> • </span>
-            <span className="block sm:inline">Adm: {student.student?.admissionNo || 'N/A'}</span>
-            <span className="hidden sm:inline"> • </span>
-            <span className="block sm:inline">{student.classRoom?.name}</span>
-          </p>
-          
-          {/* Mobile class info */}
-          <div className="sm:hidden mt-2">
-            <p className="text-sm font-medium text-gray-900">
-              {student.classRoom?.name}
-            </p>
-            <p className="text-sm text-gray-600">
-              Grade {student.classRoom?.grade || 'N/A'}
-            </p>
-          </div>
-        </div>
-        
-        {/* Desktop class info */}
-        <div className="text-right hidden sm:block flex-shrink-0">
-          <p className="text-sm font-medium text-gray-900 truncate max-w-[120px]">
-            {student.classRoom?.name}
-          </p>
-          <p className="text-sm text-gray-600">
-            Grade {student.classRoom?.grade || 'N/A'}
+          <p className="text-xs text-gray-500 truncate mt-0.5">
+            {student.classRoom?.name} • Roll: {student.rollNumber} • Adm: {student.student?.admissionNo}
           </p>
         </div>
-      </div>
 
-      <div className="flex items-center justify-between sm:justify-end space-x-2 sm:space-x-4 ml-0 sm:ml-6 mt-3 sm:mt-0">
-        <span className={`inline-flex items-center px-2 py-0.5 sm:px-2.5 sm:py-0.5 rounded-full text-xs font-medium ${getClassTypeColor(student.classRoom?.type)}`}>
-          {student.classRoom?.type || 'Regular'}
-        </span>
-        
-        <button
-          onClick={() => setExpandedStudent(isExpanded ? null : student.id)}
-          className="p-1.5 sm:p-2 hover:bg-gray-200 rounded-lg transition-colors flex-shrink-0"
-        >
-          <MoreHorizontal className="h-4 w-4 sm:h-5 sm:w-5 text-gray-600" />
-        </button>
-      </div>
-    </div>
-
-    {isExpanded && (
-      <div className="mt-4 pl-0 sm:pl-16">
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-4 sm:gap-6">
-          <div>
-            <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Contact Info</h4>
-            <div className="space-y-1 text-xs sm:text-sm">
-              <p className="text-gray-600 truncate">
-                {student.student?.user?.email || 'No email'}
-              </p>
-              <p className="text-gray-600">
-                {student.student?.user?.phone || 'No phone'}
-              </p>
-            </div>
-          </div>
-          <div>
-            <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Parents</h4>
-            <div className="space-y-1 text-xs sm:text-sm">
-              <p className="text-gray-600 truncate">
-                Father: {student.student?.fatherName || 'N/A'}
-              </p>
-              <p className="text-gray-600 truncate">
-                Mother: {student.student?.motherName || 'N/A'}
-              </p>
-            </div>
-          </div>
-          <div>
-            <h4 className="font-medium text-gray-900 mb-2 text-sm sm:text-base">Details</h4>
-            <div className="space-y-1 text-xs sm:text-sm">
-              <p className="text-gray-600">
-                Gender: {student.student?.gender || 'N/A'}
-              </p>
-              <p className="text-gray-600">
-                DOB: {student.student?.dateOfBirth ? 
-                  new Date(student.student.dateOfBirth).toLocaleDateString('en-US', {
-                    year: 'numeric',
-                    month: 'short',
-                    day: 'numeric'
-                  }) : 'N/A'}
-              </p>
-            </div>
-          </div>
+        <div className="flex items-center gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+          {student.student?.user?.email && (
+            <a href={`mailto:${student.student.user.email}`} className="p-2 text-gray-400 hover:text-amber-500">
+              <Mail size={16} />
+            </a>
+          )}
+          <button className="p-2 text-gray-400 hover:text-gray-900">
+            <MoreHorizontal size={18} />
+          </button>
         </div>
       </div>
-    )}
-  </div>
-</div>
     );
   };
 
   if (loading && !studentList.length) {
     return (
       <div className="min-h-screen bg-gray-50 flex items-center justify-center">
-        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-gold"></div>
+        <div className="animate-spin rounded-full h-10 w-10 border-b-2 border-amber-500"></div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      {/* Header */}
-      <div className="bg-white shadow-sm border-b border-gray-200">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex justify-between items-center py-6">
+    <div className="min-h-screen bg-gray-50/50 pb-12">
+      {/* Search Header */}
+      <div className="bg-white shadow-[0_1px_3px_0_rgba(0,0,0,0.02)] border-b border-gray-100 sticky top-0 z-10">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-5">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h1 className="text-2xl font-bold text-gray-900">My Students</h1>
-              <p className="text-sm text-gray-600 mt-1">
-                Manage and view all your students' information
-              </p>
+              <h1 className="text-2xl font-bold text-gray-900 tracking-tight">My Students</h1>
+              <p className="text-sm text-gray-500 mt-1">Manage and view all your students' information</p>
             </div>
-            
-            <div className="flex items-center space-x-3">
-              <button className="flex items-center px-4 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
-                <BookMarked className="h-4 w-4 mr-2" />
-                Export List
+
+            <div className="flex items-center gap-3">
+              <div className="relative w-full md:w-64">
+                <Search className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
+                <input
+                  type="text"
+                  placeholder="Search students..."
+                  value={searchTerm}
+                  onChange={(e) => setSearchTerm(e.target.value)}
+                  className="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500 transition-shadow bg-gray-50/50"
+                />
+              </div>
+              <button className="hidden sm:flex items-center px-4 py-2 border border-gray-200 rounded-xl text-sm font-medium text-gray-700 hover:bg-gray-50 transition-colors">
+                <BookMarked className="h-4 w-4 mr-2 text-gray-400" />
+                Export
               </button>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Statistics Bar */}
+      {/* Stats row */}
       {studentStats.total > 0 && (
-        <div className="bg-white border-b border-gray-200">
-          <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="text-center">
-                <div className="flex items-center justify-center space-x-2">
-                  <Users className="h-5 w-5 text-gold" />
-                  <span className="text-2xl font-bold text-gray-900">{studentStats.total}</span>
-                </div>
-                <p className="text-sm text-gray-600">Total Students</p>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center space-x-2">
-                  <User className="h-5 w-5 text-blue-500" />
-                  <span className="text-2xl font-bold text-gray-900">{studentStats.byGender.male}</span>
-                </div>
-                <p className="text-sm text-gray-600">Male Students</p>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center space-x-2">
-                  <User className="h-5 w-5 text-pink-500" />
-                  <span className="text-2xl font-bold text-gray-900">{studentStats.byGender.female}</span>
-                </div>
-                <p className="text-sm text-gray-600">Female Students</p>
-              </div>
-              <div className="text-center">
-                <div className="flex items-center justify-center space-x-2">
-                  <GraduationCap className="h-5 w-5 text-green-500" />
-                  <span className="text-2xl font-bold text-gray-900">{Object.keys(studentStats.byClass).length}</span>
-                </div>
-                <p className="text-sm text-gray-600">Classes</p>
-              </div>
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center gap-4">
+              <div className="p-3 bg-amber-50 text-amber-600 rounded-xl"><Users size={20} /></div>
+              <div><p className="text-2xl font-bold text-gray-900">{studentStats.total}</p><p className="text-xs font-medium text-gray-500">Total Students</p></div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center gap-4">
+              <div className="p-3 bg-blue-50 text-blue-600 rounded-xl"><User size={20} /></div>
+              <div><p className="text-2xl font-bold text-gray-900">{studentStats.byGender.male}</p><p className="text-xs font-medium text-gray-500">Boys</p></div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center gap-4">
+              <div className="p-3 bg-pink-50 text-pink-600 rounded-xl"><User size={20} /></div>
+              <div><p className="text-2xl font-bold text-gray-900">{studentStats.byGender.female}</p><p className="text-xs font-medium text-gray-500">Girls</p></div>
+            </div>
+            <div className="bg-white p-4 rounded-2xl border border-gray-100 flex items-center gap-4">
+              <div className="p-3 bg-indigo-50 text-indigo-600 rounded-xl"><GraduationCap size={20} /></div>
+              <div><p className="text-2xl font-bold text-gray-900">{Object.keys(studentStats.byClass).length}</p><p className="text-xs font-medium text-gray-500">Classes</p></div>
             </div>
           </div>
         </div>
       )}
 
-      {/* Controls */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
-        <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-6 mb-6">
-          <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
-            {/* Class Filter */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Filter by Class
-              </label>
-              <select
-                value={selectedClass}
-                onChange={(e) => setSelectedClass(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-              >
-                <option value="">All Classes</option>
-                {classList.map(cls => (
-                  <option key={cls.id} value={cls.id}>
-                    {cls.name} (Grade {cls.grade})
-                  </option>
-                ))}
-              </select>
-            </div>
-
-            {/* Search */}
-            <div className="md:col-span-2">
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Search Students
-              </label>
-              <div className="relative">
-                <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
-                <input
-                  type="text"
-                  placeholder="Search by name, roll number, or admission number..."
-                  value={searchTerm}
-                  onChange={(e) => setSearchTerm(e.target.value)}
-                  className="w-full pl-10 pr-4 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-                />
-              </div>
-            </div>
-
-            {/* Sort By */}
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-2">
-                Sort By
-              </label>
-              <select
-                value={sortBy}
-                onChange={(e) => setSortBy(e.target.value)}
-                className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-gold focus:border-transparent"
-              >
-                <option value="name">Name</option>
-                <option value="rollNumber">Roll Number</option>
-                <option value="class">Class</option>
-              </select>
-            </div>
+      {/* Filters & View Toggle */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 mt-6">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 py-2">
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedClass}
+              onChange={(e) => setSelectedClass(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+            >
+              <option value="">All Classes</option>
+              {classList.map(cls => (
+                <option key={cls.id} value={cls.id}>{cls.name}</option>
+              ))}
+            </select>
+            <select
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              className="px-3 py-1.5 border border-gray-200 rounded-lg text-sm font-medium text-gray-700 bg-white focus:outline-none focus:ring-2 focus:ring-amber-500/20 focus:border-amber-500"
+            >
+              <option value="name">Sort by Name</option>
+              <option value="rollNumber">Sort by Roll No.</option>
+              <option value="class">Sort by Class</option>
+            </select>
           </div>
 
-          {/* View Mode Toggle */}
-          <div className="flex items-center justify-between mt-4 pt-4 border-t border-gray-200">
-            <div className="text-sm text-gray-600">
-              Showing <strong>{filteredStudents.length}</strong> of <strong>{studentList.length}</strong> students
-              {selectedClass && (
-                <span> in <strong>{classList.find(c => c.id === selectedClass)?.name}</strong></span>
-              )}
-            </div>
-            
-            <div className="flex items-center space-x-2">
-              <span className="text-sm font-medium text-gray-700">View:</span>
-              <button
-                onClick={() => setViewMode('grid')}
-                className={`p-2 rounded-md ${
-                  viewMode === 'grid' 
-                    ? 'bg-gold text-white' 
-                    : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                }`}
-              >
-                <BarChart3 className="h-4 w-4" />
-              </button>
-              <button
-                onClick={() => setViewMode('list')}
-                className={`p-2 rounded-md ${
-                  viewMode === 'list' 
-                    ? 'bg-gold text-white' 
-                    : 'bg-gray-200 text-gray-600 hover:bg-gray-300'
-                }`}
-              >
-                <Users className="h-4 w-4" />
-              </button>
-            </div>
+          <div className="flex items-center gap-2 bg-gray-100 p-1 rounded-xl w-fit">
+            <button
+              onClick={() => setViewMode('grid')}
+              className={`p-1.5 rounded-lg transition-colors ${viewMode === 'grid' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <BarChart3 className="h-4 w-4" />
+            </button>
+            <button
+              onClick={() => setViewMode('list')}
+              className={`p-1.5 rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white shadow-sm text-gray-900' : 'text-gray-500 hover:text-gray-700'}`}
+            >
+              <Users className="h-4 w-4" />
+            </button>
           </div>
         </div>
 
-        {/* Students Grid/List */}
-        {filteredStudents.length === 0 ? (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200 p-12 text-center">
-            <GraduationCap className="mx-auto h-12 w-12 text-gray-400" />
-            <h3 className="mt-2 text-sm font-medium text-gray-900">No students found</h3>
-            <p className="mt-1 text-sm text-gray-500">
-              {selectedClass ? 'No students in this class.' : 'No students found matching your search.'}
-            </p>
-          </div>
-        ) : viewMode === 'grid' ? (
-          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {filteredStudents.map(student => (
-              <StudentCard key={student.id} student={student} />
-            ))}
-          </div>
-        ) : (
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            {filteredStudents.map(student => (
-              <StudentListItem key={student.id} student={student} />
-            ))}
-          </div>
-        )}
+        {/* Students Area */}
+        <div className="mt-6">
+          {filteredStudents.length === 0 ? (
+            <div className="bg-white rounded-3xl border border-gray-100 p-16 text-center shadow-sm">
+              <div className="w-16 h-16 bg-gray-50 rounded-full flex items-center justify-center mx-auto mb-4">
+                <Search className="h-6 w-6 text-gray-400" />
+              </div>
+              <h3 className="text-lg font-bold text-gray-900">No students found</h3>
+              <p className="mt-2 text-sm text-gray-500 max-w-sm mx-auto">
+                {selectedClass ? "There are no students assigned to this class." : "We couldn't find any students matching your search criteria."}
+              </p>
+            </div>
+          ) : viewMode === 'grid' ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {filteredStudents.map(student => (
+                <StudentCard key={student.id} student={student} />
+              ))}
+            </div>
+          ) : (
+            <div className="bg-white rounded-2xl shadow-sm border border-gray-100 overflow-hidden">
+              {filteredStudents.map(student => (
+                <StudentListItem key={student.id} student={student} />
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );

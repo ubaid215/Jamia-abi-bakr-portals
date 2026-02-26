@@ -1,9 +1,9 @@
 import React, { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Users, 
-  School, 
-  BookOpen, 
+import {
+  LayoutDashboard,
+  Users,
+  School,
+  BookOpen,
   Calendar,
   BarChart3,
   FileText,
@@ -14,6 +14,12 @@ import {
   GraduationCap,
   UserCog,
   Settings,
+  ClipboardList,
+  TrendingUp,
+  Target,
+  Activity,
+  LineChart,
+  MessageSquare,
   Shield
 } from 'lucide-react';
 import SidebarBase from './SidebarBase';
@@ -24,6 +30,7 @@ const AdminSidebar = ({ isOpen, onClose, onToggle }) => {
     userManagement: false,
     academicManagement: false,
     monitoring: false,
+    progress: false,
     system: false
   });
 
@@ -78,6 +85,20 @@ const AdminSidebar = ({ isOpen, onClose, onToggle }) => {
     },
     {
       type: 'submenu',
+      key: 'progress',
+      icon: TrendingUp,
+      label: 'Progress Module',
+      items: [
+        { icon: Activity, label: 'Daily Activities', to: '/admin/progress-module/activities' },
+        { icon: School, label: 'Class Overview', to: '/admin/progress-module/class-overview' },
+        { icon: ClipboardList, label: 'Weekly Progress', to: '/admin/progress-module/weekly' },
+        { icon: Target, label: 'Student Goals', to: '/admin/progress-module/goals' },
+        { icon: LineChart, label: 'Snapshots', to: '/admin/progress-module/snapshots' },
+        { icon: MessageSquare, label: 'Parent Comms', to: '/admin/progress-module/parent-comms' },
+      ]
+    },
+    {
+      type: 'submenu',
       key: 'system',
       icon: Settings,
       label: 'System Settings',
@@ -88,9 +109,9 @@ const AdminSidebar = ({ isOpen, onClose, onToggle }) => {
   ];
 
   return (
-    <SidebarBase 
-      isOpen={isOpen} 
-      onClose={onClose} 
+    <SidebarBase
+      isOpen={isOpen}
+      onClose={onClose}
       onToggle={onToggle}
       title="Admin Panel"
     >
@@ -167,7 +188,7 @@ const AdminSidebar = ({ isOpen, onClose, onToggle }) => {
       <div className="mt-8 p-3 bg-gray-50 rounded-lg border border-gray-200">
         <h4 className="text-xs font-semibold text-gray-700 mb-2">Quick Access</h4>
         <div className="space-y-2">
-          <button 
+          <button
             onClick={() => {
               window.location.href = '/admin/student-enroll';
               onClose();
@@ -176,7 +197,7 @@ const AdminSidebar = ({ isOpen, onClose, onToggle }) => {
           >
             + New Student
           </button>
-          <button 
+          <button
             onClick={() => {
               window.location.href = '/admin/teacher-enroll';
               onClose();
@@ -185,7 +206,7 @@ const AdminSidebar = ({ isOpen, onClose, onToggle }) => {
           >
             + New Teacher
           </button>
-          <button 
+          <button
             onClick={() => {
               window.location.href = '/admin/reset-password';
               onClose();

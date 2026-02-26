@@ -7,19 +7,125 @@ class StudentController {
     try {
       logger.info({ userId: req.user.id }, 'Fetching dashboard for user');
 
-      // ... (rest of code)
+      const student = await prisma.student.findUnique({
+        where: { userId: req.user.id },
+        include: {
+          user: { select: { name: true, email: true, phone: true, profileImage: true } },
+          currentEnrollment: {
+            include: {
+              classRoom: {
+                include: {
+                  teacher: { include: { user: { select: { name: true } } } },
+                  subjects: {
+                    include: { teacher: { include: { user: { select: { name: true } } } } },
+                  },
+                },
+              },
+            },
+          },
+          parents: { include: { user: { select: { name: true, email: true, phone: true } } } },
+        },
+      });
 
-      logger.debug({ studentId: student?.id }, 'Found student');
+      if (!student) {
+        return res.status(404).json({ error: 'Student profile not found' });
+      }
 
-      // ...
+      logger.debug({ studentId: student.id }, 'Found student');
+
+      // ── Current month attendance ──────────────────────────────────────
+      const now = new Date();
+      const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+      const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
+
+      const currentMonthAttendance = await prisma.attendance.findMany({
+        where: { studentId: student.id, date: { gte: monthStart, lte: monthEnd } },
+        select: { status: true, date: true },
+      });
 
       logger.debug({ count: currentMonthAttendance.length }, 'Current month attendance records');
 
-      // ...
+      const present = currentMonthAttendance.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
+      const absent = currentMonthAttendance.filter(a => a.status === 'ABSENT').length;
+      const late = currentMonthAttendance.filter(a => a.status === 'LATE').length;
+      const totalDays = currentMonthAttendance.length;
+      const percentage = totalDays > 0 ? Math.round((present / totalDays) * 100 * 100) / 100 : 0;
+
+      // ── Recent attendance (last 5 records) ────────────────────────────
+      const recentAttendance = await prisma.attendance.findMany({
+        where: { studentId: student.id },
+        orderBy: { date: 'desc' },
+        take: 5,
+        include: {
+          subject: { select: { name: true } },
+        },
+      });
 
       logger.debug({ count: recentAttendance.length }, 'Recent attendance records');
 
-      // ...
+      // ── Progress info ─────────────────────────────────────────────────
+      let progressInfo = null;
+      const classType = student.currentEnrollment?.classRoom?.type;
+
+      if (classType) {
+        let completionStats = {};
+        if (classType === 'HIFZ') {
+          completionStats = await this.calculateHifzCompletion(student.id);
+        } else if (classType === 'NAZRA') {
+          completionStats = await this.calculateNazraCompletion(student.id);
+        } else if (classType === 'REGULAR') {
+          const avg = await prisma.subjectProgress.aggregate({
+            where: { studentId: student.id },
+            _avg: { percentage: true },
+          });
+          const recentAssessments = await prisma.subjectProgress.findMany({
+            where: { studentId: student.id },
+            orderBy: { date: 'desc' },
+            take: 5,
+            include: { subject: { select: { name: true } } },
+          });
+          completionStats = {
+            averagePercentage: Math.round((avg._avg.percentage || 0) * 100) / 100,
+            recentAssessments,
+          };
+        }
+        progressInfo = { type: classType, completionStats };
+      }
+
+      // ── Assemble dashboard data ───────────────────────────────────────
+      const classRoom = student.currentEnrollment?.classRoom;
+      const dashboardData = {
+        student: {
+          name: student.user.name,
+          admissionNo: student.admissionNo,
+          profileImage: student.user.profileImage,
+        },
+        currentClass: classRoom ? {
+          name: classRoom.name,
+          grade: classRoom.grade,
+          section: classRoom.section,
+          type: classRoom.type,
+          classTeacher: classRoom.teacher?.user?.name || null,
+          subjects: (classRoom.subjects || []).map(s => ({
+            name: s.name,
+            teacher: s.teacher ? { name: s.teacher.user.name } : null,
+          })),
+        } : null,
+        attendance: {
+          currentMonth: { present, absent, late, total: totalDays, percentage },
+          recent: recentAttendance.map(a => ({
+            date: a.date,
+            status: a.status,
+            subject: a.subject || null,
+          })),
+        },
+        progress: progressInfo,
+        parents: (student.parents || []).map(p => ({
+          name: p.user.name,
+          email: p.user.email,
+          phone: p.user.phone,
+        })),
+      };
 
       logger.info('Dashboard data prepared successfully');
       res.json(dashboardData);

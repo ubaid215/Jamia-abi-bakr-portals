@@ -1,10 +1,10 @@
 import React, { useState } from 'react';
-import { 
-  LayoutDashboard, 
-  Users, 
-  UserCog, 
-  School, 
-  BookOpen, 
+import {
+  LayoutDashboard,
+  Users,
+  UserCog,
+  School,
+  BookOpen,
   Calendar,
   BarChart3,
   FileText,
@@ -16,7 +16,13 @@ import {
   GraduationCap,
   UserCheck,
   ShieldCheck,
-  Database
+  Database,
+  TrendingUp,
+  Activity,
+  Target,
+  ClipboardList,
+  LineChart,
+  MessageSquare
 } from 'lucide-react';
 import SidebarBase from './SidebarBase';
 import SidebarItem from './SidebarItem';
@@ -27,6 +33,7 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
     userManagement: false,
     academicManagement: false,
     monitoring: false,
+    progress: false,
     system: false
   });
 
@@ -86,9 +93,22 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
         { icon: Calendar, label: 'Attendance Overview', to: '/admin/attendance' },
         { icon: BarChart3, label: 'Progress Tracking', to: '/admin/progress' },
         { icon: FileText, label: 'Academic Reports', to: '/admin/reports' },
-                { icon: FileText, label: 'PDF Reports', to: '/admin/pdf-reports' },
+        { icon: FileText, label: 'PDF Reports', to: '/admin/pdf-reports' },
         { icon: BarChart3, label: 'Performance Analytics', to: '/admin/analytics' },
-        // { icon: Database, label: 'System Analytics', to: '/admin/system-analytics' }
+      ]
+    },
+    {
+      type: 'submenu',
+      key: 'progress',
+      icon: TrendingUp,
+      label: 'Progress Module',
+      items: [
+        { icon: Activity, label: 'Daily Activities', to: '/admin/progress-module/activities' },
+        { icon: School, label: 'Class Overview', to: '/admin/progress-module/class-overview' },
+        { icon: ClipboardList, label: 'Weekly Progress', to: '/admin/progress-module/weekly' },
+        { icon: Target, label: 'Student Goals', to: '/admin/progress-module/goals' },
+        { icon: LineChart, label: 'Snapshots', to: '/admin/progress-module/snapshots' },
+        { icon: MessageSquare, label: 'Parent Comms', to: '/admin/progress-module/parent-comms' },
       ]
     },
     {
@@ -98,17 +118,14 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
       label: 'System Settings',
       items: [
         { icon: LockIcon, label: 'Password Reset', to: '/admin/reset-password' },
-        // { icon: Settings, label: 'System Configuration', to: '/admin/configuration' },
-        // { icon: Database, label: 'Backup & Restore', to: '/admin/backup' },
-        // { icon: Shield, label: 'Security Settings', to: '/admin/security' },
       ]
     }
   ];
 
   return (
-    <SidebarBase 
-      isOpen={isOpen} 
-      onClose={onClose} 
+    <SidebarBase
+      isOpen={isOpen}
+      onClose={onClose}
       onToggle={onToggle}
       title="Super Admin"
     >
@@ -185,7 +202,7 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
       <div className="mt-8 p-3 bg-gradient-to-r from-blue-50 to-indigo-50 rounded-lg border border-blue-200">
         <h4 className="text-xs font-semibold text-blue-700 mb-2">Super Admin Actions</h4>
         <div className="space-y-2">
-          <button 
+          <button
             onClick={() => {
               window.location.href = '/admin/admins';
               onClose();
@@ -195,7 +212,7 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
             <ShieldCheck className="h-3 w-3 mr-1" />
             Add New Admin
           </button>
-          <button 
+          <button
             onClick={() => {
               window.location.href = '/admin/configuration';
               onClose();
@@ -205,7 +222,7 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
             <Settings className="h-3 w-3 mr-1" />
             System Settings
           </button>
-          <button 
+          <button
             onClick={() => {
               window.location.href = '/admin/backup';
               onClose();

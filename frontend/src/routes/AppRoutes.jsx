@@ -11,6 +11,7 @@ import Login from "../pages/auth/Login";
 import AdminLayout from "../layouts/AdminLayout";
 import TeacherLayout from "../layouts/TeacherLayout";
 import StudentLayout from "../layouts/StudentLayout";
+import ParentLayout from "../layouts/ParentLayout";
 
 // ─── Admin Pages (lazy) ─────────────────────────────────
 const RoleBasedDashboard = lazy(() => import("../components/RoleBasedDashboard"));
@@ -55,6 +56,8 @@ const StudentProfile = lazy(() => import("../pages/student/StudentProfile"));
 const AttendanceHistory = lazy(() => import("../pages/student/AttendanceHistory"));
 const ClassHistory = lazy(() => import("../pages/student/ClassHistory"));
 const StudentProgress = lazy(() => import("../pages/student/StudentProgress"));
+const StudentMyGoals = lazy(() => import("../pages/student/StudentMyGoals"));
+const StudentMonthlyReport = lazy(() => import("../pages/student/StudentMonthlyReport"));
 const Analytics = lazy(() => import("../pages/student/Analytics"));
 
 // ─── Progress Pages (lazy) ──────────────────────────────
@@ -65,12 +68,21 @@ const ClassActivityOverview = lazy(() => import("../pages/progress/ClassActivity
 const StudentDailyActivityView = lazy(() => import("../pages/progress/StudentDailyActivityView"));
 const StudentGoalsTargets = lazy(() => import("../pages/progress/StudentGoalsTargets"));
 const WeeklyProgressReports = lazy(() => import("../pages/progress/WeeklyProgressReports"));
+const CreateGoal = lazy(() => import("../pages/progress/CreateGoal"));
 
 // ─── Auth Pages (lazy) ──────────────────────────────────
 const ResetPassword = lazy(() => import("../pages/auth/ResetPassword"));
 const ChangePassword = lazy(() => import("../pages/auth/ChangePassword"));
 
-// Parent pages (Communications, WeeklyReports) excluded — missing service/context dependencies
+// ─── Parent Pages (lazy) ────────────────────────────────
+const ParentDashboard = lazy(() => import("../pages/parent/ParentDashboard"));
+const Communications = lazy(() => import("../pages/parent/Communications"));
+const ParentWeeklyReports = lazy(() => import("../pages/parent/WeeklyReports"));
+
+// ─── Shared Progress Pages (used by both admin + teacher) ─
+// Already imported above: ProgressDashboard, RecordDailyActivity,
+// DailyActivitiesList, ClassActivityOverview, StudentGoalsTargets,
+// WeeklyProgressReports, StudentDailyActivityView
 
 // Suspense wrapper for cleaner route definitions
 const Lazy = ({ children }) => (
@@ -114,6 +126,17 @@ const AppRoutes = () => {
         <Route path="progress" element={<Lazy><ProgressTracking /></Lazy>} />
         <Route path="pdf-reports" element={<Lazy><PDFGenerate /></Lazy>} />
         <Route path="reset-password" element={<Lazy><PasswordReset /></Lazy>} />
+
+        {/* ── Progress Module (admin view) ────────────────── */}
+        <Route path="progress-module/activities" element={<Lazy><DailyActivitiesList /></Lazy>} />
+        <Route path="progress-module/activities/:id" element={<Lazy><StudentDailyActivityView /></Lazy>} />
+        <Route path="progress-module/class-overview" element={<Lazy><ClassActivityOverview /></Lazy>} />
+        <Route path="progress-module/weekly" element={<Lazy><WeeklyProgressReports /></Lazy>} />
+        <Route path="progress-module/goals" element={<Lazy><StudentGoalsTargets /></Lazy>} />
+        <Route path="progress-module/goals/create" element={<Lazy><CreateGoal /></Lazy>} />
+        <Route path="progress-module/snapshots" element={<Lazy><ProgressDashboard /></Lazy>} />
+        <Route path="progress-module/parent-comms" element={<Lazy><Communications /></Lazy>} />
+
         <Route index element={<Navigate to="/admin/dashboard" replace />} />
       </Route>
 
@@ -133,7 +156,18 @@ const AppRoutes = () => {
         <Route path="leave" element={<Lazy><ApplyLeave /></Lazy>} />
         <Route path="hifz-progress" element={<Lazy><HifzNazraProgress /></Lazy>} />
 
-        {/* Activity & Progress Routes */}
+        {/* ── Progress Module (teacher view) ─────────────── */}
+        <Route path="progress/record-activity" element={<Lazy><RecordDailyActivity /></Lazy>} />
+        <Route path="progress/activities" element={<Lazy><DailyActivitiesList /></Lazy>} />
+        <Route path="progress/activities/:id" element={<Lazy><StudentDailyActivityView /></Lazy>} />
+        <Route path="progress/class-overview" element={<Lazy><ClassActivityOverview /></Lazy>} />
+        <Route path="progress/weekly" element={<Lazy><WeeklyProgressReports /></Lazy>} />
+        <Route path="progress/goals" element={<Lazy><StudentGoalsTargets /></Lazy>} />
+        <Route path="progress/goals/create" element={<Lazy><CreateGoal /></Lazy>} />
+        <Route path="progress/dashboard" element={<Lazy><ProgressDashboard /></Lazy>} />
+        <Route path="progress/parent-comms" element={<Lazy><Communications /></Lazy>} />
+
+        {/* Legacy teacher activity routes (kept for backward compat) */}
         <Route path="activities" element={<Lazy><DailyActivityList /></Lazy>} />
         <Route path="activity/new" element={<Lazy><DailyActivityForm /></Lazy>} />
         <Route path="activity/:id" element={<Lazy><DailyActivityForm isEditing={true} /></Lazy>} />
@@ -156,8 +190,25 @@ const AppRoutes = () => {
         <Route path="attendance" element={<Lazy><AttendanceHistory /></Lazy>} />
         <Route path="class-history" element={<Lazy><ClassHistory /></Lazy>} />
         <Route path="progress" element={<Lazy><StudentProgress /></Lazy>} />
+        <Route path="goals" element={<Lazy><StudentMyGoals /></Lazy>} />
+        <Route path="monthly-report" element={<Lazy><StudentMonthlyReport /></Lazy>} />
         <Route path="profile" element={<Lazy><StudentProfile /></Lazy>} />
         <Route index element={<Navigate to="/student/dashboard" replace />} />
+      </Route>
+
+      {/* Parent Routes */}
+      <Route
+        path="/parent/*"
+        element={
+          <ProtectedRoute allowedRoles={["PARENT"]}>
+            <ParentLayout />
+          </ProtectedRoute>
+        }
+      >
+        <Route path="dashboard" element={<Lazy><ParentDashboard /></Lazy>} />
+        <Route path="communications" element={<Lazy><Communications /></Lazy>} />
+        <Route path="weekly-reports" element={<Lazy><ParentWeeklyReports /></Lazy>} />
+        <Route index element={<Navigate to="/parent/dashboard" replace />} />
       </Route>
 
       {/* Default Route */}

@@ -1,9 +1,11 @@
 import React, { useState, useEffect, useMemo } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../../contexts/AuthContext';
 import goalService from '../../services/goalService';
+import StudentClassPicker from '../../components/shared/StudentClassPicker';
 import {
   Target, Plus, CheckCircle, Clock, AlertTriangle,
-  BarChart3, TrendingUp, X, ArrowLeft, ArrowRight
+  BarChart3, TrendingUp, X, ArrowLeft, ArrowRight, Users
 } from 'lucide-react';
 
 /* ───────── Status Badge ───────── */
@@ -11,9 +13,9 @@ const StatusBadge = ({ status }) => {
   const styles = {
     IN_PROGRESS: 'bg-indigo-100 text-indigo-700',
     ACHIEVED: 'bg-emerald-100 text-emerald-700',
-    NOT_STARTED: 'bg-gray-100 text-gray-700',
-    PAUSED: 'bg-amber-100 text-amber-700',
-    CANCELLED: 'bg-red-100 text-red-700',
+    AT_RISK: 'bg-orange-100 text-orange-700',
+    FAILED: 'bg-red-100 text-red-700',
+    CANCELLED: 'bg-gray-100 text-gray-600',
   };
   return (
     <span className={`px-2 py-0.5 rounded-full text-xs font-semibold ${styles[status] || 'bg-gray-100 text-gray-600'}`}>
@@ -155,32 +157,48 @@ const ProgressModal = ({ goal, onClose, onSave }) => {
 /* ═══════════════════════════════════════════════ */
 const StudentGoalsTargets = () => {
   const { user } = useAuth();
+  const navigate = useNavigate();
   const [goals, setGoals] = useState([]);
   const [stats, setStats] = useState(null);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [statusFilter, setStatusFilter] = useState('');
   const [progressGoal, setProgressGoal] = useState(null);
+  const [pickedStudentId, setPickedStudentId] = useState('');
+
+  const isStaff = ['TEACHER', 'ADMIN', 'SUPER_ADMIN'].includes(user?.role);
 
   const studentId = useMemo(() => {
     if (user?.role === 'STUDENT' && user?.studentProfile?.id) return user.studentProfile.id;
+    if (pickedStudentId) return pickedStudentId;
     const params = new URLSearchParams(window.location.search);
     return params.get('studentId') || null;
-  }, [user]);
+  }, [user, pickedStudentId]);
+
+  const handleStudentPick = ({ studentId: sid }) => {
+    if (sid) setPickedStudentId(sid);
+  };
 
   const fetchGoals = async (page = 1) => {
     if (!studentId) return;
     setLoading(true);
     try {
-      const [goalsRes, statsRes] = await Promise.allSettled([
-        goalService.getByStudent(studentId, { page, limit: 12, status: statusFilter || undefined }),
-        goalService.getStats({ studentId }),
-      ]);
-      if (goalsRes.status === 'fulfilled') {
-        setGoals(goalsRes.value.goals || []);
-        setPagination(goalsRes.value.pagination || { page: 1, pages: 1, total: 0 });
-      }
-      if (statsRes.status === 'fulfilled') setStats(statsRes.value.data);
+      const res = await goalService.getByStudent(studentId, { page, limit: 12, status: statusFilter || undefined });
+      const goalsData = res.data || [];
+      setGoals(goalsData);
+      setPagination(res.pagination || { page: 1, pages: 1, total: 0 });
+      // Compute stats locally — no separate getStats endpoint exists
+      const total = goalsData.length;
+      const achieved = goalsData.filter(g => g.status === 'ACHIEVED').length;
+      const inProgress = goalsData.filter(g => g.status === 'IN_PROGRESS').length;
+      const overdue = goalsData.filter(g => g.status === 'IN_PROGRESS' && new Date(g.targetDate) < new Date()).length;
+      setStats({
+        total,
+        achieved,
+        inProgress,
+        overdue,
+        achievementRate: total > 0 ? Math.round((achieved / total) * 100) : 0,
+      });
     } catch (err) {
       console.error('Fetch goals error:', err);
     } finally {
@@ -197,10 +215,28 @@ const StudentGoalsTargets = () => {
 
   if (!studentId) {
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Target size={48} className="mx-auto text-gray-300 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-600">No Student Selected</h2>
+      <div className="p-6 max-w-7xl mx-auto space-y-6">
+        <div>
+          <h1 className="text-2xl font-bold text-gray-900">Goals & Targets</h1>
+          <p className="text-gray-500 text-sm mt-1">Select a student to view their goals</p>
+        </div>
+        {isStaff && (
+          <div className="bg-white rounded-xl border border-gray-100 p-5">
+            <div className="flex items-center gap-2 mb-3">
+              <Users size={16} className="text-amber-500" />
+              <h3 className="font-semibold text-gray-800 text-sm">Select a Student</h3>
+            </div>
+            <StudentClassPicker compact onSelect={handleStudentPick} />
+          </div>
+        )}
+        <div className="flex items-center justify-center min-h-[40vh]">
+          <div className="text-center">
+            <Target size={48} className="mx-auto text-gray-300 mb-4" />
+            <h2 className="text-xl font-semibold text-gray-600">No Student Selected</h2>
+            <p className="text-gray-400 mt-1">
+              {isStaff ? 'Use the picker above to select a student' : 'Your student profile could not be found'}
+            </p>
+          </div>
         </div>
       </div>
     );
@@ -209,7 +245,7 @@ const StudentGoalsTargets = () => {
   return (
     <div className="p-6 space-y-6 max-w-7xl mx-auto">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Goals & Targets</h1>
           <p className="text-gray-500 text-sm mt-1">{pagination.total} goal{pagination.total !== 1 ? 's' : ''}</p>
@@ -223,10 +259,31 @@ const StudentGoalsTargets = () => {
             <option value="">All Statuses</option>
             <option value="IN_PROGRESS">In Progress</option>
             <option value="ACHIEVED">Achieved</option>
-            <option value="NOT_STARTED">Not Started</option>
+            <option value="AT_RISK">At Risk</option>
+            <option value="FAILED">Failed</option>
+            <option value="CANCELLED">Cancelled</option>
           </select>
+          {isStaff && (
+            <button
+              onClick={() => navigate(user?.role === 'TEACHER' ? '/teacher/progress/goals/create' : '/admin/progress-module/goals/create')}
+              className="flex items-center gap-1.5 px-4 py-2 bg-indigo-600 text-white rounded-lg text-sm font-medium hover:bg-indigo-700 transition-colors shadow-sm"
+            >
+              <Plus size={16} /> Create Goal
+            </button>
+          )}
         </div>
       </div>
+
+      {/* Student picker for staff */}
+      {isStaff && (
+        <div className="bg-white rounded-xl border border-gray-100 p-4">
+          <div className="flex items-center gap-2 mb-2">
+            <Users size={14} className="text-amber-500" />
+            <span className="text-xs font-semibold text-gray-500 uppercase tracking-wide">Change Student</span>
+          </div>
+          <StudentClassPicker compact onSelect={handleStudentPick} />
+        </div>
+      )}
 
       {/* Stats Bar */}
       {stats && (

@@ -39,6 +39,12 @@ const studentService = {
   updateMyProfile: async (profileData) => {
     const response = await api.put('/students/profile', profileData);
     return response.data;
+  },
+
+  // Monthly Hifz report
+  getMonthlyReport: async (studentId, month, year) => {
+    const response = await api.get(`/reports/students/${studentId}/monthly`, { params: { month, year } });
+    return response.data;
   }
 };
 

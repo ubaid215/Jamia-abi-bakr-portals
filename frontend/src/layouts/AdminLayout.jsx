@@ -18,8 +18,14 @@ import { HifzReportProvider } from "../contexts/HifzReportContext";
 import { PDFProvider } from "../contexts/PDFContext";
 import { PasswordResetProvider } from "../contexts/PasswordResetContext";
 import { ActivityProvider } from "../contexts/ActivityContext";
+import { SocketProvider } from "../contexts/SocketContext";
+import { NotificationProvider } from "../contexts/NotificationContext";
 
-const AdminLayout = () => {
+// Notification bell — must be inside SocketProvider + NotificationProvider
+import NotificationDropdown from "../components/shared/NotificationDropdown";
+
+/* ─── Inner layout (inside providers so header bell works) ─── */
+const AdminLayoutInner = () => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout } = useAuth();
   const navigate = useNavigate();
@@ -54,7 +60,7 @@ const AdminLayout = () => {
         <header className="bg-white shadow-sm border-b border-[#FDE68A] sticky top-0 z-30">
           <div className="flex justify-between items-center px-4 sm:px-6 py-3 sm:py-4">
             {/* Left Section */}
-            <div className="flex items-center space-x-3">
+            <div className="flex items-center gap-3">
               {/* Mobile Sidebar Toggle */}
               <button
                 onClick={() => setSidebarOpen(!sidebarOpen)}
@@ -74,9 +80,12 @@ const AdminLayout = () => {
             </div>
 
             {/* Right Section */}
-            <div className="flex items-center space-x-3 sm:space-x-4">
+            <div className="flex items-center gap-2 sm:gap-3">
+              {/* 🔔 Notification Bell */}
+              <NotificationDropdown />
+
               {/* User Info */}
-              <div className="hidden sm:flex items-center space-x-2 text-gray-700 truncate">
+              <div className="hidden sm:flex items-center gap-2 text-gray-700 truncate">
                 <User className="h-5 w-5" />
                 <span className="max-w-[100px] truncate">{user?.name}</span>
               </div>
@@ -84,7 +93,7 @@ const AdminLayout = () => {
               {/* Logout Button */}
               <button
                 onClick={handleLogout}
-                className="flex items-center space-x-2 px-3 sm:px-4 py-2 bg-[#FFFBEB] text-[#92400E] rounded-md hover:bg-[#FEF3C7] transition-colors duration-200 font-semibold text-sm sm:text-base"
+                className="flex items-center gap-2 px-3 sm:px-4 py-2 bg-[#FFFBEB] text-[#92400E] rounded-md hover:bg-[#FEF3C7] transition-colors duration-200 font-semibold text-sm sm:text-base"
               >
                 <LogOut className="h-4 w-4" />
                 <span className="hidden sm:inline">Logout</span>
@@ -93,7 +102,7 @@ const AdminLayout = () => {
           </div>
         </header>
 
-        {/* Page Content — wrapped with admin-scoped providers */}
+        {/* Page Content */}
         <main className="flex-1 overflow-auto p-4 sm:p-6">
           <AdminProvider>
             <ClassProvider>
@@ -125,5 +134,14 @@ const AdminLayout = () => {
     </div>
   );
 };
+
+/* ─── Outer shell wraps with Socket + Notification providers ─── */
+const AdminLayout = () => (
+  <SocketProvider>
+    <NotificationProvider>
+      <AdminLayoutInner />
+    </NotificationProvider>
+  </SocketProvider>
+);
 
 export default AdminLayout;

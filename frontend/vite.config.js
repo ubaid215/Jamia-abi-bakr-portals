@@ -7,16 +7,24 @@ export default defineConfig({
     react(),
     tailwindcss(),
   ],
+  // ── Vitest configuration ───────────────────────────────────────────────────
+  test: {
+    globals: true,
+    environment: 'jsdom',
+    setupFiles: './src/tests/setup.js',
+    css: false,
+    coverage: {
+      reporter: ['text', 'lcov'],
+      include: ['src/services/**', 'src/contexts/**', 'src/pages/**'],
+      exclude: ['src/tests/**', 'node_modules/**'],
+    },
+  },
   build: {
-    // Removed: chunkSizeWarningLimit: 2000 (was masking oversized chunks)
     rollupOptions: {
       output: {
         manualChunks: {
-          // Core React runtime — shared by all pages
           'vendor-react': ['react', 'react-dom', 'react-router-dom'],
-          // React Query — shared by all data-fetching components
           'vendor-query': ['@tanstack/react-query'],
-          // Charts — only loaded by pages that import recharts
           'vendor-charts': ['recharts'],
         }
       }

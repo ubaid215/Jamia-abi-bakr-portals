@@ -1,6 +1,8 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { useAuth } from '../../contexts/AuthContext';
 import weeklyProgressService from '../../services/weeklyProgressService';
+import StudentClassPicker from '../../components/shared/StudentClassPicker';
+import { Users } from 'lucide-react';
 import {
   Calendar, ChevronDown, ChevronRight, Clock, Star,
   TrendingUp, AlertTriangle, BookOpen, Award, FileText,
@@ -18,15 +20,15 @@ const RatingStars = ({ value = 0, max = 5 }) => (
 
 /* ───────── Report Card ───────── */
 const ReportCard = ({ report, expanded, onToggle }) => {
-  const riskColor = {
-    LOW: 'border-l-emerald-500',
-    MEDIUM: 'border-l-amber-500',
-    HIGH: 'border-l-orange-500',
-    CRITICAL: 'border-l-red-500',
-  };
+  // Determine border color based on attendance percentage
+  const attendancePct = report.attendancePercentage || 0;
+  const borderColor = attendancePct >= 80 ? 'border-l-emerald-500'
+    : attendancePct >= 60 ? 'border-l-amber-500'
+      : attendancePct >= 40 ? 'border-l-orange-500'
+        : 'border-l-red-500';
 
   return (
-    <div className={`bg-white rounded-xl border border-gray-100 border-l-4 ${riskColor[report.riskLevel] || 'border-l-gray-300'} overflow-hidden transition-shadow hover:shadow-lg`}>
+    <div className={`bg-white rounded-xl border border-gray-100 border-l-4 ${borderColor} overflow-hidden transition-shadow hover:shadow-lg`}>
       {/* Header */}
       <button
         onClick={onToggle}
@@ -38,13 +40,13 @@ const ReportCard = ({ report, expanded, onToggle }) => {
             <span className="text-sm font-semibold">Week {report.weekNumber}</span>
           </div>
           <span className="text-xs text-gray-400">
-            {new Date(report.weekStart).toLocaleDateString()} – {new Date(report.weekEnd).toLocaleDateString()}
+            {new Date(report.startDate).toLocaleDateString()} – {new Date(report.endDate).toLocaleDateString()}
           </span>
         </div>
         <div className="flex items-center gap-3">
           <div className="flex items-center gap-4 text-sm">
-            <span className="text-gray-500">Attendance: <b className="text-gray-800">{report.attendanceRate}%</b></span>
-            <span className="text-gray-500">HW: <b className="text-gray-800">{report.homeworkCompletionRate}%</b></span>
+            <span className="text-gray-500">Attendance: <b className="text-gray-800">{report.attendancePercentage || 0}%</b></span>
+            <span className="text-gray-500">HW: <b className="text-gray-800">{report.homeworkCompletionRate || 0}%</b></span>
           </div>
           {expanded ? <ChevronDown size={18} className="text-gray-400" /> : <ChevronRight size={18} className="text-gray-400" />}
         </div>
@@ -61,10 +63,10 @@ const ReportCard = ({ report, expanded, onToggle }) => {
                 <h4 className="text-sm font-semibold text-gray-700">Attendance</h4>
               </div>
               <div className="space-y-1 text-sm">
-                <p>Present: <b>{report.daysPresent}</b></p>
-                <p>Absent: <b>{report.daysAbsent}</b></p>
-                <p>Late: <b>{report.daysLate || 0}</b></p>
-                <p>Total Hours: <b>{report.totalHoursSpent || 0}</b></p>
+                <p>Present: <b>{report.totalDaysPresent || 0}</b></p>
+                <p>Absent: <b>{report.totalDaysAbsent || 0}</b></p>
+                <p>Late: <b>{report.totalDaysLate || 0}</b></p>
+                <p>Working Days: <b>{report.totalWorkingDays || 0}</b></p>
               </div>
             </div>
 
@@ -75,9 +77,9 @@ const ReportCard = ({ report, expanded, onToggle }) => {
                 <h4 className="text-sm font-semibold text-gray-700">Behavior</h4>
               </div>
               <div className="space-y-2">
-                <div><span className="text-xs text-gray-500">Behavior</span><RatingStars value={report.avgBehaviorRating} /></div>
-                <div><span className="text-xs text-gray-500">Participation</span><RatingStars value={report.avgParticipation} /></div>
-                <div><span className="text-xs text-gray-500">Discipline</span><RatingStars value={report.avgDiscipline} /></div>
+                <div><span className="text-xs text-gray-500">Behavior</span><RatingStars value={Math.round(report.averageBehaviorScore || 0)} /></div>
+                <div><span className="text-xs text-gray-500">Participation</span><RatingStars value={Math.round(report.averageParticipationScore || 0)} /></div>
+                <div><span className="text-xs text-gray-500">Discipline</span><RatingStars value={Math.round(report.averageDisciplineScore || 0)} /></div>
               </div>
             </div>
 
@@ -88,11 +90,11 @@ const ReportCard = ({ report, expanded, onToggle }) => {
                 <h4 className="text-sm font-semibold text-gray-700">Performance</h4>
               </div>
               <div className="space-y-1 text-sm">
-                {report.subjectPerformance && typeof report.subjectPerformance === 'object' ? (
-                  Object.entries(report.subjectPerformance).slice(0, 5).map(([subj, pct]) => (
-                    <div key={subj} className="flex justify-between">
-                      <span className="text-gray-500 truncate mr-2">{subj}</span>
-                      <b>{typeof pct === 'number' ? `${pct}%` : pct}</b>
+                {Array.isArray(report.subjectWiseProgress) && report.subjectWiseProgress.length > 0 ? (
+                  report.subjectWiseProgress.slice(0, 5).map((s) => (
+                    <div key={s.subjectId} className="flex justify-between">
+                      <span className="text-gray-500 truncate mr-2">{s.subjectId}</span>
+                      <b>{s.avgUnderstanding || 0}/5</b>
                     </div>
                   ))
                 ) : (
@@ -115,11 +117,11 @@ const ReportCard = ({ report, expanded, onToggle }) => {
             </div>
           )}
 
-          {/* Risk Alert */}
-          {report.riskLevel && report.riskLevel !== 'LOW' && (
+          {/* Follow-up Required Alert */}
+          {report.followUpRequired && (
             <div className="mt-3 flex items-center gap-2 px-3 py-2 bg-amber-50 rounded-lg">
               <AlertTriangle size={14} className="text-amber-600" />
-              <span className="text-sm text-amber-700">Risk Level: <b>{report.riskLevel}</b></span>
+              <span className="text-sm text-amber-700">Follow-up Required</span>
             </div>
           )}
         </div>
@@ -134,14 +136,17 @@ const WeeklyProgressReports = () => {
   const [reports, setReports] = useState([]);
   const [pagination, setPagination] = useState({ page: 1, pages: 1, total: 0 });
   const [expandedId, setExpandedId] = useState(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [year, setYear] = useState(new Date().getFullYear());
+  // Teacher/Admin: set via compact StudentClassPicker
+  const [pickedStudentId, setPickedStudentId] = useState('');
+
+  const isStudent = user?.role === 'STUDENT';
 
   const studentId = useMemo(() => {
-    if (user?.role === 'STUDENT' && user?.studentProfile?.id) return user.studentProfile.id;
-    const params = new URLSearchParams(window.location.search);
-    return params.get('studentId') || null;
-  }, [user]);
+    if (isStudent && user?.studentProfile?.id) return user.studentProfile.id;
+    return pickedStudentId || null;
+  }, [user, isStudent, pickedStudentId]);
 
   const fetchReports = async (page = 1) => {
     if (!studentId) return;
@@ -160,13 +165,18 @@ const WeeklyProgressReports = () => {
 
   useEffect(() => { fetchReports(); }, [studentId, year]);
 
-  if (!studentId) {
+  if (!studentId && !isStudent) {
+    // Show compact picker for teacher/admin so they can select a student
     return (
-      <div className="flex items-center justify-center min-h-[60vh]">
-        <div className="text-center">
-          <Calendar size={48} className="mx-auto text-gray-300 mb-4" />
-          <h2 className="text-xl font-semibold text-gray-600">No Student Selected</h2>
-          <p className="text-gray-400 mt-1">Select a student to view weekly reports</p>
+      <div className="p-6 space-y-4 max-w-5xl mx-auto">
+        <h1 className="text-2xl font-bold text-gray-900">Weekly Progress Reports</h1>
+        <div className="bg-white rounded-xl border border-gray-100 p-5">
+          <div className="flex items-center gap-2 mb-4">
+            <Users size={18} className="text-amber-500" />
+            <span className="font-semibold text-gray-800">Select a Student</span>
+          </div>
+          <StudentClassPicker compact onSelect={({ studentId: sid }) => sid && setPickedStudentId(sid)} />
+          <p className="text-xs text-gray-400 mt-3">Choose a class, then pick a student to load their weekly reports.</p>
         </div>
       </div>
     );
@@ -175,20 +185,26 @@ const WeeklyProgressReports = () => {
   return (
     <div className="p-6 space-y-6 max-w-5xl mx-auto">
       {/* Header with year filter */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900">Weekly Progress Reports</h1>
           <p className="text-gray-500 text-sm mt-1">{pagination.total} report{pagination.total !== 1 ? 's' : ''} found</p>
         </div>
-        <select
-          value={year}
-          onChange={(e) => setYear(parseInt(e.target.value))}
-          className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
-        >
-          {[new Date().getFullYear(), new Date().getFullYear() - 1].map((y) => (
-            <option key={y} value={y}>{y}</option>
-          ))}
-        </select>
+        <div className="flex flex-wrap items-center gap-3">
+          {/* Compact class/student picker for teacher role */}
+          {!isStudent && (
+            <StudentClassPicker compact onSelect={({ studentId: sid }) => sid && setPickedStudentId(sid)} />
+          )}
+          <select
+            value={year}
+            onChange={(e) => setYear(parseInt(e.target.value))}
+            className="px-4 py-2 border border-gray-200 rounded-lg text-sm focus:ring-2 focus:ring-indigo-500 outline-none"
+          >
+            {[new Date().getFullYear(), new Date().getFullYear() - 1].map((y) => (
+              <option key={y} value={y}>{y}</option>
+            ))}
+          </select>
+        </div>
       </div>
 
       {/* Reports */}

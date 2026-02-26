@@ -19,11 +19,42 @@ const getSnapshotByStudentId = async (studentId) => {
   const cached = await cacheGet(cacheKey);
   if (cached) return cached;
 
-  const snapshot = await prisma.studentProgressSnapshot.findUnique({
+  let snapshot = await prisma.studentProgressSnapshot.findUnique({
     where: { studentId },
   });
 
-  if (!snapshot) throw new AppError('Snapshot not found. Progress has not been calculated yet.', 404);
+  // Auto-create snapshot on first access instead of throwing 404
+  if (!snapshot) {
+    try {
+      snapshot = await refreshSnapshot(studentId);
+    } catch (err) {
+      logger.warn({ studentId, err: err.message }, 'Snapshot: auto-creation failed, returning defaults');
+      // Return bare-minimum defaults so the frontend doesn't crash
+      return {
+        studentId,
+        totalDaysAttended: 0,
+        totalDaysAbsent: 0,
+        overallAttendanceRate: 0,
+        currentAttendanceStreak: 0,
+        longestAttendanceStreak: 0,
+        currentHomeworkStreak: 0,
+        overallHomeworkCompletionRate: 0,
+        averageHomeworkQuality: 0,
+        averageBehaviorRating: 0,
+        averageParticipation: 0,
+        averageDiscipline: 0,
+        punctualityRate: 0,
+        riskLevel: 'LOW',
+        needsAttention: false,
+        attentionReasons: [],
+        flaggedSubjects: [],
+        subjectWisePerformance: [],
+        strongestSubjects: [],
+        weakestSubjects: [],
+        lastCalculatedAt: null,
+      };
+    }
+  }
 
   await cacheSet(cacheKey, snapshot, CACHE_TTL);
   return snapshot;

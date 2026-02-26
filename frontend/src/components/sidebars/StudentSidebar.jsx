@@ -1,6 +1,6 @@
 import React from 'react';
-import { 
-  LayoutDashboard, 
+import {
+  LayoutDashboard,
   Calendar,
   BookOpen,
   BarChart3,
@@ -8,7 +8,8 @@ import {
   Clock,
   FileText,
   User,
-  History
+  History,
+  Target
 } from 'lucide-react';
 import SidebarBase from './SidebarBase';
 import SidebarItem from './SidebarItem';
@@ -19,14 +20,15 @@ const StudentSidebar = ({ isOpen, onClose, onToggle }) => {
     { icon: Calendar, label: 'My Attendance', to: '/student/attendance' },
     { icon: History, label: 'Class History', to: '/student/class-history' },
     { icon: BarChart3, label: 'My Progress', to: '/student/progress' },
-    // { icon: Award, label: 'Results & Grades', to: '/student/results' },
+    { icon: Target, label: 'My Goals', to: '/student/goals' },
+    { icon: FileText, label: 'Monthly Report', to: '/student/monthly-report' },
     { icon: User, label: 'My Profile', to: '/student/profile' },
   ];
 
   return (
-    <SidebarBase 
-      isOpen={isOpen} 
-      onClose={onClose} 
+    <SidebarBase
+      isOpen={isOpen}
+      onClose={onClose}
       onToggle={onToggle}
       title="Student Portal"
     >
