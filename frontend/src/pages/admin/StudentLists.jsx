@@ -1,29 +1,22 @@
-import React, { useState, useEffect, useCallback } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
   Filter,
   Mail,
   Phone,
-  MapPin,
   BookOpen,
-  Calendar,
   GraduationCap,
-  Users,
   TrendingUp,
   History,
   CheckSquare,
   Square,
   Eye,
   MoreVertical,
-  Edit,
   UserCheck,
   UserX,
   Trash2,
-  MoveVertical,
   School,
-  Plus,
-  Check,
   X,
   Trash2Icon,
 } from "lucide-react";
@@ -109,30 +102,29 @@ const StudentLists = () => {
     student.admissionNo || student.studentProfile?.admissionNo || "N/A";
 
   // ============================================
-  // Profile Image URL Generation
+  // Profile Image URL Generation — memoized per student
   // ============================================
 
-  const getProfileImageUrl = useCallback((student) => {
-    try {
-      const userId = getStudentUserId(student);
-      const profileImage = getStudentProfileImage(student);
+  const profileImageUrls = useMemo(() => {
+    const map = {};
+    if (!Array.isArray(students)) return map;
+    const baseUrl = (
+      import.meta.env.VITE_API_URL || "http://localhost:5000/api"
+    ).replace(/\/$/, "");
 
-      if (!profileImage) return null;
+    students.forEach((student) => {
+      const profileImage = getStudentProfileImage(student);
+      if (!profileImage) return;
 
       if (profileImage.startsWith("http") || profileImage.startsWith("data:")) {
-        return profileImage;
+        map[student.id] = profileImage;
+      } else {
+        const userId = getStudentUserId(student);
+        map[student.id] = `${baseUrl}/admin/public/profile-image/${userId}?w=80&h=80`;
       }
-
-      const baseUrl = (
-        import.meta.env.VITE_API_URL || "http://localhost:5000/api"
-      ).replace(/\/$/, "");
-
-      return `${baseUrl}/admin/public/profile-image/${userId}`;
-    } catch (error) {
-      console.error("Error generating profile image URL:", error);
-      return null;
-    }
-  }, []);
+    });
+    return map;
+  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ============================================
   // Student Selection Handlers
@@ -154,12 +146,10 @@ const StudentLists = () => {
     );
 
     if (allCurrentPageSelected) {
-      // Deselect current page items only
       setSelectedStudents((prev) =>
         prev.filter((s) => !paginatedStudents.some((p) => p.id === s.id))
       );
     } else {
-      // Add current page items that aren't already selected
       setSelectedStudents((prev) => {
         const newOnes = paginatedStudents.filter(
           (s) => !prev.some((sel) => sel.id === s.id)
@@ -448,8 +438,6 @@ const StudentLists = () => {
     toast.success("Students promoted successfully");
   };
 
-  const getStudentAttendance = () => ({ present: 0, total: 0, percentage: 0 });
-
   // ============================================
   // Render
   // ============================================
@@ -457,7 +445,7 @@ const StudentLists = () => {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
+      <div className="bg-linear-to-r from-[#FFFBEB] to-[#FEF3C7] border border-[#FDE68A] rounded-2xl p-4 sm:p-6">
         <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
           <div>
             <h1 className="text-2xl sm:text-3xl font-bold text-[#92400E]">
@@ -472,14 +460,14 @@ const StudentLists = () => {
               <>
                 <button
                   onClick={handleBulkAssignClass}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
+                  className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-blue-500 to-blue-600 text-white rounded-xl hover:from-blue-600 hover:to-blue-700 transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
                 >
                   <School className="h-4 w-4" />
                   <span>Assign Class ({selectedStudents.length})</span>
                 </button>
                 <button
                   onClick={() => setShowPromotionModal(true)}
-                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
+                  className="flex items-center gap-2 px-4 py-2 bg-linear-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] transition-all duration-200 font-semibold text-sm hover:shadow-lg transform hover:-translate-y-0.5"
                 >
                   <TrendingUp className="h-4 w-4" />
                   <span>Promote ({selectedStudents.length})</span>
@@ -635,9 +623,8 @@ const StudentLists = () => {
               studentStatus={getStudentStatus(student)}
               admissionNo={getAdmissionNo(student)}
               currentClass={getCurrentClass(student)}
-              attendance={getStudentAttendance()}
               selected={isStudentSelected(student.id)}
-              profileImageUrl={getProfileImageUrl(student)}
+              profileImageUrl={profileImageUrls[student.id] || null}
               dropdownOpen={dropdownOpen === student.id}
               onToggleDropdown={() => toggleDropdown(student.id)}
               onAssignClass={() => handleAssignClass(student)}
@@ -658,7 +645,7 @@ const StudentLists = () => {
         )}
       </div>
 
-      {/* ── Pagination ── */}
+      {/* Pagination */}
       {!loading && filteredStudents.length > 0 && (
         <Pagination
           currentPage={currentPage}
@@ -938,7 +925,7 @@ const LoadingSkeleton = () => (
 );
 
 const EmptyState = ({ studentsCount }) => (
-  <div className="col-span-full text-center py-12 bg-gradient-to-br from-gray-50 to-white rounded-2xl border border-gray-200">
+  <div className="col-span-full text-center py-12 bg-linear-to-br from-gray-50 to-white rounded-2xl border border-gray-200">
     <GraduationCap className="h-16 w-16 mx-auto text-gray-300 mb-4" />
     <h3 className="text-lg font-semibold text-gray-900 mb-2">
       {studentsCount === 0 ? "No students enrolled yet" : "No students found"}
@@ -958,7 +945,6 @@ const StudentCard = ({
   studentStatus,
   admissionNo,
   currentClass,
-  attendance,
   selected,
   profileImageUrl,
   dropdownOpen,
@@ -975,13 +961,13 @@ const StudentCard = ({
 }) => (
   <div
     onClick={onClick}
-    className={`bg-white rounded-[1.5rem] p-6 shadow-sm border transition-all duration-300 cursor-pointer group hover:shadow-xl hover:-translate-y-1 relative overflow-hidden ${selected
+    className={`bg-white rounded-3xl p-6 shadow-sm border transition-all duration-300 cursor-pointer group hover:shadow-xl hover:-translate-y-1 relative overflow-hidden ${selected
       ? "border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-amber-50/10"
       : "border-gray-100 hover:border-[#F59E0B] bg-white"
       }`}
   >
     {/* Decorative Top Accent */}
-    <div className={`absolute top-0 left-0 right-0 h-1 transition-opacity ${selected ? "bg-amber-500 opacity-100" : "bg-gradient-to-r from-amber-400 to-amber-600 opacity-0 group-hover:opacity-100"}`} />
+    <div className={`absolute top-0 left-0 right-0 h-1 transition-opacity ${selected ? "bg-amber-500 opacity-100" : "bg-linear-to-r from-amber-400 to-amber-600 opacity-0 group-hover:opacity-100"}`} />
 
     {/* Selection Checkbox & Dropdown Layer */}
     <div className="flex justify-between items-start mb-2 w-full absolute top-4 left-0 px-4">
@@ -1048,7 +1034,6 @@ const StudentCard = ({
 
     {/* Center Content Group */}
     <div className="flex flex-col items-center text-center mt-4">
-      {/* Profile Image Component */}
       <ProfileImage
         profileImageUrl={profileImageUrl}
         studentName={studentName}
@@ -1081,11 +1066,11 @@ const StudentCard = ({
       <div className="grid grid-cols-2 gap-2 w-full mt-2">
         <div className="flex items-center justify-center gap-1.5 p-2 bg-gray-50 rounded-xl text-xs text-gray-600" title={studentEmail}>
           <Mail size={14} className="text-gray-400" />
-          <span className="truncate max-w-[80px]">{studentEmail || 'N/A'}</span>
+          <span className="truncate max-w-20">{studentEmail || 'N/A'}</span>
         </div>
         <div className="flex items-center justify-center gap-1.5 p-2 bg-gray-50 rounded-xl text-xs text-gray-600">
           <Phone size={14} className="text-gray-400" />
-          <span className="truncate max-w-[80px]">{student.guardianPhone || 'N/A'}</span>
+          <span className="truncate max-w-20">{student.guardianPhone || 'N/A'}</span>
         </div>
       </div>
     </div>
@@ -1093,15 +1078,22 @@ const StudentCard = ({
 );
 
 const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
-  const [imgLoaded, setImgLoaded] = useState(false);
   const [imgError, setImgError] = useState(false);
+  const prevUrlRef = useRef(profileImageUrl);
 
-  const initials = studentName?.split(" ").map((n) => n[0]).join("").toUpperCase().substring(0, 2) || "?";
+  // Only reset error state when the URL genuinely changes
+  if (prevUrlRef.current !== profileImageUrl) {
+    prevUrlRef.current = profileImageUrl;
+    if (imgError) setImgError(false);
+  }
 
-  useEffect(() => {
-    setImgLoaded(false);
-    setImgError(false);
-  }, [profileImageUrl]);
+  const initials =
+    studentName
+      ?.split(" ")
+      .map((n) => n[0])
+      .join("")
+      .toUpperCase()
+      .substring(0, 2) || "?";
 
   const shouldShowImage = profileImageUrl && !imgError;
 
@@ -1109,25 +1101,29 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
     <div className="relative mb-2">
       <div className="w-20 h-20 rounded-full p-1 bg-white shadow-sm ring-1 ring-gray-100 mx-auto">
         {shouldShowImage ? (
-          <>
-            {!imgLoaded && <div className="w-full h-full bg-gray-100 rounded-full animate-pulse" />}
-            <img
-              src={profileImageUrl}
-              alt={studentName}
-              className={`w-full h-full rounded-full object-cover transition-opacity duration-300 ${imgLoaded ? "opacity-100" : "opacity-0"}`}
-              onLoad={() => setImgLoaded(true)}
-              onError={() => setImgError(true)}
-            />
-          </>
+          <img
+            src={profileImageUrl}
+            alt={studentName}
+            loading="lazy"
+            decoding="async"
+            width={80}
+            height={80}
+            className="w-full h-full rounded-full object-cover"
+            onError={() => setImgError(true)}
+          />
         ) : (
-          <div className="w-full h-full bg-gradient-to-br from-amber-50 to-amber-100 flex items-center justify-center text-amber-600 font-bold text-xl rounded-full border border-amber-200">
+          <div className="w-full h-full bg-linear-to-br from-amber-50 to-amber-100 flex items-center justify-center text-amber-600 font-bold text-xl rounded-full border border-amber-200">
             {initials}
           </div>
         )}
       </div>
       {/* Status Dot */}
       <div
-        className={`absolute bottom-1 right-2 w-4 h-4 rounded-full border-2 border-white ${studentStatus === "ACTIVE" ? "bg-emerald-500" : studentStatus === "INACTIVE" ? "bg-yellow-500" : "bg-red-500"
+        className={`absolute bottom-1 right-2 w-4 h-4 rounded-full border-2 border-white ${studentStatus === "ACTIVE"
+          ? "bg-emerald-500"
+          : studentStatus === "INACTIVE"
+            ? "bg-yellow-500"
+            : "bg-red-500"
           }`}
         title={studentStatus || "Active"}
       />
