@@ -21,13 +21,11 @@ const SuperAdminDashboard = () => {
     fetchAttendanceOverview,
     fetchAttendanceTrends,
     fetchClassAttendanceComparison,
-    fetchLeaveRequests,
     stats,
     admins,
     attendanceOverview,
     attendanceTrends,
     classAttendanceComparison,
-    leaveRequests,
     // eslint-disable-next-line no-unused-vars
     loading,
   } = useAdmin();
@@ -38,7 +36,6 @@ const SuperAdminDashboard = () => {
     attendance: false,
     trends: false,
     comparison: false,
-    leaves: false,
   });
 
   // ─── Data Fetching ──────────────────────────────────────
@@ -51,19 +48,17 @@ const SuperAdminDashboard = () => {
           startDate: getDateDaysAgo(30),
           endDate: todayString(),
         }),
-        fetchLeaveRequests({ status: 'PENDING', limit: 10 }),
       ]);
 
       setDataLoaded((prev) => ({
         ...prev,
         stats: results[0].status === 'fulfilled',
         attendance: results[2].status === 'fulfilled',
-        leaves: results[3].status === 'fulfilled',
       }));
     } catch (err) {
       console.error('Dashboard core data load failed:', err);
     }
-  }, [fetchSystemStats, fetchAdmins, fetchAttendanceOverview, fetchLeaveRequests]);
+  }, [fetchSystemStats, fetchAdmins, fetchAttendanceOverview]);
 
   const loadChartData = useCallback(async () => {
     try {
@@ -150,14 +145,13 @@ const SuperAdminDashboard = () => {
       {/* 4. Operational Intelligence + 5. Activity Timeline */}
       <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
         <div className="xl:col-span-2">
-          {!dataLoaded.leaves && !leaveRequests ? (
+          {!dataLoaded.stats && !stats ? (
             <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
               <TableSkeleton rows={4} />
               <TableSkeleton rows={4} />
             </div>
           ) : (
             <OperationalPanel
-              leaveRequests={leaveRequests}
               stats={stats}
               attendanceOverview={attendanceOverview}
             />

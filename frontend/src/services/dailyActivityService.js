@@ -31,7 +31,17 @@ const dailyActivityService = {
     // Query: { studentId?, classRoomId?, subjectId?, teacherId?,
     //          startDate?, endDate?, attendanceStatus?, page?, limit? }
     getAll: async (filters = {}) => {
-        const response = await api.get('/activities', { params: filters });
+        const queryParams = { ...filters };
+
+        // The backend expects strict ISO-8601 datetime strings, not just YYYY-MM-DD
+        if (queryParams.startDate && queryParams.startDate.length === 10) {
+            queryParams.startDate = new Date(`${queryParams.startDate}T00:00:00.000Z`).toISOString();
+        }
+        if (queryParams.endDate && queryParams.endDate.length === 10) {
+            queryParams.endDate = new Date(`${queryParams.endDate}T23:59:59.999Z`).toISOString();
+        }
+
+        const response = await api.get('/activities', { params: queryParams });
         return response.data;
     },
 

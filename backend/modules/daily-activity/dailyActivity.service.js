@@ -57,6 +57,53 @@ const validateStudentAndClass = async (studentId, classRoomId) => {
   return student;
 };
 
+/**
+ * Helper to populate subject names into the subjectsStudied JSON array.
+ * This is needed because subjectsStudied is a JSON field containing only subjectId.
+ */
+const populateSubjectNames = async (activities) => {
+  if (!activities) return activities;
+  
+  const isArray = Array.isArray(activities);
+  const arr = isArray ? activities : [activities];
+  if (arr.length === 0) return activities;
+
+  // Extract all unique subject IDs
+  const subjectIds = new Set();
+  arr.forEach(act => {
+    if (Array.isArray(act.subjectsStudied)) {
+      act.subjectsStudied.forEach(s => {
+        if (s.subjectId) subjectIds.add(s.subjectId);
+      });
+    }
+  });
+
+  if (subjectIds.size === 0) return activities;
+
+  // Fetch subject names from DB
+  const subjects = await prisma.subject.findMany({
+    where: { id: { in: Array.from(subjectIds) } },
+    select: { id: true, name: true }
+  });
+  
+  const subjectMap = subjects.reduce((map, sub) => {
+    map[sub.id] = sub.name;
+    return map;
+  }, {});
+
+  // Populate names back into the JSON objects
+  arr.forEach(act => {
+    if (Array.isArray(act.subjectsStudied)) {
+      act.subjectsStudied = act.subjectsStudied.map(s => ({
+        ...s,
+        subjectName: subjectMap[s.subjectId] || 'Unknown Subject'
+      }));
+    }
+  });
+
+  return isArray ? arr : arr[0];
+};
+
 // ── Service Methods ───────────────────────────────────────────────────────────
 
 /**
@@ -150,8 +197,9 @@ const getActivityById = async (id) => {
   const activity = await repo.findById(id);
   if (!activity) throw new AppError('Daily activity not found', 404);
 
-  await cacheSet(activityCacheKey(id), activity, CACHE_TTL);
-  return activity;
+  const populatedActivity = await populateSubjectNames(activity);
+  await cacheSet(activityCacheKey(id), populatedActivity, CACHE_TTL);
+  return populatedActivity;
 };
 
 /**
@@ -166,8 +214,9 @@ const getActivityByStudentAndDate = async (studentId, dateStr) => {
   const activity = await repo.findByStudentAndDate(studentId, date);
   if (!activity) throw new AppError('No activity found for this student on this date', 404);
 
-  await cacheSet(cacheKey, activity, CACHE_TTL);
-  return activity;
+  const populatedActivity = await populateSubjectNames(activity);
+  await cacheSet(cacheKey, populatedActivity, CACHE_TTL);
+  return populatedActivity;
 };
 
 /**
@@ -224,7 +273,9 @@ const listActivities = async (query, user) => {
     repo.count(where),
   ]);
 
-  return { items, total, page, limit };
+  const populatedItems = await populateSubjectNames(items);
+
+  return { items: populatedItems, total, page, limit };
 };
 
 /**

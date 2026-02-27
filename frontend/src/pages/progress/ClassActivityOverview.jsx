@@ -1,13 +1,3 @@
-// FILE: src/pages/progress/ClassActivityOverview.jsx
-// PATTERN FROM: src/pages/progress/ProgressDashboard.jsx (existing — card-based pattern)
-// BACKEND CONTRACT:
-//   backend/modules/daily-activity/dailyActivity.routes.js  — GET /api/activities?classRoomId=:id
-//   backend/modules/progress-snapshot/snapshot.routes.js    — GET /api/dashboard/at-risk
-//   backend/modules/daily-activity/dailyActivity.repository.js — activitySelect
-//
-// QUERY: GET /api/activities?classRoomId=:id&page=1&limit=50
-// Shows per-student activity card summarizing their recent records
-
 import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import toast from 'react-hot-toast';
 import { useAuth } from '../../contexts/AuthContext';

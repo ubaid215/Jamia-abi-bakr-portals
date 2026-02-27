@@ -11,8 +11,19 @@ import {
   AlertCircle,
   CheckCircle2,
   XCircle,
+  Activity as ActivityIcon,
 } from "lucide-react";
 import { useAdmin } from "../../contexts/AdminContext";
+import dailyActivityService from "../../services/dailyActivityService";
+import {
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  ResponsiveContainer,
+} from "recharts";
 
 const AdminDashboard = () => {
   const {
@@ -33,20 +44,66 @@ const AdminDashboard = () => {
     todayAttendance: 0,
   });
 
+  const [weeklyActivities, setWeeklyActivities] = useState([]);
+  const [todayActivityCount, setTodayActivityCount] = useState(0);
+
   useEffect(() => {
     loadDashboardData();
   }, [timeRange]);
 
   const loadDashboardData = async () => {
     try {
+      const today = new Date().toISOString().split("T")[0];
+      const weekAgo = new Date();
+      weekAgo.setDate(weekAgo.getDate() - 7);
+      const startDate7Days = weekAgo.toISOString().split("T")[0];
+
       await Promise.all([
         fetchSystemStats(),
         fetchAttendanceOverview({
           startDate: getStartDate(timeRange),
-          endDate: new Date().toISOString().split("T")[0],
+          endDate: today,
         }),
         fetchLeaveRequests({ status: "PENDING", limit: 5 }),
       ]);
+
+      // Fetch daily activities for the last 7 days
+      const activitiesRes = await dailyActivityService.getAll({
+        startDate: startDate7Days,
+        endDate: today,
+        limit: 1000 // Ensure we get all records for the week
+      });
+
+      const activities = activitiesRes?.data || activitiesRes?.items || [];
+
+      // Calculate today's activities
+      const todayAct = activities.filter(a => a.date?.startsWith(today)).length;
+      setTodayActivityCount(todayAct);
+
+      // Group activities by date for the chart
+      const grouped = activities.reduce((acc, curr) => {
+        const d = curr.date?.split("T")[0];
+        if (d) {
+          acc[d] = (acc[d] || 0) + 1;
+        }
+        return acc;
+      }, {});
+
+      // Build 7-day array
+      const chartData = [];
+      for (let i = 6; i >= 0; i--) {
+        const d = new Date();
+        d.setDate(d.getDate() - i);
+        const dateStr = d.toISOString().split("T")[0];
+        const dayName = d.toLocaleDateString("en-US", { weekday: "short" });
+        chartData.push({
+          date: dateStr,
+          day: dayName,
+          activities: grouped[dateStr] || 0,
+        });
+      }
+      setWeeklyActivities(chartData);
+
     } catch (error) {
       console.error("Failed to load dashboard data:", error);
     }
@@ -74,13 +131,13 @@ const AdminDashboard = () => {
   useEffect(() => {
     if (stats) {
       setDashboardStats({
-        totalStudents: stats?.stats?.byRole?.students || 0,
-        totalTeachers: stats?.stats?.byRole?.teachers || 0,
-        totalClasses: stats?.stats?.academic?.totalClasses || 0,
-        todayAttendance: stats?.stats?.academic?.todayAttendance || 0,
+        totalStudents: stats?.stats?.totalStudents || 0,
+        totalTeachers: stats?.stats?.totalTeachers || 0,
+        totalClasses: stats?.stats?.academic?.totalClasses || 0, // Fallback if missing
+        todayAttendance: attendanceOverview?.summary?.overallAttendancePercentage || 0,
       });
     }
-  }, [stats]);
+  }, [stats, attendanceOverview]);
 
   const statsCards = [
     {
@@ -121,13 +178,13 @@ const AdminDashboard = () => {
 
   const quickStats = [
     {
-      label: "Pending Approvals",
-      value: (leaveRequests?.leaveRequests?.length || 0).toString(),
-      color: "bg-red-100 text-red-800",
+      label: "Today's Activities",
+      value: todayActivityCount.toString(),
+      color: "bg-purple-100 text-purple-800",
     },
     {
       label: "Active Students",
-      value: (stats?.stats?.byStatus?.active || 0).toString(),
+      value: (stats?.stats?.activeStudents || dashboardStats.totalStudents).toString(),
       color: "bg-blue-100 text-blue-800",
     },
     {
@@ -142,36 +199,18 @@ const AdminDashboard = () => {
     },
   ];
 
-  const recentTasks = [
-    {
-      title: "Review pending teacher applications",
-      priority: "High",
-      due: "Today",
+  const pendingTasks = (leaveRequests?.leaveRequests || [])
+    .filter(req => req.status === "PENDING")
+    .map(req => ({
+      title: `Leave Request: ${req.teacher?.user?.name || "Teacher"}`,
+      priority: "Medium",
+      due: req.startDate ? new Date(req.startDate).toLocaleDateString() : "Pending",
       type: "approval",
       status: "pending",
-    },
-    {
-      title: "Generate monthly attendance report",
-      priority: "Medium",
-      due: "Tomorrow",
-      type: "report",
-      status: "pending",
-    },
-    {
-      title: "Update class schedules",
-      priority: "Medium",
-      due: "This week",
-      type: "schedule",
-      status: "in-progress",
-    },
-    {
-      title: "Process student transfers",
-      priority: "Low",
-      due: "Next week",
-      type: "transfer",
-      status: "pending",
-    },
-  ];
+      original: req
+    }));
+
+  const recentTasks = pendingTasks.slice(0, 4);
 
   const getStatusIcon = (status) => {
     switch (status) {
@@ -316,7 +355,7 @@ const AdminDashboard = () => {
             </span>
           </div>
           <div className="space-y-4">
-            {recentTasks.map((task, index) => (
+            {recentTasks.length > 0 ? recentTasks.map((task, index) => (
               <div
                 key={index}
                 className="flex items-center justify-between p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200"
@@ -324,12 +363,12 @@ const AdminDashboard = () => {
                 <div className="flex items-center space-x-4">
                   <div
                     className={`p-2 rounded-lg ${task.type === "approval"
-                        ? "bg-blue-100 text-blue-600"
-                        : task.type === "report"
-                          ? "bg-green-100 text-green-600"
-                          : task.type === "schedule"
-                            ? "bg-purple-100 text-purple-600"
-                            : "bg-yellow-100 text-yellow-600"
+                      ? "bg-blue-100 text-blue-600"
+                      : task.type === "report"
+                        ? "bg-green-100 text-green-600"
+                        : task.type === "schedule"
+                          ? "bg-purple-100 text-purple-600"
+                          : "bg-yellow-100 text-yellow-600"
                       }`}
                   >
                     {task.type === "approval" && (
@@ -345,16 +384,16 @@ const AdminDashboard = () => {
                     <h3 className="font-semibold text-gray-900">
                       {task.title}
                     </h3>
-                    <p className="text-sm text-gray-600">Due: {task.due}</p>
+                    <p className="text-sm text-gray-600">Start Date: {task.due}</p>
                   </div>
                 </div>
                 <div className="flex items-center space-x-3">
                   <span
                     className={`px-3 py-1 rounded-full text-xs font-semibold ${task.priority === "High"
-                        ? "bg-red-100 text-red-800"
-                        : task.priority === "Medium"
-                          ? "bg-yellow-100 text-yellow-800"
-                          : "bg-green-100 text-green-800"
+                      ? "bg-red-100 text-red-800"
+                      : task.priority === "Medium"
+                        ? "bg-yellow-100 text-yellow-800"
+                        : "bg-green-100 text-green-800"
                       }`}
                   >
                     {task.priority}
@@ -368,7 +407,12 @@ const AdminDashboard = () => {
                   </div>
                 </div>
               </div>
-            ))}
+            )) : (
+              <div className="text-center text-gray-500 py-8">
+                <CheckCircle2 className="h-8 w-8 text-green-400 mx-auto mb-2" />
+                <p>No pending tasks</p>
+              </div>
+            )}
           </div>
         </div>
       </div>
@@ -392,22 +436,18 @@ const AdminDashboard = () => {
           </div>
           <div className="text-center p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200">
             <div className="text-2xl font-bold text-[#D97706]">
-              {stats?.stats?.byRole?.teachers
-                ? Math.floor(
-                  (stats?.stats?.byRole?.teachers /
-                    Math.max(stats?.stats?.totalUsers || 1, 1)) *
-                  100
-                )
+              {dashboardStats.totalTeachers > 0
+                ? Math.floor((stats?.stats?.activeTeachers || 0) / dashboardStats.totalTeachers * 100)
                 : 0}
               %
             </div>
-            <p className="text-sm text-gray-600 mt-1">Teacher Ratio</p>
+            <p className="text-sm text-gray-600 mt-1">Active Teacher Ratio</p>
           </div>
           <div className="text-center p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200">
             <div className="text-2xl font-bold text-[#D97706]">
-              {stats?.stats?.academic?.totalSubjects || 0}
+              {stats?.stats?.weeklyAttendanceRate || 0}%
             </div>
-            <p className="text-sm text-gray-600 mt-1">Active Subjects</p>
+            <p className="text-sm text-gray-600 mt-1">Weekly Avg Attendance</p>
           </div>
           <div className="text-center p-4 border border-gray-200 rounded-xl hover:shadow-md transition-shadow duration-200">
             <div className="text-2xl font-bold text-[#D97706]">
@@ -455,6 +495,30 @@ const AdminDashboard = () => {
               No attendance data available
             </div>
           )}
+        </div>
+
+        {/* Activity Weekly Overview Chart */}
+        <div className="bg-white rounded-2xl p-6 shadow-lg border border-gray-100">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-xl font-bold text-gray-900 flex items-center gap-2">
+              <ActivityIcon className="h-5 w-5 text-indigo-600" />
+              Weekly Activity Overview
+            </h2>
+          </div>
+          <div className="h-48 mt-4">
+            <ResponsiveContainer width="100%" height="100%">
+              <BarChart data={weeklyActivities} margin={{ top: 5, right: 0, left: -20, bottom: 0 }}>
+                <CartesianGrid strokeDasharray="3 3" vertical={false} stroke="#E5E7EB" />
+                <XAxis dataKey="day" axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} dy={10} />
+                <YAxis axisLine={false} tickLine={false} tick={{ fontSize: 12, fill: '#6B7280' }} />
+                <Tooltip
+                  cursor={{ fill: '#F3F4F6' }}
+                  contentStyle={{ borderRadius: '12px', border: 'none', boxShadow: '0 4px 6px -1px rgb(0 0 0 / 0.1)' }}
+                />
+                <Bar dataKey="activities" fill="#4F46E5" radius={[4, 4, 0, 0]} maxBarSize={40} />
+              </BarChart>
+            </ResponsiveContainer>
+          </div>
         </div>
 
         {/* System Alerts */}
