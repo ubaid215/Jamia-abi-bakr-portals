@@ -8,7 +8,7 @@ import {
 import { useAdmin } from '../../contexts/AdminContext';
 import axios from 'axios';
 import { toast } from 'react-hot-toast';
-import Pagination from '../../components/ui/Pagination'; 
+import Pagination from '../../components/ui/Pagination';
 
 const TeacherLists = () => {
   const { teachers, fetchTeachers, loading } = useAdmin();
@@ -558,11 +558,10 @@ const TeacherCard = ({
   return (
     <div
       onClick={onClick}
-      className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl relative ${
-        selected
+      className={`bg-white rounded-2xl p-4 sm:p-6 shadow-lg border transition-all duration-300 cursor-pointer group hover:shadow-xl relative ${selected
           ? 'border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-gradient-to-br from-[#FFFBEB] to-white'
           : 'border-gray-100 hover:border-[#F59E0B] bg-gradient-to-br from-white to-gray-50'
-      }`}
+        }`}
     >
       {/* Teacher Header */}
       <div className="flex items-start justify-between mb-4">
@@ -571,7 +570,7 @@ const TeacherCard = ({
             <input
               type="checkbox"
               checked={selected}
-              onChange={() => {}}
+              onChange={() => { }}
               className="w-5 h-5 text-[#F59E0B] border-gray-300 rounded focus:ring-[#F59E0B] cursor-pointer"
             />
           </div>

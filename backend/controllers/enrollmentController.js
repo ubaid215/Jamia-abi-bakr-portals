@@ -9,10 +9,10 @@ class EnrollmentController {
   // Register teacher with auto-generated email/password and file uploads
   async registerTeacher(req, res) {
     try {
-      const { 
-        name, 
-        phone, 
-        profileData 
+      const {
+        name,
+        phone,
+        profileData
       } = req.body;
 
       if (!name) {
@@ -56,7 +56,7 @@ class EnrollmentController {
           const otherPaths = JSON.parse(req.otherDocumentsPath);
           await deleteFiles(otherPaths);
         }
-        
+
         // Regenerate with different email
         return this.registerTeacher(req, res);
       }
@@ -134,7 +134,7 @@ class EnrollmentController {
 
     } catch (error) {
       console.error('Register teacher error:', error);
-      
+
       // Clean up uploaded files on error
       if (req.profileImagePath) await deleteFile(req.profileImagePath);
       if (req.cnicFrontPath) await deleteFile(req.cnicFrontPath);
@@ -143,24 +143,24 @@ class EnrollmentController {
         try {
           const degreePaths = JSON.parse(req.degreeDocumentsPath);
           await deleteFiles(degreePaths);
-        } catch (e) {}
+        } catch (e) { }
       }
       if (req.otherDocumentsPath) {
         try {
           const otherPaths = JSON.parse(req.otherDocumentsPath);
           await deleteFiles(otherPaths);
-        } catch (e) {}
+        } catch (e) { }
       }
-      
+
       res.status(500).json({ error: 'Internal server error' });
     }
   }
 
   async registerStudent(req, res) {
     try {
-      const { 
-        name, 
-        phone, 
+      const {
+        name,
+        phone,
         profileData,
         classRoomId
       } = req.body;
@@ -186,7 +186,7 @@ class EnrollmentController {
 
       // Generate sequential admission number
       const admissionNo = await generateAdmissionNumber();
-      
+
       // Generate email and strong password
       const email = generateStudentEmail(admissionNo);
       const password = generateStrongPassword();
@@ -248,7 +248,7 @@ class EnrollmentController {
         });
 
         let enrollment = null;
-        
+
         // If classRoomId provided, create enrollment with roll number
         if (classRoomId) {
           const classRoom = await tx.classRoom.findUnique({
@@ -260,7 +260,7 @@ class EnrollmentController {
           }
 
           const rollNumber = await generateRollNumber(classRoomId, tx);
-          
+
           enrollment = await tx.enrollment.create({
             data: {
               studentId: studentProfile.id,
@@ -312,7 +312,7 @@ class EnrollmentController {
 
     } catch (error) {
       console.error('Register student error:', error);
-      
+
       // Clean up uploaded files on error
       if (req.profileImagePath) await deleteFile(req.profileImagePath);
       if (req.birthCertificatePath) await deleteFile(req.birthCertificatePath);
@@ -322,12 +322,12 @@ class EnrollmentController {
         try {
           const otherPaths = JSON.parse(req.otherDocumentsPath);
           await deleteFiles(otherPaths);
-        } catch (e) {}
+        } catch (e) { }
       }
-      
+
       if (error.code === 'P2002') {
-        return res.status(400).json({ 
-          error: 'Duplicate roll number detected. Please try again.' 
+        return res.status(400).json({
+          error: 'Duplicate roll number detected. Please try again.'
         });
       }
       res.status(500).json({ error: 'Internal server error' });
@@ -445,9 +445,9 @@ class EnrollmentController {
   // Register parent with auto-generated email/password
   async registerParent(req, res) {
     try {
-      const { 
-        name, 
-        phone 
+      const {
+        name,
+        phone
       } = req.body;
 
       if (!name) {
@@ -526,11 +526,11 @@ class EnrollmentController {
       const result = await prisma.$transaction(async (tx) => {
         const student = await tx.student.findUnique({
           where: { id: studentId },
-          include: {
-            user: true,
+          select: {
+            id: true,
             currentEnrollment: {
-              include: {
-                classRoom: true
+              select: {
+                id: true
               }
             }
           }
@@ -556,7 +556,7 @@ class EnrollmentController {
         }
 
         const rollNumber = await generateRollNumber(classRoomId, tx);
-        
+
         const enrollment = await tx.enrollment.create({
           data: {
             studentId,
@@ -605,8 +605,8 @@ class EnrollmentController {
     } catch (error) {
       console.error('Enroll student error:', error);
       if (error.code === 'P2002') {
-        return res.status(400).json({ 
-          error: 'Duplicate roll number detected. Please try again.' 
+        return res.status(400).json({
+          error: 'Duplicate roll number detected. Please try again.'
         });
       }
       res.status(500).json({ error: error.message || 'Internal server error' });
@@ -619,18 +619,23 @@ class EnrollmentController {
       const { studentId, newClassRoomId, reason } = req.body;
 
       if (!studentId || !newClassRoomId) {
-        return res.status(400).json({ 
-          error: 'Student ID and New Class Room ID are required' 
+        return res.status(400).json({
+          error: 'Student ID and New Class Room ID are required'
         });
       }
 
       const result = await prisma.$transaction(async (tx) => {
         const student = await tx.student.findUnique({
           where: { id: studentId },
-          include: {
+          select: {
+            id: true,
             currentEnrollment: {
-              include: {
-                classRoom: true
+              select: {
+                id: true,
+                classRoomId: true,
+                classRoom: {
+                  select: { name: true }
+                }
               }
             }
           }
@@ -658,15 +663,15 @@ class EnrollmentController {
 
         await tx.enrollment.update({
           where: { id: student.currentEnrollment.id },
-          data: { 
-            isCurrent: false, 
+          data: {
+            isCurrent: false,
             endDate: new Date(),
             promotedTo: reason || `Transferred to ${newClassRoom.name}`
           }
         });
 
         const rollNumber = await generateRollNumber(newClassRoomId, tx);
-        
+
         const newEnrollment = await tx.enrollment.create({
           data: {
             studentId,

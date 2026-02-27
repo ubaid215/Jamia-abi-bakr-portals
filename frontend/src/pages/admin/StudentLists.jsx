@@ -976,8 +976,8 @@ const StudentCard = ({
   <div
     onClick={onClick}
     className={`bg-white rounded-[1.5rem] p-6 shadow-sm border transition-all duration-300 cursor-pointer group hover:shadow-xl hover:-translate-y-1 relative overflow-hidden ${selected
-        ? "border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-amber-50/10"
-        : "border-gray-100 hover:border-[#F59E0B] bg-white"
+      ? "border-[#F59E0B] ring-2 ring-[#F59E0B] ring-opacity-30 bg-amber-50/10"
+      : "border-gray-100 hover:border-[#F59E0B] bg-white"
       }`}
   >
     {/* Decorative Top Accent */}

@@ -138,24 +138,81 @@ const getPoorPerformers = async (req, res) => {
   try {
     console.log("Fetching poor performers...");
 
+    const today = new Date();
+    const currentDay = today.getDay();
+    const daysToPreviousSaturday = (currentDay + 1) % 7;
+    const startDate = new Date(today);
+    startDate.setDate(today.getDate() - daysToPreviousSaturday - 7);
+    startDate.setHours(0, 0, 0, 0);
+    const endDate = new Date(startDate);
+    endDate.setDate(startDate.getDate() + 5);
+    endDate.setHours(23, 59, 59, 999);
+
     const allStudents = await prisma.student.findMany({
       include: {
         user: { select: { name: true, profileImage: true } },
         hifzStatus: true,
         currentEnrollment: { include: { classRoom: true } },
+        progressNotifications: {
+          where: { notificationType: "POOR_PERFORMANCE", isRead: false }
+        }
       },
     });
 
-    console.log(`Found ${allStudents.length} total students`);
+    // Bulk fetch reports for the relevant date range
+    const reports = await prisma.hifzProgress.findMany({
+      where: { date: { gte: startDate, lte: endDate } },
+    });
+
+    const reportsByStudent = {};
+    for (const report of reports) {
+      if (!reportsByStudent[report.studentId]) {
+        reportsByStudent[report.studentId] = [];
+      }
+      reportsByStudent[report.studentId].push(report);
+    }
 
     const poorPerformers = [];
+    const newNotifications = [];
+    const readNotificationsIds = [];
+    const improvedStudentIds = [];
+
+    const notificationMessageTemplate = (studentName) => `Poor performance detected for ${studentName} (Week: ${startDate.toLocaleDateString()} - ${endDate.toLocaleDateString()})`;
 
     for (const student of allStudents) {
-      const hasPoorPerformance = await checkWeeklyPerformance(student.id);
+      const studentReports = reportsByStudent[student.id] || [];
+      const totalDays = studentReports.length;
+      const presentDays = studentReports.filter(
+        (r) => r.attendance === "PRESENT" || r.attendance === "Present"
+      ).length;
+      const attendanceRate = totalDays > 0 ? presentDays / totalDays : 0;
+
+      const hasPoorPerformance =
+        studentReports.some((r) => {
+          const cond = r.condition?.toLowerCase();
+          return cond === "below average" || cond === "need focus";
+        }) || (attendanceRate > 0 && attendanceRate < 0.7);
+
+      const studentName = student.user.name;
+      const currentNotifications = student.progressNotifications || [];
+      const hadPoorPerformance = currentNotifications.length > 0;
+      const notificationMessage = notificationMessageTemplate(studentName);
+
       if (hasPoorPerformance) {
-        const latestNotifications = await prisma.progressNotification.findMany({
-          where: { studentId: student.id, notificationType: "POOR_PERFORMANCE", isRead: false },
-        });
+        const isNew = !currentNotifications.some((n) => n.message === notificationMessage);
+        if (isNew) {
+          const newNotif = {
+            studentId: student.id,
+            recipientType: "TEACHER",
+            recipientId: "SYSTEM",
+            notificationType: "POOR_PERFORMANCE",
+            title: "Poor Hifz Performance",
+            message: notificationMessage,
+            priority: "HIGH"
+          };
+          newNotifications.push(newNotif);
+          currentNotifications.push(newNotif);
+        }
 
         poorPerformers.push({
           _id: student.id,
@@ -163,11 +220,31 @@ const getPoorPerformers = async (req, res) => {
           rollNumber: student.currentEnrollment?.rollNumber ?? "N/A",
           classType: student.currentEnrollment?.classRoom?.name ?? "N/A",
           profileImage: student.user.profileImage ?? null,
-          performanceNotifications: latestNotifications || [],
+          performanceNotifications: currentNotifications,
         });
-
-        console.log(`Added poor performer: ${student.user.name}`);
+      } else {
+        if (hadPoorPerformance) {
+          currentNotifications.forEach(n => {
+            if (n.id) readNotificationsIds.push(n.id);
+          });
+          improvedStudentIds.push(student.id);
+        }
       }
+    }
+
+    if (newNotifications.length > 0) {
+      await prisma.progressNotification.createMany({ data: newNotifications, skipDuplicates: true });
+    }
+    if (readNotificationsIds.length > 0) {
+      await prisma.progressNotification.updateMany({
+        where: { id: { in: readNotificationsIds } },
+        data: { isRead: true, readAt: new Date() }
+      });
+    }
+    if (global.io && improvedStudentIds.length > 0) {
+      improvedStudentIds.forEach(id => {
+        global.io.emit("performanceImproved", { studentId: id });
+      });
     }
 
     console.log(`Found ${poorPerformers.length} poor performers`);
@@ -342,13 +419,24 @@ const getFilteredReports = async (req, res) => {
 const getReports = async (req, res) => {
   try {
     const { studentId } = req.params;
+    const { page = 1, limit = 50 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
 
-    const reports = await prisma.hifzProgress.findMany({
-      where: { studentId },
-      orderBy: { date: "desc" },
+    const [reports, total] = await Promise.all([
+      prisma.hifzProgress.findMany({
+        where: { studentId },
+        orderBy: { date: "desc" },
+        take: Number(limit),
+        skip
+      }),
+      prisma.hifzProgress.count({ where: { studentId } })
+    ]);
+
+    res.status(200).json({
+      success: true,
+      reports,
+      pagination: { total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) }
     });
-
-    res.status(200).json({ success: true, reports });
   } catch (error) {
     console.error("Error fetching reports:", error);
     res.status(500).json({ success: false, message: error.message });
@@ -456,6 +544,9 @@ const getParaCompletionData = async (req, res) => {
 // ─────────────────────────────────────────────────────────────
 const hifzPerformance = async (req, res) => {
   try {
+    const { page = 1, limit = 100 } = req.query;
+    const skip = (Number(page) - 1) * Number(limit);
+
     const hifzStudents = await prisma.student.findMany({
       where: { currentEnrollment: { classRoom: { type: "HIFZ" } } },
       select: { id: true },
@@ -467,12 +558,21 @@ const hifzPerformance = async (req, res) => {
 
     const studentIds = hifzStudents.map((s) => s.id);
 
-    const reports = await prisma.hifzProgress.findMany({
-      where: { studentId: { in: studentIds } },
-      orderBy: { date: "asc" },
-    });
+    const [reports, total] = await Promise.all([
+      prisma.hifzProgress.findMany({
+        where: { studentId: { in: studentIds } },
+        orderBy: { date: "desc" },
+        take: Number(limit),
+        skip
+      }),
+      prisma.hifzProgress.count({ where: { studentId: { in: studentIds } } })
+    ]);
 
-    res.status(200).json({ success: true, reports });
+    res.status(200).json({
+      success: true,
+      reports,
+      pagination: { total, page: Number(page), limit: Number(limit), totalPages: Math.ceil(total / Number(limit)) }
+    });
   } catch (error) {
     res.status(500).json({ success: false, message: error.message });
   }
