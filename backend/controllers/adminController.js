@@ -17,11 +17,13 @@ module.exports = {
     getAllTeachers: teacherController.getAllTeachers,
     getTeacherDetails: teacherController.getTeacherDetails,
     updateTeacher: teacherController.updateTeacher,
+    updateTeacherStatus: teacherController.updateTeacherStatus,
     deleteTeacher: teacherController.deleteTeacher,
 
     // Student Management
     getAllStudents: studentController.getAllStudents,
     updateStudent: studentController.updateStudent,
+    updateStudentStatus: studentController.updateStudentStatus,
     updateStudentAcademicInfo: studentController.updateStudentAcademicInfo,
     getStudentDetails: studentController.getStudentDetails,
     deleteStudent: studentController.deleteStudent,

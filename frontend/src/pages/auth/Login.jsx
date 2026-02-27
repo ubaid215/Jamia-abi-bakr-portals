@@ -94,7 +94,7 @@ const Login = () => {
               <BookOpen className="h-10 w-10 text-white" />
             </div>
             <div className="text-center sm:text-left">
-              <h1 className="text-3xl font-bold text-black font-serif">Madrassa</h1>
+              <h1 className="text-3xl font-bold text-black font-serif">Jamia</h1>
               <p
                 className="text-sm font-medium tracking-wide"
                 style={{ color: goldColors[700] }}
@@ -255,7 +255,7 @@ const Login = () => {
 
         <div className="mt-8 text-center">
           <p className="text-sm text-gray-600 font-medium">
-            &copy; 2024 Madrassa Management System. Elevating Islamic Education.
+            &copy; 2026 Jamia Management System. Elevating Islamic Education.
           </p>
         </div>
       </div>

@@ -727,9 +727,56 @@ async function calculateNazraCompletion(studentId) {
     };
 }
 
+// Update student status
+async function updateStudentStatus(req, res) {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!status || !['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status' });
+        }
+
+        let student = await prisma.student.findFirst({
+            where: { userId: id },
+            include: { user: true },
+        });
+
+        if (!student) {
+            student = await prisma.student.findUnique({
+                where: { id },
+                include: { user: true },
+            });
+        }
+
+        if (!student) {
+            return res.status(404).json({ error: 'Student not found' });
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: student.userId },
+            data: { status },
+        });
+
+        logger.info({ studentId: student.id, status }, 'Student status updated');
+
+        res.json({
+            message: 'Student status updated successfully',
+            status: updatedUser.status,
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Update student status error');
+        res.status(500).json({
+            error: 'Failed to update student status',
+            details: error.message,
+        });
+    }
+}
+
 module.exports = {
     getAllStudents,
     updateStudent,
+    updateStudentStatus,
     updateStudentAcademicInfo,
     getStudentDetails,
     deleteStudent,

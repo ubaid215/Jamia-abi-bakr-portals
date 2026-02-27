@@ -414,9 +414,56 @@ async function deleteTeacher(req, res) {
     }
 }
 
+// Update teacher status
+async function updateTeacherStatus(req, res) {
+    try {
+        const { id } = req.params;
+        const { status } = req.body;
+
+        if (!status || !['ACTIVE', 'INACTIVE', 'TERMINATED'].includes(status)) {
+            return res.status(400).json({ error: 'Invalid status' });
+        }
+
+        let teacher = await prisma.teacher.findFirst({
+            where: { userId: id },
+            include: { user: true },
+        });
+
+        if (!teacher) {
+            teacher = await prisma.teacher.findUnique({
+                where: { id },
+                include: { user: true },
+            });
+        }
+
+        if (!teacher) {
+            return res.status(404).json({ error: 'Teacher not found' });
+        }
+
+        const updatedUser = await prisma.user.update({
+            where: { id: teacher.userId },
+            data: { status },
+        });
+
+        logger.info({ teacherId: teacher.id, status }, 'Teacher status updated');
+
+        res.json({
+            message: 'Teacher status updated successfully',
+            status: updatedUser.status,
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Update teacher status error');
+        res.status(500).json({
+            error: 'Failed to update teacher status',
+            details: error.message,
+        });
+    }
+}
+
 module.exports = {
     getAllTeachers,
     getTeacherDetails,
     updateTeacher,
+    updateTeacherStatus,
     deleteTeacher,
 };

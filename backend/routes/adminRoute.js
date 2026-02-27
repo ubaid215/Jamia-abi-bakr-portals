@@ -7,7 +7,7 @@ const {
   requireSuperAdmin,
   requireAdmin
 } = require('../middlewares/auth');
-const { upload } = require('../middlewares/upload'); 
+const { upload } = require('../middlewares/upload');
 const { validate } = require('../middlewares/validateRequest');
 const {
   createAdminSchema,
@@ -50,6 +50,7 @@ router.get('/teachers', authenticateToken, requireAdmin, validate(paginationSche
 router.get('/teachers/:id', authenticateToken, requireAdmin, adminController.getTeacherDetails);
 router.get('/teachers/:id/documents', authenticateToken, requireAdmin, adminController.getTeacherWithDocuments);
 router.put('/teachers/:id', authenticateToken, requireAdmin, validate(updateTeacherSchema), adminController.updateTeacher);
+router.put('/teachers/:id/status', authenticateToken, requireAdmin, validate(updateUserStatusSchema), adminController.updateTeacherStatus);
 router.delete('/teachers/:id', authenticateToken, requireAdmin, adminController.deleteTeacher);
 
 // Student management
@@ -62,6 +63,7 @@ router.get(
 );
 router.get('/students/:id/documents', authenticateToken, requireAdmin, adminController.getStudentWithDocuments);
 router.put('/students/:id', authenticateToken, requireAdmin, validate(updateStudentSchema), adminController.updateStudent);
+router.put('/students/:id/status', authenticateToken, requireAdmin, validate(updateUserStatusSchema), adminController.updateStudentStatus);
 router.put('/students/:id/academic', authenticateToken, requireAdmin, adminController.updateStudentAcademicInfo);
 router.delete('/students/:id', authenticateToken, requireAdmin, adminController.deleteStudent);
 

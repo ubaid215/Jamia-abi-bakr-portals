@@ -26,8 +26,11 @@ import {
 } from 'lucide-react';
 import SidebarBase from './SidebarBase';
 import SidebarItem from './SidebarItem';
+import dailyActivityService from '../../services/dailyActivityService';
+import { useLocation } from 'react-router-dom';
 
 const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
+  const location = useLocation();
   const [openSubmenus, setOpenSubmenus] = useState({
     adminManagement: false,
     userManagement: false,
@@ -36,6 +39,50 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
     progress: false,
     system: false
   });
+
+  const [todayActivityCount, setTodayActivityCount] = useState(0);
+
+  React.useEffect(() => {
+    const fetchCount = async () => {
+      try {
+        const today = new Date().toISOString().split("T")[0];
+        const res = await dailyActivityService.getAll({
+          startDate: today,
+          endDate: today,
+          limit: 1 // We only need the total count, not a huge payload
+        });
+
+        // Ensure total exists, or fall back to array length if standard pagination form isn't returned
+        const count = res?.total !== undefined ? res.total : (res?.data?.length || res?.items?.length || 0);
+
+        const isActivitiesPage = location.pathname.includes('/progress-module/activities');
+        const savedDate = localStorage.getItem('superAdminLastSeenActivityDate');
+        const savedCount = parseInt(localStorage.getItem('superAdminLastSeenActivityCount') || '0', 10);
+
+        if (isActivitiesPage) {
+          localStorage.setItem('superAdminLastSeenActivityDate', today);
+          localStorage.setItem('superAdminLastSeenActivityCount', count.toString());
+          setTodayActivityCount(0);
+        } else {
+          if (savedDate === today) {
+            setTodayActivityCount(Math.max(0, count - savedCount));
+          } else {
+            setTodayActivityCount(count);
+          }
+        }
+      } catch (err) {
+        // Silent fail for polling
+        console.error("Failed to fetch today's activity count", err);
+      }
+    };
+
+    // Fetch immediately
+    fetchCount();
+
+    // Set up polling interval every 60 seconds
+    const interval = setInterval(fetchCount, 60000);
+    return () => clearInterval(interval);
+  }, [location.pathname]);
 
   const toggleSubmenu = (submenu) => {
     setOpenSubmenus(prev => ({
@@ -100,8 +147,9 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
       key: 'progress',
       icon: TrendingUp,
       label: 'Progress Module',
+      badge: todayActivityCount > 0, // Boolean true shows the dot
       items: [
-        { icon: Activity, label: 'Daily Activities', to: '/admin/progress-module/activities' },
+        { icon: Activity, label: 'Daily Activities', to: '/admin/progress-module/activities', badge: todayActivityCount },
         { icon: School, label: 'Class Overview', to: '/admin/progress-module/class-overview' },
         { icon: ClipboardList, label: 'Weekly Progress', to: '/admin/progress-module/weekly' },
         { icon: Target, label: 'Student Goals', to: '/admin/progress-module/goals' },
@@ -165,6 +213,9 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
                   <div className="flex items-center space-x-3">
                     <Icon className="h-4 w-4 text-gray-500" />
                     <span className="text-sm font-medium">{item.label}</span>
+                    {item.badge && (
+                      <span className="h-2 w-2 rounded-full bg-red-500"></span>
+                    )}
                   </div>
                   {isOpen ? (
                     <ChevronDown className="h-4 w-4 text-gray-400" />
@@ -184,6 +235,7 @@ const SuperAdminSidebar = ({ isOpen, onClose, onToggle }) => {
                         to={subItem.to}
                         onClick={onClose}
                         isSubitem={true}
+                        badge={subItem.badge}
                       />
                     ))}
                   </div>
