@@ -1,8 +1,6 @@
-/* eslint-disable no-unused-vars */
-// SuperAdminDashboard.js - Fixed version
+// SuperAdminDashboard.js
 import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
-import debounce from 'lodash/debounce';
 
 // Dashboard sections
 import ExecutiveSummary from './dashboard/ExecutiveSummary';
@@ -11,235 +9,211 @@ import AcademicAnalytics from './dashboard/AcademicAnalytics';
 import OperationalPanel from './dashboard/OperationalPanel';
 import ActivityTimeline from './dashboard/ActivityTimeline';
 import {
-  KPISkeleton,
-  ChartSkeleton,
-  TableSkeleton,
-  TimelineSkeleton,
+    KPISkeleton,
+    ChartSkeleton,
+    TableSkeleton,
+    TimelineSkeleton,
 } from './dashboard/SkeletonWidgets';
 
-// Simple in-memory cache (optional - you can disable initially)
-const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
-const cache = new Map();
-
-const getCachedData = (key) => {
-  const cached = cache.get(key);
-  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-    console.log(`Using cached data for: ${key}`);
-    return cached.data;
-  }
-  return null;
-};
-
-const setCachedData = (key, data) => {
-  cache.set(key, { data, timestamp: Date.now() });
-  console.log(`Cached data for: ${key}`);
-};
-
 const SuperAdminDashboard = () => {
-  const {
-    fetchSystemStats,
-    fetchAdmins,
-    fetchAttendanceOverview,
-    fetchAttendanceTrends,
-    fetchClassAttendanceComparison,
-    stats,
-    admins,
-    attendanceOverview,
-    attendanceTrends,
-    classAttendanceComparison,
-    loading: contextLoading, // Use context loading state
-  } = useAdmin();
+    const {
+        fetchSystemStats,
+        fetchAdmins,
+        fetchAttendanceOverview,
+        fetchAttendanceTrends,
+        fetchClassAttendanceComparison,
+        getAtRiskStudents,
+        stats,
+        admins,
+        attendanceOverview,
+        attendanceTrends,
+        classAttendanceComparison,
+    } = useAdmin();
 
-  const [trendDays, setTrendDays] = useState(30);
-  const [dataLoaded, setDataLoaded] = useState({
-    stats: false,
-    attendance: false,
-    trends: false,
-    comparison: false,
-  });
-  
-  const initialLoadDone = useRef(false);
-  const mounted = useRef(true);
+    const [trendDays, setTrendDays] = useState(30);
 
-  // Memoized date helpers
-  const todayString = useMemo(() => {
-    return new Date().toISOString().split('T')[0];
-  }, []);
+    // Per-section ready flags — panels render as soon as their own data arrives,
+    // not gated behind a single global loading boolean.
+    const [sectionReady, setSectionReady] = useState({
+        kpi: false,
+        performance: false,
+        analytics: false,
+        operational: false,
+    });
 
-  const getDateDaysAgo = useCallback((days) => {
-    const d = new Date();
-    d.setDate(d.getDate() - days);
-    return d.toISOString().split('T')[0];
-  }, []);
+    // At-risk data hoisted here so StudentPerformance never fetches independently
+    const [atRiskData, setAtRiskData] = useState({ summary: null, students: [] });
 
-  // Load core data without caching first (let's get it working)
-  const loadCoreData = useCallback(async () => {
-    if (!mounted.current) return;
-    
-    console.log('Loading core data...');
-    
-    try {
-      // Skip cache for now to ensure data loads
-      const results = await Promise.allSettled([
-        fetchSystemStats(),
-        fetchAdmins(),
-        fetchAttendanceOverview({
-          startDate: getDateDaysAgo(30),
-          endDate: todayString,
-        }),
-      ]);
+    const initialLoadDone = useRef(false);
+    const mounted = useRef(true);
 
-      console.log('Core data results:', results.map(r => r.status));
-      
-      if (mounted.current) {
-        setDataLoaded(prev => ({
-          ...prev,
-          stats: results[0].status === 'fulfilled',
-          attendance: results[2].status === 'fulfilled',
-        }));
-      }
-    } catch (err) {
-      console.error('Dashboard core data load failed:', err);
-    }
-  }, [fetchSystemStats, fetchAdmins, fetchAttendanceOverview, getDateDaysAgo, todayString]);
+    const todayString = useMemo(() => new Date().toISOString().split('T')[0], []);
 
-  // Load chart data
-  const loadChartData = useCallback(async () => {
-    if (!mounted.current) return;
-    
-    console.log('Loading chart data for days:', trendDays);
-    
-    try {
-      const results = await Promise.allSettled([
-        fetchAttendanceTrends({ days: trendDays }),
-        fetchClassAttendanceComparison({
-          startDate: getDateDaysAgo(30),
-          endDate: todayString,
-        }),
-      ]);
+    const getDateDaysAgo = useCallback((days) => {
+        const d = new Date();
+        d.setDate(d.getDate() - days);
+        return d.toISOString().split('T')[0];
+    }, []);
 
-      console.log('Chart data results:', results.map(r => r.status));
-      
-      if (mounted.current) {
-        setDataLoaded(prev => ({
-          ...prev,
-          trends: results[0].status === 'fulfilled',
-          comparison: results[1].status === 'fulfilled',
-        }));
-      }
-    } catch (err) {
-      console.error('Dashboard chart data load failed:', err);
-    }
-  }, [fetchAttendanceTrends, fetchClassAttendanceComparison, getDateDaysAgo, todayString, trendDays]);
+    // Load KPI + performance data in one parallel batch
+    const loadCoreData = useCallback(async () => {
+        if (!mounted.current) return;
 
-  // Load core data on mount
-  useEffect(() => {
-    if (!initialLoadDone.current) {
-      loadCoreData();
-      loadChartData(); // Also load chart data initially
-      initialLoadDone.current = true;
-    }
-    
-    return () => {
-      mounted.current = false;
-    };
-  }, [loadCoreData, loadChartData]);
+        const startDate = getDateDaysAgo(30);
+        const endDate = todayString;
 
-  // Reload chart data when trend days change
-  useEffect(() => {
-    if (initialLoadDone.current) {
-      loadChartData();
-    }
-  }, [trendDays, loadChartData]);
+        const results = await Promise.allSettled([
+            fetchSystemStats(),                                          // 0
+            fetchAdmins(),                                               // 1
+            fetchAttendanceOverview({ startDate, endDate }),             // 2
+            getAtRiskStudents({                                          // 3
+                startDate,
+                endDate,
+                thresholdPercent: 75,
+                criticalPercent: 60,
+            }),
+        ]);
 
-  const handleDaysChange = useCallback((days) => {
-    console.log('Trend days changed to:', days);
-    setTrendDays(days);
-  }, []);
+        if (!mounted.current) return;
 
-  // Memoized recent activities
-  const recentActivities = useMemo(
-    () => stats?.recentActivities || [],
-    [stats]
-  );
+        // KPI bar — needs stats (0)
+        if (results[0].status === 'fulfilled') {
+            setSectionReady(prev => ({ ...prev, kpi: true, operational: true }));
+        }
 
-  // Debug logging
-  useEffect(() => {
-    console.log('Stats data:', stats);
-    console.log('Attendance overview:', attendanceOverview);
-    console.log('Data loaded state:', dataLoaded);
-  }, [stats, attendanceOverview, dataLoaded]);
+        // Student performance — needs overview (2) or at-risk (3), whichever arrives
+        if (results[2].status === 'fulfilled' || results[3].status === 'fulfilled') {
+            setSectionReady(prev => ({ ...prev, performance: true }));
+        }
 
-  // Check if data is loading
-  const isLoading = contextLoading || (!dataLoaded.stats && !stats);
+        // Store at-risk data to pass down as props
+        if (results[3].status === 'fulfilled') {
+            const res = results[3].value;
+            setAtRiskData({
+                summary: res.summary || null,
+                students: res.atRiskStudents || [],
+            });
+        }
+    }, [fetchSystemStats, fetchAdmins, fetchAttendanceOverview, getAtRiskStudents, getDateDaysAgo, todayString]);
 
-  return (
-    <div className="space-y-6 pb-8">
-      {/* 1. Executive Summary KPI Bar */}
-      {isLoading && !stats ? (
-        <KPISkeleton />
-      ) : (
-        <ExecutiveSummary
-          stats={stats}
-          attendanceOverview={attendanceOverview}
-          admins={admins}
-        />
-      )}
+    // Load chart data (trends + comparison) — separate so it doesn't delay KPI/performance render
+    const loadChartData = useCallback(async () => {
+        if (!mounted.current) return;
 
-      {/* 2. Student Performance Intelligence */}
-      {!dataLoaded.attendance && !attendanceOverview ? (
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-          <div className="lg:col-span-2"><ChartSkeleton /></div>
-          <TableSkeleton rows={5} />
-        </div>
-      ) : (
-        <StudentPerformance
-          stats={stats}
-          attendanceOverview={attendanceOverview}
-        />
-      )}
+        const results = await Promise.allSettled([
+            fetchAttendanceTrends({ days: trendDays }),
+            fetchClassAttendanceComparison({
+                startDate: getDateDaysAgo(30),
+                endDate: todayString,
+            }),
+        ]);
 
-      {/* 3. Academic Analytics (Charts) */}
-      {!dataLoaded.trends && !attendanceTrends ? (
-        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <ChartSkeleton />
-          <ChartSkeleton />
-        </div>
-      ) : (
-        <AcademicAnalytics
-          attendanceTrends={attendanceTrends}
-          classComparison={classAttendanceComparison}
-          trendDays={trendDays}
-          onDaysChange={handleDaysChange}
-        />
-      )}
+        if (!mounted.current) return;
 
-      {/* 4. Operational Intelligence + 5. Activity Timeline */}
-      <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
-        <div className="xl:col-span-2">
-          {!dataLoaded.stats && !stats ? (
-            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-              <TableSkeleton rows={4} />
-              <TableSkeleton rows={4} />
+        if (results[0].status === 'fulfilled' || results[1].status === 'fulfilled') {
+            setSectionReady(prev => ({ ...prev, analytics: true }));
+        }
+    }, [fetchAttendanceTrends, fetchClassAttendanceComparison, getDateDaysAgo, todayString, trendDays]);
+
+    // Initial load — fire both batches concurrently so charts don't wait for core
+    useEffect(() => {
+        if (!initialLoadDone.current) {
+            initialLoadDone.current = true;
+            loadCoreData();
+            loadChartData();
+        }
+        return () => {
+            mounted.current = false;
+        };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    }, []);
+
+    // Reload chart data when trend window changes
+    useEffect(() => {
+        if (initialLoadDone.current) {
+            setSectionReady(prev => ({ ...prev, analytics: false }));
+            loadChartData();
+        }
+    }, [trendDays, loadChartData]);
+
+    const handleDaysChange = useCallback((days) => {
+        setTrendDays(days);
+    }, []);
+
+    const recentActivities = useMemo(
+        () => stats?.recentActivities || [],
+        [stats]
+    );
+
+    return (
+        <div className="space-y-6 pb-8">
+            {/* 1. Executive Summary KPI Bar */}
+            {!sectionReady.kpi && !stats ? (
+                <KPISkeleton />
+            ) : (
+                <ExecutiveSummary
+                    stats={stats}
+                    attendanceOverview={attendanceOverview}
+                    admins={admins}
+                />
+            )}
+
+            {/* 2. Student Performance Intelligence */}
+            {!sectionReady.performance && !attendanceOverview ? (
+                <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+                    <div className="lg:col-span-2"><ChartSkeleton /></div>
+                    <TableSkeleton rows={5} />
+                </div>
+            ) : (
+                <StudentPerformance
+                    stats={stats}
+                    attendanceOverview={attendanceOverview}
+                    atRiskStudents={atRiskData.students}
+                    atRiskSummary={atRiskData.summary}
+                />
+            )}
+
+            {/* 3. Academic Analytics (Charts) */}
+            {!sectionReady.analytics && !attendanceTrends ? (
+                <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <ChartSkeleton />
+                    <ChartSkeleton />
+                </div>
+            ) : (
+                <AcademicAnalytics
+                    attendanceTrends={attendanceTrends}
+                    classComparison={classAttendanceComparison}
+                    trendDays={trendDays}
+                    onDaysChange={handleDaysChange}
+                />
+            )}
+
+            {/* 4. Operational Panel + 5. Activity Timeline */}
+            <div className="grid grid-cols-1 xl:grid-cols-3 gap-4 sm:gap-6">
+                <div className="xl:col-span-2">
+                    {!sectionReady.operational && !stats ? (
+                        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                            <TableSkeleton rows={4} />
+                            <TableSkeleton rows={4} />
+                        </div>
+                    ) : (
+                        <OperationalPanel
+                            stats={stats}
+                            attendanceOverview={attendanceOverview}
+                        />
+                    )}
+                </div>
+
+                <div>
+                    {!sectionReady.kpi && !stats ? (
+                        <TimelineSkeleton />
+                    ) : (
+                        <ActivityTimeline recentActivities={recentActivities} />
+                    )}
+                </div>
             </div>
-          ) : (
-            <OperationalPanel
-              stats={stats}
-              attendanceOverview={attendanceOverview}
-            />
-          )}
         </div>
-
-        <div>
-          {!dataLoaded.stats && !stats ? (
-            <TimelineSkeleton />
-          ) : (
-            <ActivityTimeline recentActivities={recentActivities} />
-          )}
-        </div>
-      </div>
-    </div>
-  );
+    );
 };
 
 export default React.memo(SuperAdminDashboard);

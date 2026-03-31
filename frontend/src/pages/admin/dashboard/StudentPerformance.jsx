@@ -1,21 +1,14 @@
-// StudentPerformance.js - Optimized with memo and caching
-import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
+// StudentPerformance.js
+import React, { useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     AlertTriangle, Award, TrendingDown,
     ChevronRight, Users,
 } from 'lucide-react';
-import { useAdmin } from '../../../contexts/AdminContext';
-// eslint-disable-next-line no-unused-vars
-import debounce from 'lodash/debounce';
-
-// Cache for at-risk data
-const atRiskCache = new Map();
-const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
 
 const DistributionBar = React.memo(({ data }) => {
     const total = useMemo(() => data.reduce((sum, d) => sum + d.value, 0) || 1, [data]);
-    
+
     return (
         <div className="space-y-3">
             {data.map((item) => {
@@ -93,54 +86,21 @@ const AtRiskRow = React.memo(({ student, onClick }) => {
 });
 AtRiskRow.displayName = 'AtRiskRow';
 
-const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
+// Props instead of internal fetch — data is hoisted to SuperAdminDashboard
+// so at-risk loads in parallel with stats, not after the dashboard mounts.
+const StudentPerformance = React.memo(({
+    stats,
+    attendanceOverview,
+    atRiskStudents = [],
+    atRiskSummary = null,
+}) => {
     const navigate = useNavigate();
-    const { atRiskStudents, getAtRiskStudents } = useAdmin();
-    const [atRiskSummary, setAtRiskSummary] = useState(null);
-    const [loadingRisk, setLoadingRisk] = useState(false);
-    const loadAttempted = useRef(false);
-
-    const loadAtRiskData = useCallback(async () => {
-        if (loadAttempted.current) return;
-        
-        const cacheKey = 'at-risk-summary';
-        const cached = atRiskCache.get(cacheKey);
-        
-        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
-            setAtRiskSummary(cached.data);
-            return;
-        }
-
-        setLoadingRisk(true);
-        loadAttempted.current = true;
-        
-        try {
-            const endDate = new Date().toISOString().split('T')[0];
-            const startDate = new Date(Date.now() - 30 * 86400000)
-                .toISOString().split('T')[0];
-            const res = await getAtRiskStudents({
-                startDate,
-                endDate,
-                thresholdPercent: 75,
-                criticalPercent: 60,
-            });
-            
-            if (res?.summary) {
-                setAtRiskSummary(res.summary);
-                atRiskCache.set(cacheKey, { data: res.summary, timestamp: Date.now() });
-            }
-        } finally {
-            setLoadingRisk(false);
-        }
-    }, [getAtRiskStudents]);
-
-    useEffect(() => {
-        loadAtRiskData();
-    }, [loadAtRiskData]);
 
     const performanceData = useMemo(() => {
         const totalStudents = stats?.stats?.totalStudents || 0;
+
         if (!atRiskSummary || totalStudents === 0) {
+            // Fall back to class-level overview data
             const classes = attendanceOverview?.charts?.classWiseAttendance || [];
             let excellent = 0, good = 0, average = 0, atRisk = 0;
             classes.forEach((c) => {
@@ -162,7 +122,7 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
         const criticalCount = atRiskSummary.criticalCount || 0;
         const warningCount = atRiskSummary.warningCount || 0;
         const atRiskTotal = criticalCount + warningCount;
-        const safeStudents = totalStudents - atRiskTotal;
+        const safeStudents = Math.max(0, totalStudents - atRiskTotal);
 
         return [
             { label: 'Excellent (90%+)', value: Math.round(safeStudents * 0.45), dotColor: 'bg-emerald-500', barColor: 'bg-emerald-500' },
@@ -173,13 +133,13 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
     }, [stats, attendanceOverview, atRiskSummary]);
 
     const displayedAtRisk = useMemo(() => {
-        return [...(atRiskStudents || [])]
+        return [...atRiskStudents]
             .sort((a, b) => {
                 const order = { CRITICAL: 0, WARNING: 1 };
                 if (order[a.riskLevel] !== order[b.riskLevel])
                     return order[a.riskLevel] - order[b.riskLevel];
                 return (a.attendance?.attendancePercent ?? 100) -
-                       (b.attendance?.attendancePercent ?? 100);
+                    (b.attendance?.attendancePercent ?? 100);
             })
             .slice(0, 5);
     }, [atRiskStudents]);
@@ -199,6 +159,7 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
+            {/* Performance distribution */}
             <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100/80 hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center justify-between mb-6">
                     <div>
@@ -225,6 +186,7 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
                 </div>
             </div>
 
+            {/* At-risk panel — no loading spinner needed, data arrives with the dashboard */}
             <div className="bg-gradient-to-br from-white to-red-50/30 rounded-2xl p-6 shadow-sm border border-red-100/50 hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
@@ -259,13 +221,7 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
                     Students below 75% attendance in last 30 days
                 </p>
 
-                {loadingRisk ? (
-                    <div className="space-y-2">
-                        {[...Array(3)].map((_, i) => (
-                            <div key={i} className="h-14 bg-gray-100 rounded-xl animate-pulse" />
-                        ))}
-                    </div>
-                ) : displayedAtRisk.length > 0 ? (
+                {displayedAtRisk.length > 0 ? (
                     <div className="space-y-1">
                         {displayedAtRisk.map((student) => (
                             <AtRiskRow
