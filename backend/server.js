@@ -1,4 +1,3 @@
-
 require('dotenv').config();
 const config = require('./config/config');
 
@@ -73,6 +72,9 @@ const corsOptions = {
 // Middleware stack
 // ============================================================
 
+// Use the enhanced request logger middleware
+app.use(logger.requestLogger);
+
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -99,31 +101,24 @@ app.set('trust proxy', 1);
 app.use(cors(corsOptions));
 app.use(compression());
 
+// Configure morgan to use our logger
 if (config.isProd) {
-  app.use(morgan('combined'));
+  app.use(morgan('combined', {
+    stream: {
+      write: (message) => logger.info(message.trim())
+    }
+  }));
 } else {
-  app.use(morgan('dev'));
+  app.use(morgan('dev', {
+    stream: {
+      write: (message) => logger.debug(message.trim())
+    }
+  }));
 }
 
 app.use(express.json({ limit: '5mb' }));
 app.use(express.urlencoded({ extended: true, limit: '5mb' }));
 
-// Request timing
-app.use((req, res, next) => {
-  const start = Date.now();
-  res.on('finish', () => {
-    const duration = Date.now() - start;
-    if (duration > 1000) {
-      logger.warn({
-        method: req.method,
-        url: req.originalUrl,
-        statusCode: res.statusCode,
-        duration: `${duration}ms`,
-      }, 'Slow request detected');
-    }
-  });
-  next();
-});
 
 // ============================================================
 // Rate limiting
@@ -177,6 +172,9 @@ app.use('/api/auth/login', loginLimiter);
 app.use('/api/auth', authLimiter);
 app.use('/api', apiLimiter);
 
+// Log route registration
+logger.debug('Registering API routes...');
+
 // Legacy routes (unchanged)
 app.use('/api/auth', authRoutes);
 app.use('/api/enrollment', enrollmentRoutes);
@@ -193,6 +191,8 @@ app.use('/api/reports', dailyReportRoutes);
 
 // New modular routes
 app.use('/api', apiRoutes);
+
+logger.debug('All routes registered');
 
 // ============================================================
 // Health & Info
@@ -268,6 +268,7 @@ app.get('/api-docs', (req, res) => {
 // ============================================================
 
 app.use((req, res) => {
+  logger.debug({ method: req.method, path: req.path }, '404 Not Found');
   res.status(404).json({
     error: 'Not Found',
     message: `Cannot ${req.method} ${req.path}`,
@@ -292,6 +293,7 @@ try {
   // Register notification gateway handlers on every new socket connection
   const { registerNotificationHandlers } = require('./modules/notifications/notifications.gateway');
   io.on('connection', (socket) => {
+    logger.debug({ socketId: socket.id }, 'New WebSocket connection');
     registerNotificationHandlers(socket);
   });
 
@@ -318,6 +320,11 @@ server.listen(config.PORT, '127.0.0.1', () => {
   } else {
     logger.info('⚠️  Redis: disabled (set REDIS_URL to enable caching)');
   }
+
+  // Log slow request thresholds
+  const { SLOW_REQUEST_THRESHOLD, SLOW_QUERY_THRESHOLD } = require('./utils/logger');
+  logger.info(`⏱️  Slow request threshold: ${SLOW_REQUEST_THRESHOLD}ms`);
+  logger.info(`🐌 Slow query threshold: ${SLOW_QUERY_THRESHOLD}ms`);
 
   // Start new unified cron scheduler
   try {
@@ -355,6 +362,14 @@ const shutdown = (signal) => {
       logger.info('🔌 Socket.io closed');
     }
 
+    // 4. Disconnect Prisma
+    try {
+      await prisma.$disconnect();
+      logger.info('🗄️  Database connection closed');
+    } catch (err) {
+      logger.error({ err }, 'Error disconnecting from database');
+    }
+
     logger.info('✅ Graceful shutdown complete');
     process.exit(0);
   });
@@ -371,12 +386,15 @@ process.on('SIGINT', () => shutdown('SIGINT'));
 
 // Handle uncaught exceptions — log and exit
 process.on('uncaughtException', (err) => {
-  logger.error({ err }, '❌ Uncaught exception');
+  logger.fatal({ err }, '❌ Uncaught exception');
   shutdown('uncaughtException');
 });
 
 process.on('unhandledRejection', (reason) => {
   logger.error({ reason }, '❌ Unhandled promise rejection');
 });
+
+// Log startup completion
+logger.info('Server initialization complete');
 
 module.exports = { app, server, io };
