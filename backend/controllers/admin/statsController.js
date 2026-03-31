@@ -28,12 +28,7 @@ async function getSystemStats(req, res) {
             prisma.user.findMany({
                 orderBy: { createdAt: 'desc' },
                 take: 5,
-                select: {
-                    id: true,
-                    name: true,
-                    role: true,
-                    createdAt: true,
-                }
+                select: { id: true, name: true, role: true, createdAt: true },
             }),
             prisma.classRoom.groupBy({
                 by: ['type'],
@@ -41,24 +36,27 @@ async function getSystemStats(req, res) {
             }),
         ]);
 
-        // Attendance stats for last 7 days
+        // Attendance stats for last 7 days — one groupBy instead of two COUNTs
         const sevenDaysAgo = new Date();
         sevenDaysAgo.setDate(sevenDaysAgo.getDate() - 7);
 
-        const [attendanceRecords, presentCount] = await Promise.all([
-            prisma.attendance.count({
-                where: { date: { gte: sevenDaysAgo } },
-            }),
-            prisma.attendance.count({
-                where: {
-                    date: { gte: sevenDaysAgo },
-                    OR: [{ status: 'PRESENT' }, { status: 'LATE' }],
-                },
-            }),
-        ]);
+        const attendanceByStatus = await prisma.attendance.groupBy({
+            by: ['status'],
+            where: { date: { gte: sevenDaysAgo } },
+            _count: { id: true },
+        });
 
-        const attendanceRate = attendanceRecords > 0
-            ? Math.round((presentCount / attendanceRecords) * 100)
+        let totalAttendance = 0;
+        let presentCount = 0;
+        for (const row of attendanceByStatus) {
+            totalAttendance += row._count.id;
+            if (row.status === 'PRESENT' || row.status === 'LATE') {
+                presentCount += row._count.id;
+            }
+        }
+
+        const attendanceRate = totalAttendance > 0
+            ? Math.round((presentCount / totalAttendance) * 100)
             : 0;
 
         res.json({
@@ -99,18 +97,16 @@ async function getAttendanceOverview(req, res) {
         defaultStartDate.setDate(defaultStartDate.getDate() - 30);
 
         const start = startDate ? new Date(startDate) : defaultStartDate;
-        const end = endDate ? new Date(endDate) : defaultEndDate;
+        const end   = endDate   ? new Date(endDate)   : defaultEndDate;
 
-        const where = {
-            date: { gte: start, lte: end },
-        };
-        if (classRoomId) where.classRoomId = classRoomId;
+        const dateWhere = { date: { gte: start, lte: end } };
+        if (classRoomId) dateWhere.classRoomId = classRoomId;
 
-        // Use groupBy instead of loading all records into memory
+        // ── Summary counts + enrollment in parallel ─────────────────────────
         const [statusCounts, enrolledStudents] = await Promise.all([
             prisma.attendance.groupBy({
                 by: ['status'],
-                where,
+                where: dateWhere,
                 _count: { id: true },
             }),
             prisma.enrollment.count({
@@ -128,10 +124,10 @@ async function getAttendanceOverview(req, res) {
             totalRecords += sc._count.id;
         }
 
-        const presentCount = countMap['PRESENT'] || 0;
-        const absentCount = countMap['ABSENT'] || 0;
-        const lateCount = countMap['LATE'] || 0;
-        const excusedCount = countMap['EXCUSED'] || 0;
+        const presentCount  = countMap['PRESENT']  || 0;
+        const absentCount   = countMap['ABSENT']   || 0;
+        const lateCount     = countMap['LATE']     || 0;
+        const excusedCount  = countMap['EXCUSED']  || 0;
 
         const totalPossible = enrolledStudents * Math.ceil((end - start) / (1000 * 60 * 60 * 24));
         const overallAttendancePercentage = totalPossible > 0
@@ -140,61 +136,76 @@ async function getAttendanceOverview(req, res) {
 
         const statusDistribution = [
             { name: 'Present', value: presentCount, color: '#10B981' },
-            { name: 'Absent', value: absentCount, color: '#EF4444' },
-            { name: 'Late', value: lateCount, color: '#F59E0B' },
+            { name: 'Absent',  value: absentCount,  color: '#EF4444' },
+            { name: 'Late',    value: lateCount,    color: '#F59E0B' },
             { name: 'Excused', value: excusedCount, color: '#6B7280' },
         ].filter(item => item.value > 0);
 
-        // Class-wise attendance (only if no specific class filter)
+        // ── Class-wise attendance ────────────────────────────────────────────
+        // FIXED: was N+1 (3 queries × N classes). Now 3 queries total.
         let classWiseAttendance = [];
         if (!classRoomId) {
-            const classAttendance = await prisma.attendance.groupBy({
-                by: ['classRoomId'],
-                where: { date: { gte: start, lte: end } },
-                _count: { id: true },
-            });
+            const [allClasses, presentByClass, totalByClass, enrollmentByClass] =
+                await Promise.all([
+                    prisma.classRoom.findMany({
+                        select: { id: true, name: true, type: true },
+                    }),
+                    // present + late counts grouped by class
+                    prisma.attendance.groupBy({
+                        by: ['classRoomId'],
+                        where: {
+                            date: { gte: start, lte: end },
+                            OR: [{ status: 'PRESENT' }, { status: 'LATE' }],
+                        },
+                        _count: { id: true },
+                    }),
+                    // total records grouped by class
+                    prisma.attendance.groupBy({
+                        by: ['classRoomId'],
+                        where: { date: { gte: start, lte: end } },
+                        _count: { id: true },
+                    }),
+                    // enrollment counts grouped by class
+                    prisma.enrollment.groupBy({
+                        by: ['classRoomId'],
+                        where: { isCurrent: true },
+                        _count: { id: true },
+                    }),
+                ]);
 
-            classWiseAttendance = await Promise.all(
-                classAttendance.map(async (classAtt) => {
-                    const [classRoom, presentInClass, classEnrollment] = await Promise.all([
-                        prisma.classRoom.findUnique({
-                            where: { id: classAtt.classRoomId },
-                            select: { id: true, name: true, type: true },
-                        }),
-                        prisma.attendance.count({
-                            where: {
-                                classRoomId: classAtt.classRoomId,
-                                date: { gte: start, lte: end },
-                                OR: [{ status: 'PRESENT' }, { status: 'LATE' }],
-                            },
-                        }),
-                        prisma.enrollment.count({
-                            where: { classRoomId: classAtt.classRoomId, isCurrent: true },
-                        }),
-                    ]);
+            const presentMap    = Object.fromEntries(presentByClass.map(r => [r.classRoomId, r._count.id]));
+            const totalMap      = Object.fromEntries(totalByClass.map(r => [r.classRoomId, r._count.id]));
+            const enrollmentMap = Object.fromEntries(enrollmentByClass.map(r => [r.classRoomId, r._count.id]));
+            const daySpan       = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
 
-                    const classTotalPossible = classEnrollment * Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-                    const percentage = classTotalPossible > 0 ? (presentInClass / classTotalPossible * 100).toFixed(2) : 0;
+            classWiseAttendance = allClasses
+                .filter(c => totalMap[c.id])   // skip classes with no records in range
+                .map(c => {
+                    const presentInClass  = presentMap[c.id]    || 0;
+                    const totalRecs       = totalMap[c.id]      || 0;
+                    const enrolled        = enrollmentMap[c.id] || 0;
+                    const classTotalPoss  = enrolled * daySpan;
+                    const pct             = classTotalPoss > 0
+                        ? parseFloat((presentInClass / classTotalPoss * 100).toFixed(2))
+                        : 0;
 
                     return {
-                        classId: classRoom?.id,
-                        className: classRoom?.name,
-                        classType: classRoom?.type,
-                        totalStudents: classEnrollment,
-                        attendancePercentage: parseFloat(percentage),
-                        presentCount: presentInClass,
-                        totalRecords: classAtt._count.id,
+                        classId:              c.id,
+                        className:            c.name,
+                        classType:            c.type,
+                        totalStudents:        enrolled,
+                        attendancePercentage: pct,
+                        presentCount:         presentInClass,
+                        totalRecords:         totalRecs,
                     };
                 })
-            );
-
-            classWiseAttendance.sort((a, b) => b.attendancePercentage - a.attendancePercentage);
+                .sort((a, b) => b.attendancePercentage - a.attendancePercentage);
         }
 
         res.json({
             period: {
                 startDate: start.toISOString().split('T')[0],
-                endDate: end.toISOString().split('T')[0],
+                endDate:   end.toISOString().split('T')[0],
             },
             summary: {
                 totalRecords,
@@ -221,7 +232,7 @@ async function getAttendanceTrends(req, res) {
     try {
         const { days = 30, classRoomId } = req.query;
 
-        const endDate = new Date();
+        const endDate   = new Date();
         const startDate = new Date();
         startDate.setDate(startDate.getDate() - parseInt(days));
 
@@ -232,9 +243,7 @@ async function getAttendanceTrends(req, res) {
             dateRange.push(date.toISOString().split('T')[0]);
         }
 
-        const where = {
-            date: { gte: startDate, lte: endDate },
-        };
+        const where = { date: { gte: startDate, lte: endDate } };
         if (classRoomId) where.classRoomId = classRoomId;
 
         const [dailyAttendance, dailyPresent] = await Promise.all([
@@ -255,25 +264,18 @@ async function getAttendanceTrends(req, res) {
 
         const trends = dateRange.map(date => {
             const dayAttendance = dailyAttendance.find(d => d.date.toISOString().split('T')[0] === date);
-            const dayPresent = dailyPresent.find(d => d.date.toISOString().split('T')[0] === date);
-
-            const total = dayAttendance?._count.id || 0;
-            const present = dayPresent?._count.id || 0;
-            const percentage = total > 0 ? (present / total * 100).toFixed(2) : 0;
-
-            return {
-                date,
-                total,
-                present,
-                percentage: parseFloat(percentage),
-            };
+            const dayPresent    = dailyPresent.find(d => d.date.toISOString().split('T')[0] === date);
+            const total         = dayAttendance?._count.id || 0;
+            const present       = dayPresent?._count.id    || 0;
+            const percentage    = total > 0 ? parseFloat((present / total * 100).toFixed(2)) : 0;
+            return { date, total, present, percentage };
         });
 
         res.json({
             period: {
                 startDate: startDate.toISOString().split('T')[0],
-                endDate: endDate.toISOString().split('T')[0],
-                days: parseInt(days),
+                endDate:   endDate.toISOString().split('T')[0],
+                days:      parseInt(days),
             },
             trends,
         });
@@ -288,59 +290,67 @@ async function getClassAttendanceComparison(req, res) {
     try {
         const { startDate, endDate } = req.query;
 
-        const start = startDate ? new Date(startDate) : new Date();
-        start.setDate(start.getDate() - 30);
-        const end = endDate ? new Date(endDate) : new Date();
+        const start = startDate ? new Date(startDate) : (() => { const d = new Date(); d.setDate(d.getDate() - 30); return d; })();
+        const end   = endDate   ? new Date(endDate)   : new Date();
 
-        const classes = await prisma.classRoom.findMany({
-            include: {
-                _count: {
-                    select: {
-                        enrollments: { where: { isCurrent: true } },
+        // FIXED: was 2 COUNT queries × N classes (N+1).
+        // Now: fetch everything in 4 parallel queries, then join in JS.
+        const [classes, presentByClass, totalByClass, enrollmentByClass] =
+            await Promise.all([
+                prisma.classRoom.findMany({
+                    select: { id: true, name: true, type: true },
+                }),
+                prisma.attendance.groupBy({
+                    by: ['classRoomId'],
+                    where: {
+                        date: { gte: start, lte: end },
+                        OR: [{ status: 'PRESENT' }, { status: 'LATE' }],
                     },
-                },
-            },
+                    _count: { id: true },
+                }),
+                prisma.attendance.groupBy({
+                    by: ['classRoomId'],
+                    where: { date: { gte: start, lte: end } },
+                    _count: { id: true },
+                }),
+                prisma.enrollment.groupBy({
+                    by: ['classRoomId'],
+                    where: { isCurrent: true },
+                    _count: { id: true },
+                }),
+            ]);
+
+        const presentMap    = Object.fromEntries(presentByClass.map(r => [r.classRoomId, r._count.id]));
+        const totalMap      = Object.fromEntries(totalByClass.map(r => [r.classRoomId, r._count.id]));
+        const enrollmentMap = Object.fromEntries(enrollmentByClass.map(r => [r.classRoomId, r._count.id]));
+        const daySpan       = Math.ceil((end - start) / (1000 * 60 * 60 * 24));
+
+        const classComparison = classes.map(c => {
+            const presentCount   = presentMap[c.id]    || 0;
+            const totalRecords   = totalMap[c.id]      || 0;
+            const enrolled       = enrollmentMap[c.id] || 0;
+            const totalPossible  = enrolled * daySpan;
+            const percentage     = totalPossible > 0
+                ? parseFloat((presentCount / totalPossible * 100).toFixed(2))
+                : 0;
+
+            return {
+                classId:              c.id,
+                className:            c.name,
+                classType:            c.type,
+                totalStudents:        enrolled,
+                attendancePercentage: percentage,
+                presentCount,
+                totalRecords,
+            };
         });
-
-        const classComparison = await Promise.all(
-            classes.map(async (classRoom) => {
-                const [presentCount, totalRecords] = await Promise.all([
-                    prisma.attendance.count({
-                        where: {
-                            classRoomId: classRoom.id,
-                            date: { gte: start, lte: end },
-                            OR: [{ status: 'PRESENT' }, { status: 'LATE' }],
-                        },
-                    }),
-                    prisma.attendance.count({
-                        where: {
-                            classRoomId: classRoom.id,
-                            date: { gte: start, lte: end },
-                        },
-                    }),
-                ]);
-
-                const totalPossible = classRoom._count.enrollments * Math.ceil((end - start) / (1000 * 60 * 60 * 24));
-                const percentage = totalPossible > 0 ? (presentCount / totalPossible * 100).toFixed(2) : 0;
-
-                return {
-                    classId: classRoom.id,
-                    className: classRoom.name,
-                    classType: classRoom.type,
-                    totalStudents: classRoom._count.enrollments,
-                    attendancePercentage: parseFloat(percentage),
-                    presentCount,
-                    totalRecords,
-                };
-            })
-        );
 
         classComparison.sort((a, b) => b.attendancePercentage - a.attendancePercentage);
 
         res.json({
             period: {
                 startDate: start.toISOString().split('T')[0],
-                endDate: end.toISOString().split('T')[0],
+                endDate:   end.toISOString().split('T')[0],
             },
             classes: classComparison,
         });
@@ -362,19 +372,15 @@ async function manageLeaveRequests(req, res) {
         const [leaveRequests, total] = await Promise.all([
             prisma.leaveRequest.findMany({
                 where,
-                skip: parseInt(skip),
-                take: parseInt(limit),
+                skip:    parseInt(skip),
+                take:    parseInt(limit),
                 include: {
                     teacher: {
                         include: {
-                            user: {
-                                select: { name: true, email: true, phone: true },
-                            },
+                            user: { select: { name: true, email: true, phone: true } },
                         },
                     },
-                    appliedToAdmin: {
-                        select: { name: true, email: true },
-                    },
+                    appliedToAdmin: { select: { name: true, email: true } },
                 },
                 orderBy: { createdAt: 'desc' },
             }),
@@ -384,7 +390,7 @@ async function manageLeaveRequests(req, res) {
         res.json({
             leaveRequests,
             pagination: {
-                page: parseInt(page),
+                page:  parseInt(page),
                 limit: parseInt(limit),
                 total,
                 pages: Math.ceil(total / limit),
@@ -399,7 +405,7 @@ async function manageLeaveRequests(req, res) {
 // Update leave request status
 async function updateLeaveRequest(req, res) {
     try {
-        const { id } = req.params;
+        const { id }              = req.params;
         const { status, response } = req.body;
 
         if (!status || !['APPROVED', 'REJECTED', 'CANCELLED'].includes(status)) {
@@ -407,31 +413,21 @@ async function updateLeaveRequest(req, res) {
         }
 
         const leaveRequest = await prisma.leaveRequest.findUnique({ where: { id } });
-        if (!leaveRequest) {
-            return res.status(404).json({ error: 'Leave request not found' });
-        }
+        if (!leaveRequest) return res.status(404).json({ error: 'Leave request not found' });
 
         const updatedLeaveRequest = await prisma.leaveRequest.update({
             where: { id },
-            data: {
-                status,
-                response: response || null,
-            },
+            data:  { status, response: response || null },
             include: {
                 teacher: {
-                    include: {
-                        user: {
-                            select: { name: true, email: true },
-                        },
-                    },
+                    include: { user: { select: { name: true, email: true } } },
                 },
             },
         });
 
         logger.info({ requestId: id, status }, 'Leave request updated');
-
         res.json({
-            message: `Leave request ${status.toLowerCase()} successfully`,
+            message:      `Leave request ${status.toLowerCase()} successfully`,
             leaveRequest: updatedLeaveRequest,
         });
     } catch (error) {
@@ -441,182 +437,220 @@ async function updateLeaveRequest(req, res) {
 }
 
 // GET /admin/stats/students-at-risk
+// FIXED: was 4 COUNT queries × N students (120+ queries for 30 students).
+// Now: 3 queries total — one aggregation for period stats, one for recent
+// absences, one for enrollments. All JS, no per-student round trips.
 async function getStudentsAtRisk(req, res) {
-  try {
-    const {
-      classRoomId,
-      startDate,
-      endDate,
-      thresholdPercent = 75,  // Industry standard minimum attendance
-      criticalPercent = 60,   // Critical alert level
-    } = req.query;
+    try {
+        const {
+            classRoomId,
+            startDate,
+            endDate,
+            thresholdPercent = 75,
+            criticalPercent  = 60,
+        } = req.query;
 
-    const start = startDate
-      ? new Date(startDate)
-      : new Date(Date.now() - 30 * 86400000);
-    const end = endDate ? new Date(endDate) : new Date();
+        const start = startDate
+            ? new Date(startDate)
+            : new Date(Date.now() - 30 * 86400000);
+        const end   = endDate ? new Date(endDate) : new Date();
+        const sevenDaysAgo = new Date(Date.now() - 7 * 86400000);
 
-    // 1. Get all active enrollments (optionally filtered by class)
-    const enrollments = await prisma.enrollment.findMany({
-      where: {
-        isCurrent: true,
-        ...(classRoomId && { classRoomId }),
-      },
-      include: {
-        student: {
-          include: {
-            user: { select: { id: true, name: true, email: true, phone: true } },
-            parents: {
-              include: {
-                user: { select: { name: true, email: true, phone: true } },
-              },
+        const threshold = parseFloat(thresholdPercent);
+        const critical  = parseFloat(criticalPercent);
+
+        // ── 1. All active enrollments (single query) ─────────────────────────
+        const enrollments = await prisma.enrollment.findMany({
+            where: {
+                isCurrent: true,
+                ...(classRoomId && { classRoomId }),
             },
-          },
-        },
-        classRoom: { select: { id: true, name: true, type: true } },
-      },
-    });
+            include: {
+                student: {
+                    include: {
+                        user: { select: { id: true, name: true, email: true, phone: true } },
+                        parents: {
+                            include: {
+                                user: { select: { name: true, email: true, phone: true } },
+                            },
+                        },
+                    },
+                },
+                classRoom: { select: { id: true, name: true, type: true } },
+            },
+        });
 
-    // 2. For each enrolled student, calculate attendance in period
-    const studentRiskProfiles = await Promise.all(
-      enrollments.map(async (enrollment) => {
-        const [totalRecords, presentRecords, absentRecords, consecutiveAbsences] =
-          await Promise.all([
-            prisma.attendance.count({
-              where: {
-                studentId: enrollment.studentId,
-                classRoomId: enrollment.classRoomId,
-                date: { gte: start, lte: end },
-              },
-            }),
-            prisma.attendance.count({
-              where: {
-                studentId: enrollment.studentId,
-                classRoomId: enrollment.classRoomId,
-                date: { gte: start, lte: end },
-                OR: [{ status: 'PRESENT' }, { status: 'LATE' }],
-              },
-            }),
-            prisma.attendance.count({
-              where: {
-                studentId: enrollment.studentId,
-                classRoomId: enrollment.classRoomId,
-                date: { gte: start, lte: end },
-                status: 'ABSENT',
-              },
-            }),
-            // Get last 7 days to detect consecutive absences
-            prisma.attendance.findMany({
-              where: {
-                studentId: enrollment.studentId,
-                classRoomId: enrollment.classRoomId,
-                date: { gte: new Date(Date.now() - 7 * 86400000) },
-              },
-              orderBy: { date: 'desc' },
-              select: { status: true, date: true },
-            }),
-          ]);
-
-        const attendancePercent =
-          totalRecords > 0
-            ? parseFloat(((presentRecords / totalRecords) * 100).toFixed(2))
-            : null; // null = no data, different from 0%
-
-        // Count current consecutive absences streak
-        let consecutiveAbsenceStreak = 0;
-        for (const record of consecutiveAbsences) {
-          if (record.status === 'ABSENT') {
-            consecutiveAbsenceStreak++;
-          } else {
-            break; // streak broken
-          }
+        if (!enrollments.length) {
+            return res.json({
+                period: {
+                    startDate: start.toISOString().split('T')[0],
+                    endDate:   end.toISOString().split('T')[0],
+                },
+                summary: {
+                    totalStudentsChecked: 0,
+                    atRiskCount:   0,
+                    criticalCount: 0,
+                    warningCount:  0,
+                    thresholdPercent: threshold,
+                    criticalPercent:  critical,
+                },
+                atRiskStudents: [],
+            });
         }
 
-        // 3. Determine risk level
-        let riskLevel = 'NONE';
-        const riskReasons = [];
+        const studentIds  = [...new Set(enrollments.map(e => e.studentId))];
+        const classIds    = [...new Set(enrollments.map(e => e.classRoomId))];
 
-        if (attendancePercent !== null) {
-          if (attendancePercent < parseFloat(criticalPercent)) {
-            riskLevel = 'CRITICAL';
-            riskReasons.push(
-              `Attendance at ${attendancePercent}% — below critical threshold of ${criticalPercent}%`
-            );
-          } else if (attendancePercent < parseFloat(thresholdPercent)) {
-            riskLevel = 'WARNING';
-            riskReasons.push(
-              `Attendance at ${attendancePercent}% — below required ${thresholdPercent}%`
-            );
-          }
+        // ── 2. Period attendance counts — one groupBy, all students at once ──
+        // Groups by (studentId, classRoomId, status) → replaces 3 COUNTs × N
+        const periodCounts = await prisma.attendance.groupBy({
+            by: ['studentId', 'classRoomId', 'status'],
+            where: {
+                studentId:   { in: studentIds },
+                classRoomId: { in: classIds },
+                date:        { gte: start, lte: end },
+            },
+            _count: { id: true },
+        });
+
+        // ── 3. Recent 7-day records for consecutive-absence streak ───────────
+        // One query for all students, replaces findMany × N
+        const recentRecords = await prisma.attendance.findMany({
+            where: {
+                studentId:   { in: studentIds },
+                classRoomId: { in: classIds },
+                date:        { gte: sevenDaysAgo },
+            },
+            orderBy: { date: 'desc' },
+            select: {
+                studentId:   true,
+                classRoomId: true,
+                status:      true,
+                date:        true,
+            },
+        });
+
+        // ── Build lookup maps ────────────────────────────────────────────────
+        // periodCounts → { `${studentId}:${classRoomId}` → { PRESENT, ABSENT, LATE, … } }
+        const periodMap = {};
+        for (const row of periodCounts) {
+            const key = `${row.studentId}:${row.classRoomId}`;
+            if (!periodMap[key]) periodMap[key] = {};
+            periodMap[key][row.status] = row._count.id;
         }
 
-        if (consecutiveAbsenceStreak >= 3) {
-          if (riskLevel === 'NONE') riskLevel = 'WARNING';
-          if (consecutiveAbsenceStreak >= 5) riskLevel = 'CRITICAL';
-          riskReasons.push(
-            `${consecutiveAbsenceStreak} consecutive absences in the last 7 days`
-          );
+        // recentRecords → { `${studentId}:${classRoomId}` → [sorted desc by date] }
+        const recentMap = {};
+        for (const row of recentRecords) {
+            const key = `${row.studentId}:${row.classRoomId}`;
+            if (!recentMap[key]) recentMap[key] = [];
+            recentMap[key].push(row);
         }
 
-        return {
-          studentId: enrollment.studentId,
-          studentName: enrollment.student.user.name,
-          email: enrollment.student.user.email,
-          phone: enrollment.student.user.phone,
-          admissionNo: enrollment.student.admissionNo,
-          classRoom: enrollment.classRoom,
-          parents: enrollment.student.parents?.map((p) => ({
-            name: p.user.name,
-            email: p.user.email,
-            phone: p.user.phone,
-          })),
-          attendance: {
-            totalRecords,
-            presentRecords,
-            absentRecords,
-            attendancePercent,
-            consecutiveAbsenceStreak,
-          },
-          riskLevel,       // 'NONE' | 'WARNING' | 'CRITICAL'
-          riskReasons,
+        // ── Compute risk profiles entirely in JS ─────────────────────────────
+        const studentRiskProfiles = enrollments.map((enrollment) => {
+            const key    = `${enrollment.studentId}:${enrollment.classRoomId}`;
+            const counts = periodMap[key] || {};
+
+            const totalRecords   = Object.values(counts).reduce((s, n) => s + n, 0);
+            const presentRecords = (counts['PRESENT'] || 0) + (counts['LATE'] || 0);
+            const absentRecords  = counts['ABSENT'] || 0;
+
+            const attendancePercent = totalRecords > 0
+                ? parseFloat(((presentRecords / totalRecords) * 100).toFixed(2))
+                : null;
+
+            // Consecutive absence streak from the last 7 days
+            const recent = recentMap[key] || [];
+            let consecutiveAbsenceStreak = 0;
+            for (const record of recent) {
+                if (record.status === 'ABSENT') consecutiveAbsenceStreak++;
+                else break;
+            }
+
+            // Risk level
+            let riskLevel  = 'NONE';
+            const riskReasons = [];
+
+            if (attendancePercent !== null) {
+                if (attendancePercent < critical) {
+                    riskLevel = 'CRITICAL';
+                    riskReasons.push(
+                        `Attendance at ${attendancePercent}% — below critical threshold of ${critical}%`
+                    );
+                } else if (attendancePercent < threshold) {
+                    riskLevel = 'WARNING';
+                    riskReasons.push(
+                        `Attendance at ${attendancePercent}% — below required ${threshold}%`
+                    );
+                }
+            }
+
+            if (consecutiveAbsenceStreak >= 3) {
+                if (riskLevel === 'NONE') riskLevel = 'WARNING';
+                if (consecutiveAbsenceStreak >= 5) riskLevel = 'CRITICAL';
+                riskReasons.push(
+                    `${consecutiveAbsenceStreak} consecutive absences in the last 7 days`
+                );
+            }
+
+            return {
+                studentId:   enrollment.studentId,
+                studentName: enrollment.student.user.name,
+                email:       enrollment.student.user.email,
+                phone:       enrollment.student.user.phone,
+                admissionNo: enrollment.student.admissionNo,
+                classRoom:   enrollment.classRoom,
+                parents:     enrollment.student.parents?.map((p) => ({
+                    name:  p.user.name,
+                    email: p.user.email,
+                    phone: p.user.phone,
+                })),
+                attendance: {
+                    totalRecords,
+                    presentRecords,
+                    absentRecords,
+                    attendancePercent,
+                    consecutiveAbsenceStreak,
+                },
+                riskLevel,
+                riskReasons,
+            };
+        });
+
+        // ── Filter + sort ────────────────────────────────────────────────────
+        const riskOrder    = { CRITICAL: 0, WARNING: 1, NONE: 2 };
+        const atRiskStudents = studentRiskProfiles
+            .filter((s) => s.riskLevel !== 'NONE')
+            .sort((a, b) => {
+                if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
+                    return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
+                }
+                return (a.attendance.attendancePercent ?? 100) -
+                       (b.attendance.attendancePercent ?? 100);
+            });
+
+        const summary = {
+            totalStudentsChecked: studentRiskProfiles.length,
+            atRiskCount:   atRiskStudents.length,
+            criticalCount: atRiskStudents.filter((s) => s.riskLevel === 'CRITICAL').length,
+            warningCount:  atRiskStudents.filter((s) => s.riskLevel === 'WARNING').length,
+            thresholdPercent: threshold,
+            criticalPercent:  critical,
         };
-      })
-    );
 
-    // 4. Filter to only at-risk students and sort by severity
-    const riskOrder = { CRITICAL: 0, WARNING: 1, NONE: 2 };
-    const atRiskStudents = studentRiskProfiles
-      .filter((s) => s.riskLevel !== 'NONE')
-      .sort((a, b) => {
-        if (riskOrder[a.riskLevel] !== riskOrder[b.riskLevel]) {
-          return riskOrder[a.riskLevel] - riskOrder[b.riskLevel];
-        }
-        return (a.attendance.attendancePercent ?? 100) -
-               (b.attendance.attendancePercent ?? 100);
-      });
-
-    // 5. Build summary metrics for dashboard cards
-    const summary = {
-      totalStudentsChecked: studentRiskProfiles.length,
-      atRiskCount: atRiskStudents.length,
-      criticalCount: atRiskStudents.filter((s) => s.riskLevel === 'CRITICAL').length,
-      warningCount: atRiskStudents.filter((s) => s.riskLevel === 'WARNING').length,
-      thresholdPercent: parseFloat(thresholdPercent),
-      criticalPercent: parseFloat(criticalPercent),
-    };
-
-    res.json({
-      period: {
-        startDate: start.toISOString().split('T')[0],
-        endDate: end.toISOString().split('T')[0],
-      },
-      summary,
-      atRiskStudents,
-    });
-  } catch (error) {
-    logger.error({ err: error }, 'Get students at risk error');
-    res.status(500).json({ error: 'Internal server error' });
-  }
+        res.json({
+            period: {
+                startDate: start.toISOString().split('T')[0],
+                endDate:   end.toISOString().split('T')[0],
+            },
+            summary,
+            atRiskStudents,
+        });
+    } catch (error) {
+        logger.error({ err: error }, 'Get students at risk error');
+        res.status(500).json({ error: 'Internal server error' });
+    }
 }
 
 module.exports = {
@@ -626,5 +660,5 @@ module.exports = {
     getClassAttendanceComparison,
     manageLeaveRequests,
     updateLeaveRequest,
-    getStudentsAtRisk
+    getStudentsAtRisk,
 };

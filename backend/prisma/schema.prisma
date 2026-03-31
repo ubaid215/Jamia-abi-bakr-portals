@@ -494,6 +494,8 @@ model Enrollment {
   @@index([startDate(sort: Desc)])
   @@index([endDate])
   @@unique([classRoomId, rollNumber])
+  @@index([isCurrent])
+  @@index([classRoomId, studentId, isCurrent])
 }
 
 // ==================== DAILY ACTIVITY TRACKING ====================
@@ -958,7 +960,9 @@ model Attendance {
   @@index([status, date])
   @@index([date, status])
   @@index([subjectId, date])
+  @@index([studentId, classRoomId, date(sort: Desc)])
 }
+
 
 model DailyStudyReport {
   id          String    @id @default(uuid())
