@@ -5,156 +5,181 @@ const { deleteFile, deleteFiles } = require('../middlewares/upload');
 
 const saltRounds = 12;
 
+async function cleanupFiles(req) {
+  console.log("[CLEANUP] شروع cleanup...");
+
+  try {
+    if (req.profileImagePath) await deleteFile(req.profileImagePath);
+    if (req.cnicFrontPath) await deleteFile(req.cnicFrontPath);
+    if (req.cnicBackPath) await deleteFile(req.cnicBackPath);
+
+    if (req.degreeDocumentsPath) {
+      const degreePaths = JSON.parse(req.degreeDocumentsPath);
+      await deleteFiles(degreePaths);
+    }
+
+    if (req.otherDocumentsPath) {
+      const otherPaths = JSON.parse(req.otherDocumentsPath);
+      await deleteFiles(otherPaths);
+    }
+
+    console.log("[CLEANUP] Done");
+  } catch (err) {
+    console.log("[CLEANUP ERROR]", err);
+  }
+}
+
 class EnrollmentController {
   // Register teacher with auto-generated email/password and file uploads
   async registerTeacher(req, res) {
-    try {
-      const {
-        name,
-        phone,
-        profileData
-      } = req.body;
+  const startTime = Date.now();
 
-      if (!name) {
-        return res.status(400).json({ error: 'Name is required' });
-      }
+  const log = (...args) => console.log("[REGISTER_TEACHER]", ...args);
 
-      // Profile image is now required and comes from req.profileImagePath
-      if (!req.profileImagePath) {
-        return res.status(400).json({ error: 'Profile image is required' });
-      }
+  try {
+    log("Incoming request body:", req.body);
 
-      // Parse profileData if it's a JSON string
-      let parsedProfileData = profileData;
-      if (typeof profileData === 'string') {
+    const { name, phone, profileData } = req.body;
+
+    // ✅ BASIC VALIDATION
+    if (!name || typeof name !== "string") {
+      log("Validation failed: invalid name");
+      return res.status(400).json({ error: "Name is required" });
+    }
+
+    if (!req.profileImagePath) {
+      log("Validation failed: profile image missing");
+      return res.status(400).json({ error: "Profile image is required" });
+    }
+
+    // ✅ SAFE PARSE profileData
+    let parsedProfileData = {};
+    if (profileData) {
+      if (typeof profileData === "string") {
         try {
           parsedProfileData = JSON.parse(profileData);
         } catch (e) {
-          parsedProfileData = {};
+          log("profileData JSON parse failed:", profileData);
+          return res.status(400).json({ error: "Invalid profileData JSON" });
         }
+      } else if (typeof profileData === "object") {
+        parsedProfileData = profileData;
       }
-
-      // Generate email and strong password
-      const email = generateEmail(name, 'teacher');
-      const password = generateStrongPassword();
-
-      // Check if email already exists
-      const existingUser = await prisma.user.findUnique({
-        where: { email }
-      });
-
-      if (existingUser) {
-        // Delete uploaded files if email exists
-        await deleteFile(req.profileImagePath);
-        if (req.cnicFrontPath) await deleteFile(req.cnicFrontPath);
-        if (req.cnicBackPath) await deleteFile(req.cnicBackPath);
-        if (req.degreeDocumentsPath) {
-          const degreePaths = JSON.parse(req.degreeDocumentsPath);
-          await deleteFiles(degreePaths);
-        }
-        if (req.otherDocumentsPath) {
-          const otherPaths = JSON.parse(req.otherDocumentsPath);
-          await deleteFiles(otherPaths);
-        }
-
-        // Regenerate with different email
-        return this.registerTeacher(req, res);
-      }
-
-      // Hash password
-      const passwordHash = await bcrypt.hash(password, saltRounds);
-
-      // Create user and teacher profile in transaction
-      const result = await prisma.$transaction(async (prisma) => {
-        // Create user
-        const user = await prisma.user.create({
-          data: {
-            email,
-            passwordHash,
-            name,
-            phone: phone || null,
-            role: 'TEACHER',
-            profileImage: req.profileImagePath
-          }
-        });
-
-        // Create teacher profile
-        const teacherProfile = await prisma.teacher.create({
-          data: {
-            userId: user.id,
-            bio: parsedProfileData?.bio || null,
-            dateOfBirth: parsedProfileData?.dateOfBirth ? new Date(parsedProfileData.dateOfBirth) : null,
-            gender: parsedProfileData?.gender || null,
-            cnic: parsedProfileData?.cnic || null,
-            qualification: parsedProfileData?.qualification || null,
-            specialization: parsedProfileData?.specialization || null,
-            experience: parsedProfileData?.experience ? String(parsedProfileData.experience) : null,
-            address: parsedProfileData?.address || null,
-            emergencyContactName: parsedProfileData?.emergencyContactName || null,
-            emergencyContactPhone: parsedProfileData?.emergencyContactPhone || null,
-            emergencyContactRelation: parsedProfileData?.emergencyContactRelation || null,
-            phoneSecondary: parsedProfileData?.phoneSecondary || null,
-            phoneEmergency: parsedProfileData?.phoneEmergency || null,
-            profileImage: req.profileImagePath,
-            cnicFront: req.cnicFrontPath || null,
-            cnicBack: req.cnicBackPath || null,
-            degreeDocuments: req.degreeDocumentsPath || null,
-            otherDocuments: req.otherDocumentsPath || null,
-            joiningDate: parsedProfileData?.joiningDate ? new Date(parsedProfileData.joiningDate) : null,
-            salary: parsedProfileData?.salary || null,
-            employmentType: parsedProfileData?.employmentType || null
-          }
-        });
-
-        return { user, teacherProfile, password };
-      });
-
-      // Prepare response
-      const userData = {
-        id: result.user.id,
-        email: result.user.email,
-        name: result.user.name,
-        role: result.user.role,
-        phone: result.user.phone,
-        profileImage: result.user.profileImage,
-        status: result.user.status,
-        isOnline: result.user.isOnline,
-        createdAt: result.user.createdAt,
-        teacherProfile: result.teacherProfile
-      };
-
-      res.status(201).json({
-        message: 'Teacher created successfully',
-        credentials: {
-          email: result.user.email,
-          password: result.password
-        },
-        user: userData
-      });
-
-    } catch (error) {
-      console.error('Register teacher error:', error);
-
-      // Clean up uploaded files on error
-      if (req.profileImagePath) await deleteFile(req.profileImagePath);
-      if (req.cnicFrontPath) await deleteFile(req.cnicFrontPath);
-      if (req.cnicBackPath) await deleteFile(req.cnicBackPath);
-      if (req.degreeDocumentsPath) {
-        try {
-          const degreePaths = JSON.parse(req.degreeDocumentsPath);
-          await deleteFiles(degreePaths);
-        } catch (e) { }
-      }
-      if (req.otherDocumentsPath) {
-        try {
-          const otherPaths = JSON.parse(req.otherDocumentsPath);
-          await deleteFiles(otherPaths);
-        } catch (e) { }
-      }
-
-      res.status(500).json({ error: 'Internal server error' });
     }
+
+    // ✅ GENERATE UNIQUE EMAIL (NO RECURSION)
+    let email;
+    let existingUser;
+    let attempts = 0;
+
+    do {
+      email = await generateEmail(name, "teacher");
+      log(`Generated email attempt ${attempts + 1}:`, email);
+
+      existingUser = await prisma.user.findUnique({
+        where: { email },
+      });
+
+      attempts++;
+    } while (existingUser && attempts < 5);
+
+    if (existingUser) {
+      log("Failed to generate unique email after retries");
+
+      await cleanupFiles(req);
+      return res.status(500).json({ error: "Failed to generate unique email" });
+    }
+
+    const password = generateStrongPassword();
+    log("Email finalized:", email);
+
+    // ✅ HASH PASSWORD
+    const passwordHash = await bcrypt.hash(password, saltRounds);
+
+    // ✅ TRANSACTION
+    const result = await prisma.$transaction(async (tx) => {
+      log("Creating user...");
+
+      const user = await tx.user.create({
+        data: {
+          email,
+          passwordHash,
+          name,
+          phone: phone || null,
+          role: "TEACHER",
+          profileImage: req.profileImagePath,
+        },
+      });
+
+      log("User created:", user.id);
+
+      const teacherProfile = await tx.teacher.create({
+        data: {
+          userId: user.id,
+          bio: parsedProfileData.bio || null,
+          dateOfBirth: parsedProfileData.dateOfBirth
+            ? new Date(parsedProfileData.dateOfBirth)
+            : null,
+          gender: parsedProfileData.gender || null,
+          cnic: parsedProfileData.cnic || null,
+          qualification: parsedProfileData.qualification || null,
+          specialization: parsedProfileData.specialization || null,
+          experience: parsedProfileData.experience
+            ? String(parsedProfileData.experience)
+            : null,
+          address: parsedProfileData.address || null,
+          emergencyContactName:
+            parsedProfileData.emergencyContactName || null,
+          emergencyContactPhone:
+            parsedProfileData.emergencyContactPhone || null,
+          emergencyContactRelation:
+            parsedProfileData.emergencyContactRelation || null,
+          phoneSecondary: parsedProfileData.phoneSecondary || null,
+          phoneEmergency: parsedProfileData.phoneEmergency || null,
+          profileImage: req.profileImagePath,
+          cnicFront: req.cnicFrontPath || null,
+          cnicBack: req.cnicBackPath || null,
+          degreeDocuments: req.degreeDocumentsPath || null,
+          otherDocuments: req.otherDocumentsPath || null,
+          joiningDate: parsedProfileData.joiningDate
+            ? new Date(parsedProfileData.joiningDate)
+            : null,
+          salary: parsedProfileData.salary || null,
+          employmentType: parsedProfileData.employmentType || null,
+        },
+      });
+
+      log("Teacher profile created:", teacherProfile.id);
+
+      return { user, teacherProfile };
+    });
+
+    // ✅ RESPONSE
+    const responseTime = Date.now() - startTime;
+    log(`SUCCESS in ${responseTime}ms`);
+
+    return res.status(201).json({
+      message: "Teacher created successfully",
+      credentials: {
+        email,
+        password,
+      },
+      user: {
+        ...result.user,
+        teacherProfile: result.teacherProfile,
+      },
+    });
+
+  } catch (error) {
+    log("ERROR:", error);
+
+    await cleanupFiles(req);
+
+    return res.status(500).json({
+      error: "Internal server error",
+    });
   }
+}
 
   async registerStudent(req, res) {
     try {

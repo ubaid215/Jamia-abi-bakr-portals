@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from 'react';
+import React, { useState, useEffect, useMemo, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Search, Filter, Mail, Phone,
@@ -10,11 +10,28 @@ import axios from 'axios';
 import { toast } from 'react-hot-toast';
 import Pagination from '../../components/ui/Pagination';
 
+// Debounce hook
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const TeacherLists = () => {
   const { teachers, fetchTeachers, loading } = useAdmin();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState('');
-  const [statusFilter, setStatusFilter] = useState('ALL');
+  const [statusFilter, setStatusFilter] = useState('ACTIVE'); // Changed: default to ACTIVE only
   const [selectedTeachers, setSelectedTeachers] = useState([]);
   const [dropdownOpen, setDropdownOpen] = useState(null);
   const [showStatusModal, setShowStatusModal] = useState(false);
@@ -32,30 +49,38 @@ const TeacherLists = () => {
     fetchTeachers();
   }, [fetchTeachers]);
 
-  // ============================================
-  // Helper Functions
-  // ============================================
+  // Debounced search term (300ms delay for better performance)
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
 
-  const getTeacherName = (teacher) =>
-    teacher.user?.name || teacher.name || 'Unknown Teacher';
-
-  const getTeacherEmail = (teacher) =>
-    teacher.user?.email || teacher.email || 'No email';
-
-  const getTeacherStatus = (teacher) =>
-    teacher.user?.status || teacher.status || 'UNKNOWN';
-
-  const getTeacherPhone = (teacher) =>
-    teacher.user?.phone || teacher.phone || '';
-
-  const getTeacherProfileImage = (teacher) =>
-    teacher.user?.profileImage || teacher.profileImage || null;
-
-  const getTeacherUserId = (teacher) =>
-    teacher.user?.id || teacher.userId || teacher.id;
+  // Reset to page 1 when filters change
+  useEffect(() => {
+    setCurrentPage(1);
+  }, [debouncedSearchTerm, statusFilter]);
 
   // ============================================
-  // Profile Image URLs — memoized per teacher, recomputes only when teachers change
+  // Helper Functions (memoized with useCallback)
+  // ============================================
+
+  const getTeacherName = useCallback((teacher) =>
+    teacher.user?.name || teacher.name || 'Unknown Teacher', []);
+
+  const getTeacherEmail = useCallback((teacher) =>
+    teacher.user?.email || teacher.email || 'No email', []);
+
+  const getTeacherStatus = useCallback((teacher) =>
+    teacher.user?.status || teacher.status || 'UNKNOWN', []);
+
+  const getTeacherPhone = useCallback((teacher) =>
+    teacher.user?.phone || teacher.phone || '', []);
+
+  const getTeacherProfileImage = useCallback((teacher) =>
+    teacher.user?.profileImage || teacher.profileImage || null, []);
+
+  const getTeacherUserId = useCallback((teacher) =>
+    teacher.user?.id || teacher.userId || teacher.id, []);
+
+  // ============================================
+  // Profile Image URLs — memoized per teacher
   // ============================================
 
   const profileImageUrls = useMemo(() => {
@@ -75,46 +100,80 @@ const TeacherLists = () => {
       }
     });
     return map;
-  }, [teachers]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [teachers, getTeacherProfileImage, getTeacherUserId]);
 
   // ============================================
-  // Teacher Selection Handlers
+  // Filtering Logic (memoized)
   // ============================================
 
-  const toggleTeacherSelection = (teacher) => {
+  const filteredTeachers = useMemo(() => {
+    if (!Array.isArray(teachers)) return [];
+
+    return teachers.filter(teacher => {
+      const teacherName = getTeacherName(teacher).toLowerCase();
+      const teacherEmail = getTeacherEmail(teacher).toLowerCase();
+      const specialization = (teacher.specialization || '').toLowerCase();
+      const teacherStatus = getTeacherStatus(teacher);
+      
+      const matchesSearch =
+        teacherName.includes(debouncedSearchTerm.toLowerCase()) ||
+        teacherEmail.includes(debouncedSearchTerm.toLowerCase()) ||
+        specialization.includes(debouncedSearchTerm.toLowerCase());
+      
+      const matchesStatus = statusFilter === 'ALL' || teacherStatus === statusFilter;
+      
+      return matchesSearch && matchesStatus;
+    });
+  }, [teachers, debouncedSearchTerm, statusFilter, getTeacherName, getTeacherEmail, getTeacherStatus]);
+
+  // Memoize paginated teachers
+  const paginatedTeachers = useMemo(() => {
+    return filteredTeachers.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    );
+  }, [filteredTeachers, currentPage, itemsPerPage]);
+
+  // ============================================
+  // Teacher Selection Handlers (memoized)
+  // ============================================
+
+  const toggleTeacherSelection = useCallback((teacher) => {
     setSelectedTeachers(prev => {
-      const isSelected = prev.some(t => getTeacherUserId(t) === getTeacherUserId(teacher));
+      const teacherId = getTeacherUserId(teacher);
+      const isSelected = prev.some(t => getTeacherUserId(t) === teacherId);
       return isSelected
-        ? prev.filter(t => getTeacherUserId(t) !== getTeacherUserId(teacher))
+        ? prev.filter(t => getTeacherUserId(t) !== teacherId)
         : [...prev, teacher];
     });
-  };
+  }, [getTeacherUserId]);
 
-  const selectAllTeachers = () => {
+  const selectAllTeachers = useCallback(() => {
     setSelectedTeachers(
       selectedTeachers.length === filteredTeachers.length ? [] : [...filteredTeachers]
     );
-  };
+  }, [selectedTeachers.length, filteredTeachers]);
 
-  const isTeacherSelected = (teacher) =>
-    selectedTeachers.some(t => getTeacherUserId(t) === getTeacherUserId(teacher));
+  const isTeacherSelected = useCallback((teacher) =>
+    selectedTeachers.some(t => getTeacherUserId(t) === getTeacherUserId(teacher)), 
+    [selectedTeachers, getTeacherUserId]);
 
   // ============================================
-  // Dropdown Menu Handlers
+  // Dropdown Menu Handlers (memoized)
   // ============================================
 
-  const toggleDropdown = (teacherId) => {
-    setDropdownOpen(dropdownOpen === teacherId ? null : teacherId);
-  };
+  const toggleDropdown = useCallback((teacherId) => {
+    setDropdownOpen(prev => prev === teacherId ? null : teacherId);
+  }, []);
 
-  const handleUpdateStatus = (teacher, status) => {
+  const handleUpdateStatus = useCallback((teacher, status) => {
     setTeachersToUpdate([teacher]);
     setSelectedStatus(status);
     setShowStatusModal(true);
     setDropdownOpen(null);
-  };
+  }, []);
 
-  const handleBulkUpdateStatus = (status) => {
+  const handleBulkUpdateStatus = useCallback((status) => {
     if (selectedTeachers.length === 0) {
       toast.error('Please select at least one teacher');
       return;
@@ -122,13 +181,13 @@ const TeacherLists = () => {
     setTeachersToUpdate([...selectedTeachers]);
     setSelectedStatus(status);
     setShowStatusModal(true);
-  };
+  }, [selectedTeachers]);
 
   // ============================================
-  // Delete Functions
+  // Delete Functions (memoized)
   // ============================================
 
-  const deleteTeacher = async (teacherId) => {
+  const deleteTeacher = useCallback(async (teacherId) => {
     if (!window.confirm('Are you sure you want to delete this teacher? This action cannot be undone and will delete all teacher data including attendance, progress, and documents.')) return;
     try {
       const token = localStorage.getItem('authToken');
@@ -142,9 +201,9 @@ const TeacherLists = () => {
       console.error('Error deleting teacher:', error);
       toast.error(error.response?.data?.error || 'Failed to delete teacher');
     }
-  };
+  }, [API_BASE_URL, getTeacherUserId, fetchTeachers]);
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = useCallback(() => {
     if (selectedTeachers.length === 0) {
       toast.error('Please select at least one teacher to delete');
       return;
@@ -168,13 +227,13 @@ const TeacherLists = () => {
       setSelectedTeachers([]);
       fetchTeachers();
     });
-  };
+  }, [selectedTeachers, getTeacherName, getTeacherUserId, API_BASE_URL, fetchTeachers]);
 
   // ============================================
-  // Status Update Functions
+  // Status Update Functions (memoized)
   // ============================================
 
-  const handleStatusUpdate = async () => {
+  const handleStatusUpdate = useCallback(async () => {
     if (!selectedStatus) { toast.error('Please select a status'); return; }
     if (teachersToUpdate.length === 0) { toast.error('No teachers selected'); return; }
     try {
@@ -200,53 +259,26 @@ const TeacherLists = () => {
     } finally {
       setUpdatingStatus(false);
     }
-  };
+  }, [selectedStatus, teachersToUpdate, getTeacherUserId, API_BASE_URL, fetchTeachers]);
 
   // ============================================
-  // Filtering & Pagination Logic
+  // Style Helpers (memoized)
   // ============================================
 
-  const filteredTeachers = Array.isArray(teachers)
-    ? teachers.filter(teacher => {
-      const teacherName = getTeacherName(teacher).toLowerCase();
-      const teacherEmail = getTeacherEmail(teacher).toLowerCase();
-      const specialization = (teacher.specialization || '').toLowerCase();
-      const teacherStatus = getTeacherStatus(teacher);
-      const matchesSearch =
-        teacherName.includes(searchTerm.toLowerCase()) ||
-        teacherEmail.includes(searchTerm.toLowerCase()) ||
-        specialization.includes(searchTerm.toLowerCase());
-      const matchesStatus = statusFilter === 'ALL' || teacherStatus === statusFilter;
-      return matchesSearch && matchesStatus;
-    })
-    : [];
-
-  // Reset to page 1 when filters change
-  useEffect(() => { setCurrentPage(1); }, [searchTerm, statusFilter]);
-
-  const paginatedTeachers = filteredTeachers.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  // ============================================
-  // Style Helpers
-  // ============================================
-
-  const getStatusColor = (status) => {
+  const getStatusColor = useCallback((status) => {
     const colors = {
       ACTIVE: 'bg-green-100 text-green-800',
       INACTIVE: 'bg-yellow-100 text-yellow-800',
       TERMINATED: 'bg-red-100 text-red-800'
     };
     return colors[status] || 'bg-gray-100 text-gray-800';
-  };
+  }, []);
 
   // ============================================
-  // Event Handlers
+  // Event Handlers (memoized)
   // ============================================
 
-  const handleTeacherClick = (teacher, e) => {
+  const handleTeacherClick = useCallback((teacher, e) => {
     if (
       e.target.type === 'checkbox' ||
       e.target.closest('.selection-checkbox') ||
@@ -254,7 +286,7 @@ const TeacherLists = () => {
       e.target.closest('.dropdown-menu')
     ) return;
     navigate(`/admin/teachers/${getTeacherUserId(teacher)}`);
-  };
+  }, [navigate, getTeacherUserId]);
 
   // ============================================
   // Render
@@ -271,11 +303,16 @@ const TeacherLists = () => {
               Manage teachers and view their details
             </p>
           </div>
-          {selectedTeachers.length > 0 && (
+          <div className="flex items-center gap-3">
+            {selectedTeachers.length > 0 && (
+              <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A] shadow-sm">
+                📊 Selected: {selectedTeachers.length}
+              </div>
+            )}
             <div className="text-sm text-[#B45309] bg-white px-3 py-2 rounded-lg border border-[#FDE68A] shadow-sm">
-              📊 Selected: {selectedTeachers.length}
+              👥 Total: {filteredTeachers.length}
             </div>
-          )}
+          </div>
         </div>
       </div>
 
@@ -300,8 +337,8 @@ const TeacherLists = () => {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
               >
+                <option value="ACTIVE">Active Only</option>
                 <option value="ALL">All Status</option>
-                <option value="ACTIVE">Active</option>
                 <option value="INACTIVE">Inactive</option>
                 <option value="TERMINATED">Terminated</option>
               </select>
@@ -358,8 +395,8 @@ const TeacherLists = () => {
       {/* Teachers Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 sm:gap-6">
         {loading ? (
-          Array.from({ length: 6 }).map((_, index) => <LoadingSkeleton key={index} />)
-        ) : filteredTeachers.length === 0 ? (
+          Array.from({ length: itemsPerPage }).map((_, index) => <LoadingSkeleton key={index} />)
+        ) : paginatedTeachers.length === 0 ? (
           <EmptyState teachersCount={Array.isArray(teachers) ? teachers.length : 0} />
         ) : (
           paginatedTeachers.map((teacher) => (
@@ -537,7 +574,7 @@ const EmptyState = ({ teachersCount }) => (
 // ProfileImage — isolated state, no flicker on re-render
 // ============================================
 
-const ProfileImage = ({ profileImageUrl, teacherName, teacherStatus }) => {
+const ProfileImage = React.memo(({ profileImageUrl, teacherName, teacherStatus }) => {
   const [imgError, setImgError] = useState(false);
   const prevUrlRef = useRef(profileImageUrl);
 
@@ -589,13 +626,13 @@ const ProfileImage = ({ profileImageUrl, teacherName, teacherStatus }) => {
       />
     </div>
   );
-};
+});
 
 // ============================================
 // TeacherCard — centered minimal style matching StudentCard
 // ============================================
 
-const TeacherCard = ({
+const TeacherCard = React.memo(({
   teacher,
   teacherName,
   teacherEmail,
@@ -721,6 +758,6 @@ const TeacherCard = ({
       </div>
     </div>
   </div>
-);
+));
 
 export default TeacherLists;

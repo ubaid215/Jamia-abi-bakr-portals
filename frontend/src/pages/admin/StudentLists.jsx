@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useNavigate } from "react-router-dom";
 import {
   Search,
@@ -27,6 +27,23 @@ import Pagination from "../../components/ui/Pagination";
 import { toast } from "react-hot-toast";
 import axios from "axios";
 
+// Debounce hook
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+
+  useEffect(() => {
+    const handler = setTimeout(() => {
+      setDebouncedValue(value);
+    }, delay);
+
+    return () => {
+      clearTimeout(handler);
+    };
+  }, [value, delay]);
+
+  return debouncedValue;
+};
+
 const StudentLists = () => {
   const { students, fetchStudents, loading } = useAdmin();
   const {
@@ -37,7 +54,7 @@ const StudentLists = () => {
   } = useClass();
   const navigate = useNavigate();
   const [searchTerm, setSearchTerm] = useState("");
-  const [statusFilter, setStatusFilter] = useState("ALL");
+  const [statusFilter, setStatusFilter] = useState("ACTIVE"); // Changed: default to ACTIVE only
   const [classFilter, setClassFilter] = useState("ALL");
   const [selectedStudents, setSelectedStudents] = useState([]);
   const [showPromotionModal, setShowPromotionModal] = useState(false);
@@ -64,42 +81,25 @@ const StudentLists = () => {
     fetchClasses();
   }, [fetchStudents, fetchClasses]);
 
-  // Reset to page 1 whenever filters / search change
+  // Debounced search term (300ms delay for better performance)
+  const debouncedSearchTerm = useDebounce(searchTerm, 300);
+
+  // Reset to page 1 whenever filters / debounced search change
   useEffect(() => {
     setCurrentPage(1);
-  }, [searchTerm, statusFilter, classFilter, itemsPerPage]);
+  }, [debouncedSearchTerm, statusFilter, classFilter, itemsPerPage]);
 
   // ============================================
-  // Helper Functions for Safe Data Access
+  // Helper Functions for Safe Data Access (memoized)
   // ============================================
 
-  const getStudentName = (student) =>
-    student.user?.name || student.name || "Unknown Student";
-
-  const getStudentEmail = (student) =>
-    student.user?.email || student.email || "No email";
-
-  const getStudentStatus = (student) =>
-    student.user?.status || student.status || "UNKNOWN";
-
-  const getStudentProfileImage = (student) =>
-    student.user?.profileImage ||
-    student.profileImage ||
-    student.studentProfile?.profileImage ||
-    null;
-
-  const getStudentUserId = (student) =>
-    student.user?.id || student.userId || student.id;
-
-  const getCurrentClass = (student) =>
-    student.currentEnrollment?.classRoom ||
-    student.currentClass ||
-    student.classRoom ||
-    student.studentProfile?.currentEnrollment?.classRoom ||
-    null;
-
-  const getAdmissionNo = (student) =>
-    student.admissionNo || student.studentProfile?.admissionNo || "N/A";
+  const getStudentName = useCallback((student) => student.user?.name || student.name || "Unknown Student", []);
+  const getStudentEmail = useCallback((student) => student.user?.email || student.email || "No email", []);
+  const getStudentStatus = useCallback((student) => student.user?.status || student.status || "UNKNOWN", []);
+  const getStudentProfileImage = useCallback((student) => student.user?.profileImage || student.profileImage || student.studentProfile?.profileImage || null, []);
+  const getStudentUserId = useCallback((student) => student.user?.id || student.userId || student.id, []);
+  const getCurrentClass = useCallback((student) => student.currentEnrollment?.classRoom || student.currentClass || student.classRoom || student.studentProfile?.currentEnrollment?.classRoom || null, []);
+  const getAdmissionNo = useCallback((student) => student.admissionNo || student.studentProfile?.admissionNo || "N/A", []);
 
   // ============================================
   // Profile Image URL Generation — memoized per student
@@ -124,23 +124,79 @@ const StudentLists = () => {
       }
     });
     return map;
-  }, [students]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [students, getStudentProfileImage, getStudentUserId]);
 
   // ============================================
-  // Student Selection Handlers
+  // Filtering Logic (heavily memoized) - MOVED BEFORE callbacks that use it
   // ============================================
 
-  const toggleStudentSelection = (student) => {
+  // Memoize filtered students to avoid recalculating on every render
+  const filteredStudents = useMemo(() => {
+    if (!Array.isArray(students)) return [];
+
+    return students.filter((student) => {
+      const studentName = getStudentName(student).toLowerCase();
+      const studentEmail = getStudentEmail(student).toLowerCase();
+      const admissionNo = getAdmissionNo(student).toLowerCase();
+      const studentStatus = getStudentStatus(student);
+      const currentClass = getCurrentClass(student);
+      const className = currentClass?.name || "";
+
+      const matchesSearch =
+        studentName.includes(debouncedSearchTerm.toLowerCase()) ||
+        studentEmail.includes(debouncedSearchTerm.toLowerCase()) ||
+        admissionNo.includes(debouncedSearchTerm.toLowerCase());
+
+      const matchesStatus =
+        statusFilter === "ALL" || studentStatus === statusFilter;
+      const matchesClass =
+        classFilter === "ALL" || className === classFilter;
+
+      return matchesSearch && matchesStatus && matchesClass;
+    });
+  }, [students, debouncedSearchTerm, statusFilter, classFilter, getStudentName, getStudentEmail, getAdmissionNo, getStudentStatus, getCurrentClass]);
+
+  // Memoize paginated students
+  const paginatedStudents = useMemo(() => {
+    return filteredStudents.slice(
+      (currentPage - 1) * itemsPerPage,
+      currentPage * itemsPerPage
+    );
+  }, [filteredStudents, currentPage, itemsPerPage]);
+
+  // Memoize unique classes for filter
+  const uniqueClasses = useMemo(() => {
+    if (!Array.isArray(students)) return [];
+    return [
+      ...new Set(
+        students
+          .map((student) => getCurrentClass(student)?.name)
+          .filter(Boolean)
+      ),
+    ];
+  }, [students, getCurrentClass]);
+
+  // Memoize selection state for current page
+  const allCurrentPageSelected = useMemo(() => {
+    return paginatedStudents.length > 0 &&
+      paginatedStudents.every((s) => selectedStudents.some((sel) => sel.id === s.id));
+  }, [paginatedStudents, selectedStudents]);
+
+  // ============================================
+  // Student Selection Handlers (memoized callbacks) - NOW AFTER paginatedStudents is defined
+  // ============================================
+
+  const toggleStudentSelection = useCallback((student) => {
     setSelectedStudents((prev) => {
       const isSelected = prev.some((s) => s.id === student.id);
       return isSelected
         ? prev.filter((s) => s.id !== student.id)
         : [...prev, student];
     });
-  };
+  }, []);
 
   // Select-all targets only the current page
-  const selectAllStudents = () => {
+  const selectAllStudents = useCallback(() => {
     const allCurrentPageSelected = paginatedStudents.every((s) =>
       selectedStudents.some((sel) => sel.id === s.id)
     );
@@ -157,42 +213,41 @@ const StudentLists = () => {
         return [...prev, ...newOnes];
       });
     }
-  };
+  }, [paginatedStudents, selectedStudents]);
 
-  const isStudentSelected = (studentId) =>
-    selectedStudents.some((s) => s.id === studentId);
+  const isStudentSelected = useCallback((studentId) => selectedStudents.some((s) => s.id === studentId), [selectedStudents]);
 
   // ============================================
-  // Dropdown Menu Handlers
+  // Dropdown Menu Handlers (memoized)
   // ============================================
 
-  const toggleDropdown = (studentId) => {
-    setDropdownOpen(dropdownOpen === studentId ? null : studentId);
-  };
+  const toggleDropdown = useCallback((studentId) => {
+    setDropdownOpen((prev) => (prev === studentId ? null : studentId));
+  }, []);
 
-  const handleAssignClass = (student) => {
+  const handleAssignClass = useCallback((student) => {
     setStudentsToAssign([student]);
     setShowAssignClassModal(true);
     setDropdownOpen(null);
-  };
+  }, []);
 
-  const handleBulkAssignClass = () => {
+  const handleBulkAssignClass = useCallback(() => {
     if (selectedStudents.length === 0) {
       toast.error("Please select at least one student");
       return;
     }
     setStudentsToAssign([...selectedStudents]);
     setShowAssignClassModal(true);
-  };
+  }, [selectedStudents]);
 
-  const handleUpdateStatus = (student, status) => {
+  const handleUpdateStatus = useCallback((student, status) => {
     setStudentsToAssign([student]);
     setSelectedStatus(status);
     setShowStatusModal(true);
     setDropdownOpen(null);
-  };
+  }, []);
 
-  const handleBulkUpdateStatus = (status) => {
+  const handleBulkUpdateStatus = useCallback((status) => {
     if (selectedStudents.length === 0) {
       toast.error("Please select at least one student");
       return;
@@ -200,13 +255,13 @@ const StudentLists = () => {
     setStudentsToAssign([...selectedStudents]);
     setSelectedStatus(status);
     setShowStatusModal(true);
-  };
+  }, [selectedStudents]);
 
   // ============================================
-  // Class Assignment Functions
+  // Class Assignment Functions (memoized)
   // ============================================
 
-  const handleClassAssignment = async () => {
+  const handleClassAssignment = useCallback(async () => {
     if (!selectedClass) {
       toast.error("Please select a class");
       return;
@@ -238,13 +293,13 @@ const StudentLists = () => {
     } finally {
       setAssigningClass(false);
     }
-  };
+  }, [selectedClass, studentsToAssign, availableClasses, bulkAssignClassToStudents, getStudentUserId, fetchStudents]);
 
   // ============================================
-  // Student Deletion Functions
+  // Student Deletion Functions (memoized)
   // ============================================
 
-  const deleteStudent = async (studentId) => {
+  const deleteStudent = useCallback(async (studentId) => {
     if (
       !window.confirm(
         "Are you sure you want to delete this student? This action cannot be undone and will delete all student data including attendance, progress, and documents."
@@ -268,9 +323,9 @@ const StudentLists = () => {
       console.error("Error deleting student:", error);
       toast.error(error.response?.data?.error || "Failed to delete student");
     }
-  };
+  }, [API_BASE_URL, getStudentUserId, fetchStudents]);
 
-  const handleBulkDelete = () => {
+  const handleBulkDelete = useCallback(() => {
     if (selectedStudents.length === 0) {
       toast.error("Please select at least one student to delete");
       return;
@@ -303,13 +358,13 @@ const StudentLists = () => {
       setSelectedStudents([]);
       fetchStudents();
     });
-  };
+  }, [selectedStudents, getStudentName, getStudentUserId, API_BASE_URL, fetchStudents]);
 
   // ============================================
-  // Status Update Functions
+  // Status Update Functions (memoized)
   // ============================================
 
-  const handleStatusUpdate = async () => {
+  const handleStatusUpdate = useCallback(async () => {
     if (!selectedStatus) {
       toast.error("Please select a status");
       return;
@@ -346,82 +401,35 @@ const StudentLists = () => {
     } finally {
       setUpdatingStatus(false);
     }
-  };
+  }, [selectedStatus, studentsToAssign, getStudentUserId, API_BASE_URL, fetchStudents]);
 
   // ============================================
-  // Filtering + Pagination Logic
+  // Style Helpers (memoized)
   // ============================================
 
-  const filteredStudents = Array.isArray(students)
-    ? students.filter((student) => {
-      const studentName = getStudentName(student).toLowerCase();
-      const studentEmail = getStudentEmail(student).toLowerCase();
-      const admissionNo = getAdmissionNo(student).toLowerCase();
-      const studentStatus = getStudentStatus(student);
-      const currentClass = getCurrentClass(student);
-      const className = currentClass?.name || "";
-
-      const matchesSearch =
-        studentName.includes(searchTerm.toLowerCase()) ||
-        studentEmail.includes(searchTerm.toLowerCase()) ||
-        admissionNo.includes(searchTerm.toLowerCase());
-
-      const matchesStatus =
-        statusFilter === "ALL" || studentStatus === statusFilter;
-      const matchesClass =
-        classFilter === "ALL" || className === classFilter;
-
-      return matchesSearch && matchesStatus && matchesClass;
-    })
-    : [];
-
-  // Slice for current page
-  const paginatedStudents = filteredStudents.slice(
-    (currentPage - 1) * itemsPerPage,
-    currentPage * itemsPerPage
-  );
-
-  const allCurrentPageSelected =
-    paginatedStudents.length > 0 &&
-    paginatedStudents.every((s) => selectedStudents.some((sel) => sel.id === s.id));
-
-  const uniqueClasses = Array.isArray(students)
-    ? [
-      ...new Set(
-        students
-          .map((student) => getCurrentClass(student)?.name)
-          .filter(Boolean)
-      ),
-    ]
-    : [];
-
-  // ============================================
-  // Style Helpers
-  // ============================================
-
-  const getStatusColor = (status) => {
+  const getStatusColor = useCallback((status) => {
     const colors = {
       ACTIVE: "text-green-600",
       INACTIVE: "text-yellow-600",
       TERMINATED: "text-red-600",
     };
     return colors[status] || "text-gray-600";
-  };
+  }, []);
 
-  const getClassTypeColor = (type) => {
+  const getClassTypeColor = useCallback((type) => {
     const colors = {
       REGULAR: "text-blue-600",
       HIFZ: "text-purple-600",
       NAZRA: "text-orange-600",
     };
     return colors[type] || "text-gray-600";
-  };
+  }, []);
 
   // ============================================
-  // Event Handlers
+  // Event Handlers (memoized)
   // ============================================
 
-  const handleStudentClick = (student, e) => {
+  const handleStudentClick = useCallback((student, e) => {
     if (
       e.target.type === "checkbox" ||
       e.target.closest(".selection-checkbox") ||
@@ -430,13 +438,13 @@ const StudentLists = () => {
     )
       return;
     navigate(`/admin/students/${getStudentUserId(student)}`);
-  };
+  }, [navigate, getStudentUserId]);
 
-  const handlePromotionSuccess = () => {
+  const handlePromotionSuccess = useCallback(() => {
     setSelectedStudents([]);
     fetchStudents();
     toast.success("Students promoted successfully");
-  };
+  }, [fetchStudents]);
 
   // ============================================
   // Render
@@ -485,7 +493,7 @@ const StudentLists = () => {
       <div className="bg-white rounded-2xl p-4 sm:p-6 shadow-lg border border-gray-100">
         <div className="flex flex-col gap-4">
           <div className="flex flex-col sm:flex-row gap-4">
-            {/* Search */}
+            {/* Search with debouncing */}
             <div className="flex-1 relative">
               <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 h-4 w-4 text-gray-400" />
               <input
@@ -497,7 +505,7 @@ const StudentLists = () => {
               />
             </div>
 
-            {/* Status Filter */}
+            {/* Status Filter - Default shows ACTIVE only */}
             <div className="flex items-center gap-2">
               <Filter className="h-4 w-4 text-gray-400" />
               <select
@@ -505,8 +513,8 @@ const StudentLists = () => {
                 onChange={(e) => setStatusFilter(e.target.value)}
                 className="border border-gray-300 rounded-xl px-3 py-2 sm:py-3 focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-sm sm:text-base shadow-sm"
               >
+                <option value="ACTIVE">Active Only</option>
                 <option value="ALL">All Status</option>
-                <option value="ACTIVE">Active</option>
                 <option value="INACTIVE">Inactive</option>
                 <option value="TERMINATED">Terminated</option>
               </select>
@@ -938,7 +946,7 @@ const EmptyState = ({ studentsCount }) => (
   </div>
 );
 
-const StudentCard = ({
+const StudentCard = React.memo(({
   student,
   studentName,
   studentEmail,
@@ -1075,9 +1083,9 @@ const StudentCard = ({
       </div>
     </div>
   </div>
-);
+));
 
-const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
+const ProfileImage = React.memo(({ profileImageUrl, studentName, studentStatus }) => {
   const [imgError, setImgError] = useState(false);
   const prevUrlRef = useRef(profileImageUrl);
 
@@ -1129,6 +1137,6 @@ const ProfileImage = ({ profileImageUrl, studentName, studentStatus }) => {
       />
     </div>
   );
-};
+});
 
 export default StudentLists;

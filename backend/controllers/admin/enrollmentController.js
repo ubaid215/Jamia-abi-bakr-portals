@@ -317,20 +317,29 @@ async function bulkAssignStudentsToClass(req, res) {
 // Promote students to new class
 async function promoteStudents(req, res) {
     try {
-        const { studentIds, newClassRoomId, reason } = req.body;
+        // The frontend is sending 'targetClassRoomId', not 'newClassRoomId'
+        const { studentIds, targetClassRoomId, reason } = req.body;
+        
+        logger.info({ studentIds, targetClassRoomId, reason }, 'Promotion request received');
 
         const results = await prisma.$transaction(async (tx) => {
+            // Use targetClassRoomId instead of newClassRoomId
             const newClassRoom = await tx.classRoom.findUnique({
-                where: { id: newClassRoomId },
+                where: { id: targetClassRoomId },  // ← FIX: use targetClassRoomId
             });
 
-            if (!newClassRoom) throw new Error('New class room not found');
+            if (!newClassRoom) {
+                logger.warn({ targetClassRoomId }, 'Target class room not found');
+                throw new Error('New class room not found');
+            }
 
             const promotedStudents = [];
             const errors = [];
 
             for (const studentRequestedId of studentIds) {
                 try {
+                    logger.info({ studentRequestedId }, 'Processing student');
+
                     let student = await tx.student.findFirst({
                         where: { userId: studentRequestedId },
                         include: {
@@ -354,11 +363,13 @@ async function promoteStudents(req, res) {
                     }
 
                     if (!student) {
+                        logger.warn({ studentRequestedId }, 'Student not found');
                         errors.push({ studentId: studentRequestedId, error: 'Student not found' });
                         continue;
                     }
 
                     if (!student.currentEnrollment) {
+                        logger.warn({ studentId: student.id, studentName: student.user.name }, 'No active enrollment');
                         errors.push({
                             studentId: student.id,
                             studentName: student.user.name,
@@ -367,7 +378,8 @@ async function promoteStudents(req, res) {
                         continue;
                     }
 
-                    if (student.currentEnrollment.classRoomId === newClassRoomId) {
+                    if (student.currentEnrollment.classRoomId === targetClassRoomId) {
+                        logger.info({ studentId: student.id, studentName: student.user.name }, 'Already in target class');
                         errors.push({
                             studentId: student.id,
                             studentName: student.user.name,
@@ -377,6 +389,7 @@ async function promoteStudents(req, res) {
                     }
 
                     const oldRollNumber = student.currentEnrollment.rollNumber;
+                    logger.info({ studentId: student.id, oldRollNumber }, 'Updating old enrollment');
 
                     await tx.enrollment.update({
                         where: { id: student.currentEnrollment.id },
@@ -387,17 +400,18 @@ async function promoteStudents(req, res) {
                         },
                     });
 
-                    const newRollNumber = await generateRollNumber(newClassRoomId, tx);
+                    const newRollNumber = await generateRollNumber(targetClassRoomId, tx);
                     const rollNumberInt = Number(newRollNumber);
 
                     if (isNaN(rollNumberInt) || rollNumberInt <= 0) {
                         throw new Error(`Invalid roll number generated: ${newRollNumber}`);
                     }
 
+                    logger.info({ studentId: student.id, newRollNumber: rollNumberInt }, 'Creating new enrollment');
                     const newEnrollment = await tx.enrollment.create({
                         data: {
                             studentId: student.id,
-                            classRoomId: newClassRoomId,
+                            classRoomId: targetClassRoomId,
                             rollNumber: rollNumberInt,
                             isCurrent: true,
                             startDate: new Date(),
@@ -417,7 +431,10 @@ async function promoteStudents(req, res) {
                         oldRollNumber,
                         newRollNumber: rollNumberInt,
                     });
+
+                    logger.info({ studentId: student.id, fromClass: student.currentEnrollment.classRoom.name, toClass: newClassRoom.name }, 'Student promoted successfully');
                 } catch (err) {
+                    logger.error({ studentId: studentRequestedId, err }, 'Error promoting student');
                     errors.push({ studentId: studentRequestedId, error: err.message });
                 }
             }
@@ -426,10 +443,10 @@ async function promoteStudents(req, res) {
         });
 
         logger.info({
-            newClassRoomId,
-            promoted: results.promotedStudents.length,
-            errors: results.errors.length,
-        }, 'Student promotion completed');
+            targetClassRoomId,
+            promotedCount: results.promotedStudents.length,
+            errorsCount: results.errors.length,
+        }, 'Student promotion transaction completed');
 
         return res.json({
             message: `Successfully promoted ${results.promotedStudents.length} student(s)`,

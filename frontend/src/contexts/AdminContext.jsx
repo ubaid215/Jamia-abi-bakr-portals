@@ -724,19 +724,28 @@ export const AdminProvider = ({ children }) => {
     }
   }, []);
 
-  const promoteStudents = useCallback(async (promotionData) => {
-    setLoading(true);
-    try {
-      const result = await adminService.promoteStudents(promotionData);
-      await fetchStudents();
-      return result;
-    } catch (error) {
-      setError(error.response?.data?.message || "Failed to promote students");
-      throw error;
-    } finally {
-      setLoading(false);
-    }
-  }, [fetchStudents]);
+const promoteStudents = useCallback(async (promotionData) => {
+  setLoading(true);
+  try {
+    // Ensure we use the correct field names that the backend expects
+    const formattedData = {
+      studentIds: promotionData.studentIds.map(id => String(id)),
+      targetClassRoomId: promotionData.targetClassRoomId,  // ← CHANGE: use targetClassRoomId
+      reason: promotionData.reason || undefined
+    };
+    
+    console.log('Sending promotion request:', formattedData);
+    const result = await adminService.promoteStudents(formattedData);
+    await fetchStudents(); // Refresh student list
+    return result;
+  } catch (error) {
+    console.error('Promote students error:', error);
+    setError(error.response?.data?.error || "Failed to promote students");
+    throw error;
+  } finally {
+    setLoading(false);
+  }
+}, [fetchStudents]);
 
   const getAtRiskStudents = useCallback(async (params = {}) => {
   setLoading(true);

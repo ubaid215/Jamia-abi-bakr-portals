@@ -38,22 +38,49 @@ function generateStrongPassword(length = 12) {
 // -------------------------------
 // 📧 Generate Email (for staff/admins etc.)
 // -------------------------------
-async function generateEmail(name, domain = 'khanqahsaifia.com') {
-  const baseEmail = name
+async function generateEmail(name, role = "teacher", domain = "khanqahsaifia.com") {
+  // ✅ Step 1: Clean & split name
+  let parts = name
     .toLowerCase()
-    .replace(/[^a-z0-9\s]/g, '')
+    .replace(/[^a-z0-9\s]/g, "")
     .trim()
-    .replace(/\s+/g, '.');
+    .split(/\s+/);
 
-  let email = `${baseEmail}@${domain}`;
+  // ✅ Step 2: Keep only first 2 meaningful parts
+  // (avoids long ugly emails)
+  let base = parts.slice(0, 2).join(".");
+
+  // Fallback if name is weird
+  if (!base) base = "user";
+
+  // ✅ Step 3: Construct base email
+  let email = `${base}.${role}@${domain}`;
+
+  // ✅ Step 4: Check existence
+  const exists = await prisma.user.findUnique({
+    where: { email },
+  });
+
+  if (!exists) return email;
+
+  // ✅ Step 5: Add short unique suffix ONLY if needed
   let counter = 1;
 
-  while (await prisma.user.findUnique({ where: { email } })) {
-    email = `${baseEmail}${counter}@${domain}`;
+  while (counter <= 5) {
+    const newEmail = `${base}.${role}.${counter}@${domain}`;
+
+    const existsFallback = await prisma.user.findUnique({
+      where: { email: newEmail },
+    });
+
+    if (!existsFallback) return newEmail;
+
     counter++;
   }
 
-  return email;
+  // ✅ Step 6: Final fallback (rare)
+  const random = Date.now().toString().slice(-4);
+  return `${base}.${role}.${random}@${domain}`;
 }
 
 // -------------------------------

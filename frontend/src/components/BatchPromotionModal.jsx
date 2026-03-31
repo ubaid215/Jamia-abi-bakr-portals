@@ -1,11 +1,23 @@
 /* eslint-disable no-unused-vars */
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useCallback } from 'react';
 import { X, TrendingUp, AlertCircle, CheckCircle, XCircle, Users, BookOpen, Loader2 } from 'lucide-react';
 import { useAdmin } from '../contexts/AdminContext';
 import { toast } from 'react-hot-toast';
 
+// Debounce hook
+const useDebounce = (value, delay) => {
+  const [debouncedValue, setDebouncedValue] = useState(value);
+  useEffect(() => {
+    const handler = setTimeout(() => setDebouncedValue(value), delay);
+    return () => clearTimeout(handler);
+  }, [value, delay]);
+  return debouncedValue;
+};
+
 const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) => {
-  const { promoteStudents, fetchClasses, loading } = useAdmin();
+  const { promoteStudents, fetchClasses, loading: adminLoading } = useAdmin();
+  
+  // All hooks must be called unconditionally at the top level
   const [classes, setClasses] = useState([]);
   const [classesLoading, setClassesLoading] = useState(false);
   const [formData, setFormData] = useState({
@@ -15,43 +27,74 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
   const [result, setResult] = useState(null);
   const [promotionLoading, setPromotionLoading] = useState(false);
 
-  useEffect(() => {
-    if (isOpen) {
-      loadClasses();
-      setResult(null);
-      setFormData({ newClassRoomId: '', reason: '' });
-    }
-  }, [isOpen]);
+  // Debounced form data
+  const debouncedReason = useDebounce(formData.reason, 300);
 
-  const loadClasses = async () => {
+  // Helper functions as useCallback (must be before conditional returns)
+  const getStudentId = useCallback((student) => {
+    // Try different possible locations for student ID
+    if (student?.studentProfile?.id) {
+      return student.studentProfile.id;
+    }
+    if (student?.id && !student?.user) {
+      return student.id;
+    }
+    if (student?.user?.id) {
+      return student.user.id;
+    }
+    if (student?.id) {
+      return student.id;
+    }
+    console.warn('Could not extract student ID from:', student);
+    return null;
+  }, []);
+
+  const getStudentName = useCallback((student) => {
+    return student?.user?.name || student?.name || 'Unknown Student';
+  }, []);
+
+  const getCurrentClass = useCallback((student) => {
+    return student?.currentEnrollment?.classRoom?.name || 
+           student?.studentProfile?.currentEnrollment?.classRoom?.name || 
+           'No class';
+  }, []);
+
+  const getRollNumber = useCallback((student) => {
+    return student?.currentEnrollment?.rollNumber || 
+           student?.studentProfile?.currentEnrollment?.rollNumber || 
+           'N/A';
+  }, []);
+
+  // Memoize student IDs
+  const studentIds = useMemo(() => {
+    if (!selectedStudents || !Array.isArray(selectedStudents)) return [];
+    return selectedStudents
+      .map(getStudentId)
+      .filter(id => id !== null);
+  }, [selectedStudents, getStudentId]);
+
+  // Memoize selected students list for display
+  const selectedStudentsList = useMemo(() => {
+    return selectedStudents || [];
+  }, [selectedStudents]);
+
+  const loadClasses = useCallback(async () => {
     try {
       setClassesLoading(true);
       const data = await fetchClasses();
       
-      // Handle different response structures
       let classesArray = [];
-      
       if (Array.isArray(data)) {
         classesArray = data;
       } else if (data && typeof data === 'object') {
-        if (data.classes && Array.isArray(data.classes)) {
-          classesArray = data.classes;
-        } else if (data.data && Array.isArray(data.data)) {
-          classesArray = data.data;
-        } else if (data.items && Array.isArray(data.items)) {
-          classesArray = data.items;
-        } else {
-          classesArray = Object.values(data);
-        }
+        if (data.classes && Array.isArray(data.classes)) classesArray = data.classes;
+        else if (data.data && Array.isArray(data.data)) classesArray = data.data;
+        else if (data.items && Array.isArray(data.items)) classesArray = data.items;
+        else classesArray = Object.values(data).filter(v => v && typeof v === 'object' && v.id);
       }
       
-      // Filter out non-array items and ensure we have valid data
-      classesArray = classesArray.filter(item => 
-        item && typeof item === 'object' && item.id !== undefined
-      );
-      
+      classesArray = classesArray.filter(item => item && typeof item === 'object' && item.id);
       setClasses(classesArray);
-      
     } catch (error) {
       console.error('Error loading classes:', error);
       toast.error('Failed to load classes');
@@ -59,98 +102,99 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
     } finally {
       setClassesLoading(false);
     }
-  };
+  }, [fetchClasses]);
 
-  const handleSubmit = async (e) => {
+  const handleSubmit = useCallback(async (e) => {
     e.preventDefault();
     
     if (!formData.newClassRoomId) {
-      toast.error('Please select a class');
-      return;
+        toast.error('Please select a class');
+        return;
     }
 
-    if (selectedStudents.length === 0) {
-      toast.error('No students selected');
-      return;
+    if (studentIds.length === 0) {
+        toast.error('No valid students selected');
+        return;
     }
 
     try {
-      setPromotionLoading(true);
-      
-      // Extract student IDs from selected students
-      // Get studentProfile.id first, then fall back to user.id
-      const studentIds = selectedStudents.map(student => {
-        console.log('Student data:', student); // Debug log
+        setPromotionLoading(true);
         
-        // Try to get student ID from different possible locations
-        if (student.studentProfile?.id) {
-          return student.studentProfile.id;
+        console.log('Promoting students with IDs:', studentIds);
+        console.log('Target class:', formData.newClassRoomId);
+        
+        const promotionResult = await promoteStudents({
+            studentIds: studentIds,
+            targetClassRoomId: formData.newClassRoomId,  // ← CHANGE: use targetClassRoomId instead of newClassRoomId
+            reason: formData.reason || undefined
+        });
+        
+        console.log('Promotion result:', promotionResult);
+        setResult(promotionResult);
+        
+        if (promotionResult.summary?.successful > 0) {
+            toast.success(`Successfully promoted ${promotionResult.summary.successful} student(s)`);
+            if (onSuccess) onSuccess();
         }
-        if (student.id && student.user) {
-          // This is likely a user ID, we need to convert it
-          return student.id; // Let the backend handle user ID to student ID conversion
+        
+        if (promotionResult.summary?.failed > 0) {
+            toast.error(`Failed to promote ${promotionResult.summary.failed} student(s)`);
         }
-        return student.id;
-      });
-
-      console.log('Promoting students with IDs:', studentIds);
-
-      const promotionResult = await promoteStudents({
-        studentIds: studentIds,
-        newClassRoomId: formData.newClassRoomId,
-        reason: formData.reason || undefined
-      });
-      
-      setResult(promotionResult);
-      
-      if (promotionResult.summary?.successful > 0) {
-        toast.success(`Successfully promoted ${promotionResult.summary.successful} student(s)`);
-        if (onSuccess) onSuccess();
-      }
-      
-      if (promotionResult.summary?.failed > 0) {
-        toast.error(`Failed to promote ${promotionResult.summary.failed} student(s)`);
-      }
     } catch (error) {
-      console.error('Promotion error:', error);
-      toast.error(error.message || 'Failed to promote students');
+        console.error('Promotion error:', error);
+        
+        if (error.response) {
+            console.error('Error response data:', error.response.data);
+            console.error('Error response status:', error.response.status);
+            
+            const errorMessage = error.response.data?.error || 
+                               error.response.data?.message || 
+                               error.message || 
+                               'Failed to promote students';
+            toast.error(errorMessage);
+            
+            if (error.response.data?.details) {
+                console.error('Error details:', error.response.data.details);
+            }
+        } else {
+            toast.error(error.message || 'Failed to promote students');
+        }
     } finally {
-      setPromotionLoading(false);
+        setPromotionLoading(false);
     }
-  };
+}, [formData.newClassRoomId, formData.reason, studentIds, promoteStudents, onSuccess]);
 
-  const handleClose = () => {
+  const handleClose = useCallback(() => {
     setFormData({ newClassRoomId: '', reason: '' });
     setResult(null);
     onClose();
-  };
+  }, [onClose]);
 
+  const handleClassChange = useCallback((e) => {
+    setFormData(prev => ({ ...prev, newClassRoomId: e.target.value }));
+  }, []);
+
+  const handleReasonChange = useCallback((e) => {
+    setFormData(prev => ({ ...prev, reason: e.target.value }));
+  }, []);
+
+  // Effects - must be called unconditionally
+  useEffect(() => {
+    if (isOpen) {
+      loadClasses();
+      setResult(null);
+      setFormData({ newClassRoomId: '', reason: '' });
+    }
+  }, [isOpen, loadClasses]);
+
+  // Return null early but after all hooks
   if (!isOpen) return null;
-
-  // Helper function to get student display name
-  const getStudentName = (student) => {
-    return student.user?.name || student.name || 'Unknown Student';
-  };
-
-  // Helper function to get current class
-  const getCurrentClass = (student) => {
-    return student.currentEnrollment?.classRoom?.name || 
-           student.studentProfile?.currentEnrollment?.classRoom?.name || 
-           'No class';
-  };
-
-  // Helper function to get roll number
-  const getRollNumber = (student) => {
-    return student.currentEnrollment?.rollNumber || 
-           student.studentProfile?.currentEnrollment?.rollNumber || 
-           'N/A';
-  };
 
   return (
     <div className="fixed inset-0 bg-black/50 flex items-center justify-center p-4 z-50">
       <div className="bg-white rounded-2xl w-full max-w-2xl max-h-[90vh] overflow-y-auto shadow-xl border border-gray-200">
         {/* Header */}
-        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7] rounded-t-2xl">
+        <div className="p-6 border-b border-gray-200 bg-gradient-to-r from-[#FFFBEB] to-[#FEF3C7] rounded-t-2xl sticky top-0 z-10">
           <div className="flex items-center justify-between">
             <div className="flex items-center space-x-3">
               <div className="p-2 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-lg">
@@ -159,7 +203,7 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
               <div>
                 <h2 className="text-xl font-bold text-[#92400E]">Batch Student Promotion</h2>
                 <p className="text-[#B45309] text-sm mt-0.5">
-                  Promote {selectedStudents.length} selected student(s)
+                  Promote {selectedStudentsList.length} selected student(s)
                 </p>
               </div>
             </div>
@@ -179,13 +223,13 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
               <div className="flex items-center justify-between mb-3">
                 <label className="flex items-center text-sm font-medium text-gray-700">
                   <Users className="h-4 w-4 mr-2 text-[#B45309]" />
-                  Selected Students ({selectedStudents.length})
+                  Selected Students ({selectedStudentsList.length})
                 </label>
                 <span className="text-xs text-gray-500">Scroll to view all</span>
               </div>
               <div className="max-h-40 overflow-y-auto border border-gray-200 rounded-xl p-4 space-y-3 bg-gray-50">
-                {selectedStudents.map((student, index) => (
-                  <div key={student.id || index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-[#FDE68A] transition-colors">
+                {selectedStudentsList.map((student, index) => (
+                  <div key={student?.id || index} className="flex items-center justify-between p-3 bg-white rounded-lg border border-gray-100 shadow-sm hover:border-[#FDE68A] transition-colors">
                     <div className="flex items-center space-x-3">
                       <div className="w-8 h-8 bg-gradient-to-r from-[#F59E0B] to-[#D97706] rounded-full flex items-center justify-center text-white text-xs font-semibold">
                         {getStudentName(student).charAt(0).toUpperCase()}
@@ -195,8 +239,13 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
                           {getStudentName(student)}
                         </div>
                         <div className="text-xs text-gray-500">
-                          {student.user?.email || student.email || 'No email'}
+                          ID: {getStudentId(student) || 'N/A'}
                         </div>
+                        {student?.user?.email && (
+                          <div className="text-xs text-gray-400">
+                            {student.user.email}
+                          </div>
+                        )}
                       </div>
                     </div>
                     <div className="text-right">
@@ -228,14 +277,14 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
                   <select
                     required
                     value={formData.newClassRoomId}
-                    onChange={(e) => setFormData({ ...formData, newClassRoomId: e.target.value })}
+                    onChange={handleClassChange}
                     disabled={classes.length === 0}
                     className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-gray-700 bg-white hover:border-[#D97706] transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
                   >
                     <option value="" className="text-gray-400">
                       {classes.length === 0 ? 'No classes available' : 'Select target class for promotion'}
                     </option>
-                    {Array.isArray(classes) && classes.map(cls => (
+                    {classes.map(cls => (
                       <option key={cls.id} value={cls.id} className="text-gray-700">
                         {cls.name || 'Unnamed Class'} 
                         {cls.grade && ` - Grade ${cls.grade}`}
@@ -245,7 +294,7 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
                   </select>
                   {classes.length === 0 && !classesLoading && (
                     <p className="text-sm text-red-600 mt-1">
-                      No classes available. Please create classes first or check API response.
+                      No classes available. Please create classes first.
                     </p>
                   )}
                   <p className="text-xs text-gray-500 mt-1">
@@ -263,7 +312,7 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
               </label>
               <textarea
                 value={formData.reason}
-                onChange={(e) => setFormData({ ...formData, reason: e.target.value })}
+                onChange={handleReasonChange}
                 rows="3"
                 placeholder="e.g., Annual Promotion - Academic Year 2025-2026, Semester Promotion, etc."
                 className="w-full px-4 py-3 border border-gray-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-[#F59E0B] focus:border-transparent text-gray-700 bg-white hover:border-[#D97706] transition-colors resize-none"
@@ -284,7 +333,7 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
               </button>
               <button
                 type="submit"
-                disabled={promotionLoading || classesLoading || classes.length === 0 || selectedStudents.length === 0}
+                disabled={promotionLoading || classesLoading || classes.length === 0 || studentIds.length === 0}
                 className="flex-1 px-4 py-3 bg-gradient-to-r from-[#F59E0B] to-[#D97706] text-white rounded-xl hover:from-[#D97706] hover:to-[#B45309] disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 font-medium shadow-sm hover:shadow-md flex items-center justify-center"
               >
                 {promotionLoading ? (
@@ -340,8 +389,13 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
                         </div>
                         <div className="text-right">
                           <div className="px-3 py-1 bg-green-200 text-green-900 text-xs rounded-full font-medium">
-                            Roll #{student.rollNumber || 'N/A'}
+                            Roll #{student.newRollNumber || 'N/A'}
                           </div>
+                          {student.oldRollNumber && (
+                            <div className="text-xs text-green-600 mt-1">
+                              Old: #{student.oldRollNumber}
+                            </div>
+                          )}
                         </div>
                       </div>
                     </div>
@@ -384,4 +438,4 @@ const BatchPromotionModal = ({ isOpen, onClose, selectedStudents, onSuccess }) =
   );
 };
 
-export default BatchPromotionModal;
+export default React.memo(BatchPromotionModal);

@@ -98,10 +98,11 @@ const adminService = {
   },
 
   // Batch promote students
-  promoteStudents: async (promotionData) => {
-    const response = await api.post('/admin/students/promote', promotionData);
-    return response.data;
-  },
+ promoteStudents: async (promotionData) => {
+  console.log('Sending to API:', promotionData);
+  const response = await api.post('/admin/students/promote', promotionData);
+  return response.data;
+},
 
   registerStudent: async (studentData) => {
     const response = await api.post('/enrollment/students', studentData);
