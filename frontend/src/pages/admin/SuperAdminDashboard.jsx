@@ -1,5 +1,8 @@
-import React, { useEffect, useState, useCallback, useMemo } from 'react';
+/* eslint-disable no-unused-vars */
+// SuperAdminDashboard.js - Fixed version
+import React, { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useAdmin } from '../../contexts/AdminContext';
+import debounce from 'lodash/debounce';
 
 // Dashboard sections
 import ExecutiveSummary from './dashboard/ExecutiveSummary';
@@ -14,6 +17,24 @@ import {
   TimelineSkeleton,
 } from './dashboard/SkeletonWidgets';
 
+// Simple in-memory cache (optional - you can disable initially)
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+const cache = new Map();
+
+const getCachedData = (key) => {
+  const cached = cache.get(key);
+  if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+    console.log(`Using cached data for: ${key}`);
+    return cached.data;
+  }
+  return null;
+};
+
+const setCachedData = (key, data) => {
+  cache.set(key, { data, timestamp: Date.now() });
+  console.log(`Cached data for: ${key}`);
+};
+
 const SuperAdminDashboard = () => {
   const {
     fetchSystemStats,
@@ -26,8 +47,7 @@ const SuperAdminDashboard = () => {
     attendanceOverview,
     attendanceTrends,
     classAttendanceComparison,
-    // eslint-disable-next-line no-unused-vars
-    loading,
+    loading: contextLoading, // Use context loading state
   } = useAdmin();
 
   const [trendDays, setTrendDays] = useState(30);
@@ -37,74 +57,126 @@ const SuperAdminDashboard = () => {
     trends: false,
     comparison: false,
   });
+  
+  const initialLoadDone = useRef(false);
+  const mounted = useRef(true);
 
-  // ─── Data Fetching ──────────────────────────────────────
+  // Memoized date helpers
+  const todayString = useMemo(() => {
+    return new Date().toISOString().split('T')[0];
+  }, []);
+
+  const getDateDaysAgo = useCallback((days) => {
+    const d = new Date();
+    d.setDate(d.getDate() - days);
+    return d.toISOString().split('T')[0];
+  }, []);
+
+  // Load core data without caching first (let's get it working)
   const loadCoreData = useCallback(async () => {
+    if (!mounted.current) return;
+    
+    console.log('Loading core data...');
+    
     try {
+      // Skip cache for now to ensure data loads
       const results = await Promise.allSettled([
         fetchSystemStats(),
         fetchAdmins(),
         fetchAttendanceOverview({
           startDate: getDateDaysAgo(30),
-          endDate: todayString(),
+          endDate: todayString,
         }),
       ]);
 
-      setDataLoaded((prev) => ({
-        ...prev,
-        stats: results[0].status === 'fulfilled',
-        attendance: results[2].status === 'fulfilled',
-      }));
+      console.log('Core data results:', results.map(r => r.status));
+      
+      if (mounted.current) {
+        setDataLoaded(prev => ({
+          ...prev,
+          stats: results[0].status === 'fulfilled',
+          attendance: results[2].status === 'fulfilled',
+        }));
+      }
     } catch (err) {
       console.error('Dashboard core data load failed:', err);
     }
-  }, [fetchSystemStats, fetchAdmins, fetchAttendanceOverview]);
+  }, [fetchSystemStats, fetchAdmins, fetchAttendanceOverview, getDateDaysAgo, todayString]);
 
+  // Load chart data
   const loadChartData = useCallback(async () => {
+    if (!mounted.current) return;
+    
+    console.log('Loading chart data for days:', trendDays);
+    
     try {
       const results = await Promise.allSettled([
         fetchAttendanceTrends({ days: trendDays }),
         fetchClassAttendanceComparison({
           startDate: getDateDaysAgo(30),
-          endDate: todayString(),
+          endDate: todayString,
         }),
       ]);
 
-      setDataLoaded((prev) => ({
-        ...prev,
-        trends: results[0].status === 'fulfilled',
-        comparison: results[1].status === 'fulfilled',
-      }));
+      console.log('Chart data results:', results.map(r => r.status));
+      
+      if (mounted.current) {
+        setDataLoaded(prev => ({
+          ...prev,
+          trends: results[0].status === 'fulfilled',
+          comparison: results[1].status === 'fulfilled',
+        }));
+      }
     } catch (err) {
       console.error('Dashboard chart data load failed:', err);
     }
-  }, [fetchAttendanceTrends, fetchClassAttendanceComparison, trendDays]);
+  }, [fetchAttendanceTrends, fetchClassAttendanceComparison, getDateDaysAgo, todayString, trendDays]);
 
   // Load core data on mount
   useEffect(() => {
-    loadCoreData();
-  }, []);
+    if (!initialLoadDone.current) {
+      loadCoreData();
+      loadChartData(); // Also load chart data initially
+      initialLoadDone.current = true;
+    }
+    
+    return () => {
+      mounted.current = false;
+    };
+  }, [loadCoreData, loadChartData]);
 
-  // Load chart data on mount and when trend days change
+  // Reload chart data when trend days change
   useEffect(() => {
-    loadChartData();
-  }, [trendDays]);
+    if (initialLoadDone.current) {
+      loadChartData();
+    }
+  }, [trendDays, loadChartData]);
 
   const handleDaysChange = useCallback((days) => {
+    console.log('Trend days changed to:', days);
     setTrendDays(days);
   }, []);
 
-  // Extract recent activities from stats
+  // Memoized recent activities
   const recentActivities = useMemo(
     () => stats?.recentActivities || [],
     [stats]
   );
 
-  // ─── Render ─────────────────────────────────────────────
+  // Debug logging
+  useEffect(() => {
+    console.log('Stats data:', stats);
+    console.log('Attendance overview:', attendanceOverview);
+    console.log('Data loaded state:', dataLoaded);
+  }, [stats, attendanceOverview, dataLoaded]);
+
+  // Check if data is loading
+  const isLoading = contextLoading || (!dataLoaded.stats && !stats);
+
   return (
     <div className="space-y-6 pb-8">
       {/* 1. Executive Summary KPI Bar */}
-      {!dataLoaded.stats && !stats ? (
+      {isLoading && !stats ? (
         <KPISkeleton />
       ) : (
         <ExecutiveSummary
@@ -170,15 +242,4 @@ const SuperAdminDashboard = () => {
   );
 };
 
-// ─── Helpers ──────────────────────────────────────────────
-function todayString() {
-  return new Date().toISOString().split('T')[0];
-}
-
-function getDateDaysAgo(days) {
-  const d = new Date();
-  d.setDate(d.getDate() - days);
-  return d.toISOString().split('T')[0];
-}
-
-export default SuperAdminDashboard;
+export default React.memo(SuperAdminDashboard);

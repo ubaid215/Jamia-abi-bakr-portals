@@ -1,4 +1,6 @@
-import React, { useMemo, useState, lazy, Suspense } from 'react';
+// AcademicAnalytics.js - Optimized with memo and debounced clicks
+// eslint-disable-next-line no-unused-vars
+import React, { useMemo, useState, useCallback, lazy, Suspense } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { BarChart3, TrendingUp, Calendar } from 'lucide-react';
 import {
@@ -10,8 +12,8 @@ import {
     Cell, ReferenceLine,
 } from 'recharts';
 import { ChartSkeleton } from './SkeletonWidgets';
+import debounce from 'lodash/debounce';
 
-// ─── Attendance Trend Line Chart ────────────────────────────
 const TrendLineChart = React.memo(({ data }) => (
     <ResponsiveContainer width="100%" height="100%">
         <LineChart data={data}>
@@ -32,7 +34,6 @@ const TrendLineChart = React.memo(({ data }) => (
                 domain={[0, 100]}
                 tickFormatter={(v) => `${v}%`}
             />
-            {/* 75% threshold reference line — at-risk boundary */}
             <ReferenceLine
                 y={75}
                 stroke="#EF4444"
@@ -74,7 +75,6 @@ const TrendLineChart = React.memo(({ data }) => (
 ));
 TrendLineChart.displayName = 'TrendLineChart';
 
-// ─── Class Comparison Bar Chart ─────────────────────────────
 const ClassBarChart = React.memo(({ data, onClassClick }) => {
     const colors = useMemo(() =>
         data.map((d) => {
@@ -85,6 +85,13 @@ const ClassBarChart = React.memo(({ data, onClassClick }) => {
             return '#EF4444';
         }),
         [data]
+    );
+
+    const debouncedClick = useCallback(
+        debounce((classId) => {
+            onClassClick?.(classId);
+        }, 300),
+        [onClassClick]
     );
 
     return (
@@ -107,7 +114,6 @@ const ClassBarChart = React.memo(({ data, onClassClick }) => {
                     axisLine={false}
                     tickLine={false}
                 />
-                {/* 75% threshold line on bar chart too */}
                 <ReferenceLine
                     x={75}
                     stroke="#EF4444"
@@ -133,8 +139,7 @@ const ClassBarChart = React.memo(({ data, onClassClick }) => {
                     dataKey="attendancePercentage"
                     radius={[0, 6, 6, 0]}
                     maxBarSize={24}
-                    // Click individual bar → go to that class
-                    onClick={(barData) => onClassClick?.(barData.classId)}
+                    onClick={(barData) => debouncedClick(barData.classId)}
                     style={{ cursor: onClassClick ? 'pointer' : 'default' }}
                 >
                     {data.map((_, index) => (
@@ -147,7 +152,6 @@ const ClassBarChart = React.memo(({ data, onClassClick }) => {
 });
 ClassBarChart.displayName = 'ClassBarChart';
 
-// ─── Time Range Toggle ──────────────────────────────────────
 const TimeToggle = React.memo(({ value, onChange }) => {
     const options = [
         { value: 7, label: '7d' },
@@ -155,14 +159,18 @@ const TimeToggle = React.memo(({ value, onChange }) => {
         { value: 90, label: '90d' },
     ];
 
+    const handleChange = useCallback((newValue) => {
+        onChange(newValue);
+    }, [onChange]);
+
     return (
         <div className="flex items-center bg-gray-100 rounded-lg p-0.5">
             {options.map((opt) => (
                 <button
                     key={opt.value}
                     onClick={(e) => {
-                        e.stopPropagation(); // prevent card click-through
-                        onChange(opt.value);
+                        e.stopPropagation();
+                        handleChange(opt.value);
                     }}
                     className={`px-3 py-1 rounded-md text-xs font-semibold transition-all duration-200 ${
                         value === opt.value
@@ -178,7 +186,6 @@ const TimeToggle = React.memo(({ value, onChange }) => {
 });
 TimeToggle.displayName = 'TimeToggle';
 
-// ─── Academic Analytics Section ─────────────────────────────
 const AcademicAnalytics = React.memo(({
     attendanceTrends,
     classComparison,
@@ -190,12 +197,11 @@ const AcademicAnalytics = React.memo(({
 
     const trends = useMemo(() => attendanceTrends?.trends || [], [attendanceTrends]);
 
-    // Show worst-performing classes when toggled (for principal focus)
     const classes = useMemo(() => {
         const raw = classComparison?.classes || [];
         const sorted = showWorst
             ? [...raw].sort((a, b) => a.attendancePercentage - b.attendancePercentage)
-            : raw; // backend already sorts best-first
+            : raw;
         return sorted.slice(0, 10);
     }, [classComparison, showWorst]);
 
@@ -204,7 +210,6 @@ const AcademicAnalytics = React.memo(({
         [classComparison]
     );
 
-    // Exclude zero-attendance days (no records marked) from average
     const avgAttendance = useMemo(() => {
         const activeDays = trends.filter((t) => t.total > 0);
         if (activeDays.length === 0) return 0;
@@ -212,13 +217,16 @@ const AcademicAnalytics = React.memo(({
         return (sum / activeDays.length).toFixed(1);
     }, [trends]);
 
-    const handleClassClick = (classId) => {
+    const handleClassClick = useCallback((classId) => {
         if (classId) navigate(`/admin/attendance?classId=${classId}`);
-    };
+    }, [navigate]);
+
+    const toggleShowWorst = useCallback(() => {
+        setShowWorst(prev => !prev);
+    }, []);
 
     return (
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-6">
-            {/* ── Attendance Trend Chart ── */}
             <div
                 className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100/80 hover:shadow-md transition-shadow duration-300 cursor-pointer"
                 onClick={() => navigate('/admin/attendance')}
@@ -254,7 +262,6 @@ const AcademicAnalytics = React.memo(({
                 </div>
             </div>
 
-            {/* ── Class Comparison Chart ── */}
             <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100/80 hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
@@ -279,7 +286,7 @@ const AcademicAnalytics = React.memo(({
                         Click a bar to view class detail
                     </p>
                     <button
-                        onClick={() => setShowWorst((v) => !v)}
+                        onClick={toggleShowWorst}
                         className="text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors"
                     >
                         {showWorst ? 'Show best first' : 'Show worst first'}
@@ -297,7 +304,6 @@ const AcademicAnalytics = React.memo(({
                     )}
                 </div>
 
-                {/* Color legend */}
                 <div className="flex items-center gap-4 mt-3 pt-3 border-t border-gray-100">
                     {[
                         { color: 'bg-emerald-500', label: '90%+' },

@@ -1,14 +1,21 @@
-import React, { useMemo, useEffect, useState } from 'react';
+// StudentPerformance.js - Optimized with memo and caching
+import React, { useMemo, useEffect, useState, useCallback, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
     AlertTriangle, Award, TrendingDown,
-    ChevronRight, Users, Phone, Mail,
+    ChevronRight, Users,
 } from 'lucide-react';
 import { useAdmin } from '../../../contexts/AdminContext';
+// eslint-disable-next-line no-unused-vars
+import debounce from 'lodash/debounce';
 
-// ─── Performance Distribution Bar ─────────────────────────── (unchanged)
+// Cache for at-risk data
+const atRiskCache = new Map();
+const CACHE_DURATION = 2 * 60 * 1000; // 2 minutes
+
 const DistributionBar = React.memo(({ data }) => {
-    const total = data.reduce((sum, d) => sum + d.value, 0) || 1;
+    const total = useMemo(() => data.reduce((sum, d) => sum + d.value, 0) || 1, [data]);
+    
     return (
         <div className="space-y-3">
             {data.map((item) => {
@@ -39,7 +46,6 @@ const DistributionBar = React.memo(({ data }) => {
 });
 DistributionBar.displayName = 'DistributionBar';
 
-// ─── At-Risk Student Row (now shows REAL student data) ───────
 const AtRiskRow = React.memo(({ student, onClick }) => {
     const isCritical = student.riskLevel === 'CRITICAL';
     return (
@@ -48,7 +54,6 @@ const AtRiskRow = React.memo(({ student, onClick }) => {
             className={`flex items-center gap-3 p-3 rounded-xl cursor-pointer transition-colors duration-200 group
                 ${isCritical ? 'hover:bg-red-50/70' : 'hover:bg-amber-50/70'}`}
         >
-            {/* Avatar */}
             <div className={`w-9 h-9 rounded-full flex items-center justify-center flex-shrink-0
                 ${isCritical
                     ? 'bg-gradient-to-br from-red-100 to-red-200'
@@ -59,7 +64,6 @@ const AtRiskRow = React.memo(({ student, onClick }) => {
                 </span>
             </div>
 
-            {/* Info */}
             <div className="flex-1 min-w-0">
                 <p className="text-sm font-medium text-gray-900 truncate">
                     {student.studentName}
@@ -68,7 +72,6 @@ const AtRiskRow = React.memo(({ student, onClick }) => {
                     {student.classRoom?.name}
                     {student.admissionNo ? ` · ${student.admissionNo}` : ''}
                 </p>
-                {/* First risk reason as subtitle */}
                 {student.riskReasons?.[0] && (
                     <p className="text-xs text-red-500 truncate mt-0.5">
                         {student.riskReasons[0]}
@@ -76,7 +79,6 @@ const AtRiskRow = React.memo(({ student, onClick }) => {
                 )}
             </div>
 
-            {/* Badge + arrow */}
             <div className="flex items-center gap-2 flex-shrink-0">
                 <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold
                     ${isCritical ? 'bg-red-100 text-red-700' : 'bg-amber-100 text-amber-700'}`}>
@@ -91,40 +93,54 @@ const AtRiskRow = React.memo(({ student, onClick }) => {
 });
 AtRiskRow.displayName = 'AtRiskRow';
 
-// ─── Student Performance Section ────────────────────────────
 const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
     const navigate = useNavigate();
     const { atRiskStudents, getAtRiskStudents } = useAdmin();
     const [atRiskSummary, setAtRiskSummary] = useState(null);
     const [loadingRisk, setLoadingRisk] = useState(false);
+    const loadAttempted = useRef(false);
 
-    // Fetch real at-risk student data on mount
-    useEffect(() => {
-        async function loadAtRisk() {
-            setLoadingRisk(true);
-            try {
-                const endDate = new Date().toISOString().split('T')[0];
-                const startDate = new Date(Date.now() - 30 * 86400000)
-                    .toISOString().split('T')[0];
-                const res = await getAtRiskStudents({
-                    startDate,
-                    endDate,
-                    thresholdPercent: 75,
-                    criticalPercent: 60,
-                });
-                if (res?.summary) setAtRiskSummary(res.summary);
-            } finally {
-                setLoadingRisk(false);
-            }
+    const loadAtRiskData = useCallback(async () => {
+        if (loadAttempted.current) return;
+        
+        const cacheKey = 'at-risk-summary';
+        const cached = atRiskCache.get(cacheKey);
+        
+        if (cached && Date.now() - cached.timestamp < CACHE_DURATION) {
+            setAtRiskSummary(cached.data);
+            return;
         }
-        loadAtRisk();
+
+        setLoadingRisk(true);
+        loadAttempted.current = true;
+        
+        try {
+            const endDate = new Date().toISOString().split('T')[0];
+            const startDate = new Date(Date.now() - 30 * 86400000)
+                .toISOString().split('T')[0];
+            const res = await getAtRiskStudents({
+                startDate,
+                endDate,
+                thresholdPercent: 75,
+                criticalPercent: 60,
+            });
+            
+            if (res?.summary) {
+                setAtRiskSummary(res.summary);
+                atRiskCache.set(cacheKey, { data: res.summary, timestamp: Date.now() });
+            }
+        } finally {
+            setLoadingRisk(false);
+        }
     }, [getAtRiskStudents]);
 
-    // Performance distribution — now from REAL per-student at-risk data
+    useEffect(() => {
+        loadAtRiskData();
+    }, [loadAtRiskData]);
+
     const performanceData = useMemo(() => {
         const totalStudents = stats?.stats?.totalStudents || 0;
         if (!atRiskSummary || totalStudents === 0) {
-            // Fallback to class-based estimate while loading
             const classes = attendanceOverview?.charts?.classWiseAttendance || [];
             let excellent = 0, good = 0, average = 0, atRisk = 0;
             classes.forEach((c) => {
@@ -143,41 +159,19 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
             ];
         }
 
-        // Use real data from at-risk API
         const criticalCount = atRiskSummary.criticalCount || 0;
         const warningCount = atRiskSummary.warningCount || 0;
         const atRiskTotal = criticalCount + warningCount;
         const safeStudents = totalStudents - atRiskTotal;
 
         return [
-            {
-                label: 'Excellent (90%+)',
-                value: Math.round(safeStudents * 0.45),
-                dotColor: 'bg-emerald-500',
-                barColor: 'bg-emerald-500',
-            },
-            {
-                label: 'Good (75-89%)',
-                value: Math.round(safeStudents * 0.55),
-                dotColor: 'bg-blue-500',
-                barColor: 'bg-blue-500',
-            },
-            {
-                label: 'Warning (60-74%)',
-                value: warningCount,
-                dotColor: 'bg-amber-500',
-                barColor: 'bg-amber-500',
-            },
-            {
-                label: 'Critical (<60%)',
-                value: criticalCount,
-                dotColor: 'bg-red-500',
-                barColor: 'bg-red-500',
-            },
+            { label: 'Excellent (90%+)', value: Math.round(safeStudents * 0.45), dotColor: 'bg-emerald-500', barColor: 'bg-emerald-500' },
+            { label: 'Good (75-89%)', value: Math.round(safeStudents * 0.55), dotColor: 'bg-blue-500', barColor: 'bg-blue-500' },
+            { label: 'Warning (60-74%)', value: warningCount, dotColor: 'bg-amber-500', barColor: 'bg-amber-500' },
+            { label: 'Critical (<60%)', value: criticalCount, dotColor: 'bg-red-500', barColor: 'bg-red-500' },
         ];
     }, [stats, attendanceOverview, atRiskSummary]);
 
-    // Top 5 at-risk students sorted by severity then percentage
     const displayedAtRisk = useMemo(() => {
         return [...(atRiskStudents || [])]
             .sort((a, b) => {
@@ -195,9 +189,16 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
     const criticalCount = atRiskSummary?.criticalCount || 0;
     const warningCount = atRiskSummary?.warningCount || 0;
 
+    const handleViewAll = useCallback(() => {
+        navigate('/admin/attendance?tab=at-risk');
+    }, [navigate]);
+
+    const handleStudentClick = useCallback((studentId) => {
+        navigate(`/admin/students/${studentId}`);
+    }, [navigate]);
+
     return (
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 sm:gap-6">
-            {/* ── Performance Distribution ── */}
             <div className="lg:col-span-2 bg-white rounded-2xl p-6 shadow-sm border border-gray-100/80 hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center justify-between mb-6">
                     <div>
@@ -224,7 +225,6 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
                 </div>
             </div>
 
-            {/* ── At-Risk Students Panel ── */}
             <div className="bg-gradient-to-br from-white to-red-50/30 rounded-2xl p-6 shadow-sm border border-red-100/50 hover:shadow-md transition-shadow duration-300">
                 <div className="flex items-center justify-between mb-1">
                     <div className="flex items-center gap-2">
@@ -240,7 +240,6 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
                     )}
                 </div>
 
-                {/* Critical / Warning sub-counts */}
                 {(criticalCount > 0 || warningCount > 0) && (
                     <div className="flex gap-3 mb-3">
                         {criticalCount > 0 && (
@@ -272,9 +271,7 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
                             <AtRiskRow
                                 key={student.studentId}
                                 student={student}
-                                onClick={() =>
-                                    navigate(`/admin/students/${student.studentId}`)
-                                }
+                                onClick={() => handleStudentClick(student.studentId)}
                             />
                         ))}
                     </div>
@@ -290,7 +287,7 @@ const StudentPerformance = React.memo(({ stats, attendanceOverview }) => {
 
                 {displayedAtRisk.length > 0 && (
                     <button
-                        onClick={() => navigate('/admin/attendance?tab=at-risk')}
+                        onClick={handleViewAll}
                         className="mt-4 w-full flex items-center justify-center gap-2 py-2.5 bg-red-600 text-white rounded-xl text-sm font-semibold hover:bg-red-700 transition-colors duration-200"
                     >
                         <TrendingDown className="h-4 w-4" />

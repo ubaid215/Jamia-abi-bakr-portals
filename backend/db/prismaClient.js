@@ -4,20 +4,7 @@ const logger = require("../utils/logger");
 const isDev = process.env.NODE_ENV !== "production";
 
 // ─── Supabase / PgBouncer pool strategy ───────────────────────────────────────
-//
-// Supabase gives you two connection strings:
-//
-//   DATABASE_URL  → port 6543, PgBouncer in transaction mode (pooled)
-//   DIRECT_URL    → port 5432, direct Postgres (used only for migrations)
-//
-// With PgBouncer in transaction mode:
-//   • Prisma must NOT use its own connection pool (set connection_limit=1)
-//   • PgBouncer manages the real pool on Supabase's side
-//   • This is what "pgbouncer=true" in the URL already signals to Prisma,
-//     but we enforce connection_limit=1 explicitly to be safe.
-//
-// Without PgBouncer (DIRECT_URL / local dev without pooler):
-//   • Use DB_POOL_SIZE (default 10, raise to 20–25 for dashboard load)
+
 //
 const usingPgBouncer =
   process.env.DATABASE_URL?.includes("pgbouncer=true") ||
