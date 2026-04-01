@@ -28,6 +28,7 @@ const pdfRoute = require('./routes/pdfRoute');
 const studentRoute = require('./routes/studentRoute');
 const hifzRoutes = require('./routes/hifzRoutes');
 const dailyReportRoutes = require('./routes/dailyReportRoutes');
+const health = require('./routes/health');
 
 // ── New modular routes (src/modules/*) ───────────────────────────────────────
 const apiRoutes = require('./routes/index');
@@ -174,6 +175,7 @@ app.use('/api/students', studentRoute);
 app.use('/api/pdf', pdfRoute);
 app.use('/api/hifz', hifzRoutes);
 app.use('/api/reports', dailyReportRoutes);
+app.use('/api', health);
 
 // New modular routes
 app.use('/api', apiRoutes);

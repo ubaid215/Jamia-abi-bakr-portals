@@ -10,7 +10,7 @@ const JWT_SECRET = config.JWT_SECRET;
 // Authentication middleware — optimized with Redis caching
 const authenticateToken = async (req, res, next) => {
   const authHeader = req.headers['authorization'];
-  const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+  const token = authHeader && authHeader.split(' ')[1];
 
   if (!token) {
     return res.status(401).json({ error: 'Access token required' });
@@ -19,12 +19,19 @@ const authenticateToken = async (req, res, next) => {
   try {
     const decoded = jwt.verify(token, JWT_SECRET);
 
-    // 1. Try Redis cache first (TTL: 5 minutes)
+    // Try Redis cache with fallback
     const cacheKey = `user:${decoded.userId}`;
-    let user = await cacheGet(cacheKey);
+    let user = null;
+    
+    try {
+      user = await cacheGet(cacheKey);
+    } catch (cacheError) {
+      // Log but don't fail - just skip cache
+      logger.warn('Redis cache error, falling back to DB:', cacheError.message);
+    }
 
     if (!user) {
-      // 2. Cache miss — fetch ONLY essential fields (no profile includes)
+      // Fetch from DB with SELECT only needed fields
       user = await prisma.user.findUnique({
         where: { id: decoded.userId },
         select: {
@@ -46,56 +53,18 @@ const authenticateToken = async (req, res, next) => {
         return res.status(401).json({ error: 'User not found' });
       }
 
-      // 3. Cache the user data (5 min TTL)
-      await cacheSet(cacheKey, user, 300);
+      // Try to cache, but don't wait for it
+      cacheSet(cacheKey, user, 300).catch(err => 
+        logger.warn('Failed to cache user:', err.message)
+      );
     }
 
-    // Check if user is active
+    // Check user status
     if (user.status !== 'ACTIVE') {
-      logger.warn({ userId: user.id, status: user.status }, 'Auth: inactive user attempt');
       return res.status(403).json({
         error: `Account is ${user.status.toLowerCase()}. Please contact administrator.`,
       });
     }
-
-    // Check if password was changed after token was issued
-    if (user.passwordChangedAt) {
-      const pwdChangedAt = Math.floor(new Date(user.passwordChangedAt).getTime() / 1000);
-
-      if (!decoded.pwdChangedAt || decoded.pwdChangedAt !== pwdChangedAt) {
-        logger.warn({ userId: user.id }, 'Auth: token invalidated by password change');
-        return res.status(401).json({
-          error: 'Session expired. Please login again.',
-        });
-      }
-    }
-
-    // Check if user needs to reset password
-    const allowedPaths = [
-      '/api/auth/change-password',
-      '/auth/change-password',
-      '/api/auth/logout',
-      '/auth/logout',
-      '/api/auth/profile', // Allow fetching profile (needed for frontend context)
-    ];
-
-    // Normalize path to handle router nesting and query parameters
-    // req.originalUrl contains the full path (e.g., /api/auth/change-password)
-    const currentPath = req.originalUrl.split('?')[0];
-
-    // Loose matching to avoid trailing slash or prefix issues
-    const isAllowed = allowedPaths.some(path => currentPath.includes(path)) ||
-      currentPath.includes('/change-password') ||
-      currentPath.includes('/profile') ||
-      currentPath.includes('/logout');
-
-    // Force Password Reset Logic - DISABLED BY USER REQUEST
-    // if (user.forcePasswordReset && !isAllowed) {
-    //   logger.warn({ userId: user.id, path: currentPath }, 'Auth: blocked by forcePasswordReset');
-    //   return res.status(403).json({
-    //     error: 'Password reset required. Please change your password.',
-    //   });
-    // }
 
     req.user = user;
     next();
@@ -104,11 +73,10 @@ const authenticateToken = async (req, res, next) => {
       return res.status(403).json({ error: 'Token expired. Please login again.' });
     }
     if (error.name === 'JsonWebTokenError') {
-      logger.warn({ error: error.message }, 'Auth: invalid token');
       return res.status(403).json({ error: 'Invalid token' });
     }
     logger.error({ err: error }, 'Auth: token verification failed');
-    return res.status(500).json({ error: 'Token verification failed' });
+    return res.status(500).json({ error: 'Authentication failed' });
   }
 };
 
