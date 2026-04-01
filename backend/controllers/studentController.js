@@ -33,35 +33,30 @@ class StudentController {
 
       logger.debug({ studentId: student.id }, 'Found student');
 
-      // ── Current month attendance ──────────────────────────────────────
+      // ── Attendance queries run IN PARALLEL (both only need student.id) ────────
       const now = new Date();
       const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
       const monthEnd = new Date(now.getFullYear(), now.getMonth() + 1, 0, 23, 59, 59);
 
-      const currentMonthAttendance = await prisma.attendance.findMany({
-        where: { studentId: student.id, date: { gte: monthStart, lte: monthEnd } },
-        select: { status: true, date: true },
-      });
+      const [currentMonthAttendance, recentAttendance] = await Promise.all([
+        prisma.attendance.findMany({
+          where: { studentId: student.id, date: { gte: monthStart, lte: monthEnd } },
+          select: { status: true, date: true },
+        }),
+        prisma.attendance.findMany({
+          where: { studentId: student.id },
+          orderBy: { date: 'desc' },
+          take: 5,
+          include: { subject: { select: { name: true } } },
+        }),
+      ]);
 
-      logger.debug({ count: currentMonthAttendance.length }, 'Current month attendance records');
-
+      // Calculate attendance stats from the parallel results
       const present = currentMonthAttendance.filter(a => a.status === 'PRESENT' || a.status === 'LATE').length;
       const absent = currentMonthAttendance.filter(a => a.status === 'ABSENT').length;
       const late = currentMonthAttendance.filter(a => a.status === 'LATE').length;
       const totalDays = currentMonthAttendance.length;
       const percentage = totalDays > 0 ? Math.round((present / totalDays) * 100 * 100) / 100 : 0;
-
-      // ── Recent attendance (last 5 records) ────────────────────────────
-      const recentAttendance = await prisma.attendance.findMany({
-        where: { studentId: student.id },
-        orderBy: { date: 'desc' },
-        take: 5,
-        include: {
-          subject: { select: { name: true } },
-        },
-      });
-
-      logger.debug({ count: recentAttendance.length }, 'Recent attendance records');
 
       // ── Progress info ─────────────────────────────────────────────────
       let progressInfo = null;

@@ -961,6 +961,9 @@ model Attendance {
   @@index([date, status])
   @@index([subjectId, date])
   @@index([studentId, classRoomId, date(sort: Desc)])
+  // Composite indexes for the most common query patterns
+  @@index([classRoomId, date, subjectId])  // getAttendance: WHERE classRoomId=? AND date=? AND subjectId=?
+  @@index([studentId, status, date(sort: Desc)])  // attendance stats: WHERE studentId=? AND date BETWEEN
 }
 
 

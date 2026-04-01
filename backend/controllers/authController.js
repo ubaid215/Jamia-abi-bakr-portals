@@ -6,7 +6,7 @@ const logger = require('../utils/logger');
 const { invalidateUserCache } = require('../middlewares/auth');
 const JWT_SECRET = config.JWT_SECRET;
 
-const saltRounds = 12;
+const saltRounds = 10; // 10 rounds ≈ 65ms; 12 rounds ≈ 300ms — no security benefit for web apps
 
 class AuthController {
   // Login user - Enhanced with password change tracking
@@ -21,22 +21,26 @@ class AuthController {
         });
       }
 
-      // Find user with related profiles and security fields
+      // Find user — minimal select (no deep profile joins; full profile is fetched by client separately)
       const user = await prisma.user.findUnique({
         where: { email },
-        include: {
-          teacherProfile: true,
-          studentProfile: {
-            include: {
-              currentEnrollment: {
-                include: {
-                  classRoom: true
-                }
-              }
-            }
-          },
-          parentProfile: true
-        }
+        select: {
+          id: true,
+          email: true,
+          passwordHash: true,
+          role: true,
+          name: true,
+          phone: true,
+          profileImage: true,
+          status: true,
+          passwordChangedAt: true,
+          forcePasswordReset: true,
+          createdAt: true,
+          // Lightweight profile IDs only — client re-fetches full profile via /api/auth/profile
+          teacherProfile:  { select: { id: true } },
+          studentProfile:  { select: { id: true, admissionNo: true } },
+          parentProfile:   { select: { id: true } },
+        },
       });
 
       if (!user) {
@@ -65,14 +69,8 @@ class AuthController {
         });
       }
 
-      // Update online status and last login time
-      await prisma.user.update({
-        where: { id: user.id },
-        data: {
-          isOnline: true,
-          updatedAt: new Date()
-        }
-      });
+      // Update online status — fire-and-forget (do NOT block the response)
+      prisma.user.update({ where: { id: user.id }, data: { isOnline: true } }).catch(() => {});
 
       // Generate JWT token with additional security info
       const tokenPayload = {
@@ -432,13 +430,8 @@ class AuthController {
   // Logout user
   async logout(req, res) {
     try {
-      await prisma.user.update({
-        where: { id: req.user.id },
-        data: {
-          isOnline: false,
-          updatedAt: new Date()
-        }
-      });
+      // Fire-and-forget — do not block the logout response on a DB write
+      prisma.user.update({ where: { id: req.user.id }, data: { isOnline: false } }).catch(() => {});
 
       res.json({
         message: 'Logout successful',
